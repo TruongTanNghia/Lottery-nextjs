@@ -12,6 +12,7 @@ import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import StatsBar from "@/components/StatsBar";
 import { ToastProvider, useToast } from "@/components/Toast";
+import AccuracyPage from "@/components/AccuracyPage";
 import PredictionPage from "@/components/PredictionPage";
 import TodayPage from "@/components/TodayPage";
 import { formatDate } from "@/lib/format";
@@ -38,7 +39,7 @@ function Dashboard() {
   const toast = useToast();
 
   const [region, setRegion] = useState<Region>("xsmn");
-  const [view, setView] = useState<"dashboard" | "prediction" | "today">("dashboard");
+  const [view, setView] = useState<"dashboard" | "prediction" | "today" | "accuracy">("dashboard");
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -341,8 +342,10 @@ function Dashboard() {
           </>
         ) : view === "prediction" ? (
           <PredictionPage region={region} />
-        ) : (
+        ) : view === "today" ? (
           <TodayPage />
+        ) : (
+          <AccuracyPage region={region} />
         )}
       </main>
 

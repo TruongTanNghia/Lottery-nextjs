@@ -32,16 +32,22 @@ const WEIGHTS: Record<string, number> = {
 // Data loader
 // ─────────────────────────────────────────────
 
-async function loadHistory(region: Region, days: number = 60): Promise<DateMap> {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
+async function loadHistory(
+  region: Region,
+  days: number = 60,
+  endDate?: string   // YYYY-MM-DD (exclusive). Default = today.
+): Promise<DateMap> {
+  const end = endDate ?? new Date().toISOString().slice(0, 10);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const endMs = Date.UTC(ey, em - 1, ed);
+  const startMs = endMs - days * 86_400_000;
+  const startStr = new Date(startMs).toISOString().slice(0, 10);
 
   const rows = await query<{ date: string; lo_number: string; count: number }>(
     `SELECT date, lo_number, count FROM lo_daily
-     WHERE region = ? AND date >= ?
+     WHERE region = ? AND date >= ? AND date < ?
      ORDER BY date ASC`,
-    [region, cutoffStr]
+    [region, startStr, end]
   );
 
   const out: DateMap = {};
@@ -333,8 +339,12 @@ export interface PredictionResult {
   predictions: PredictionItem[];
 }
 
-export async function predict(region: Region, windowDays: number = 60): Promise<PredictionResult> {
-  const history = await loadHistory(region, windowDays);
+export async function predict(
+  region: Region,
+  windowDays: number = 60,
+  endDate?: string   // YYYY-MM-DD; predictions use data strictly BEFORE this date
+): Promise<PredictionResult> {
+  const history = await loadHistory(region, windowDays, endDate);
   const daysAvailable = Object.keys(history).length;
 
   if (daysAvailable < 5) {
