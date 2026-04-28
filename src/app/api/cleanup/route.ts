@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   try {
     await ensureDb();
     const url = new URL(req.url);
-    const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "30"), 7), 365);
+    const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "90"), 7), 365);
     const deleted = await cleanupOldData(days);
     return NextResponse.json({ status: "success", deleted_records: deleted });
   } catch (err) {

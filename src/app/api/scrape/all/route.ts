@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   try {
     await ensureDb();
     const url = new URL(req.url);
-    const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "5"), 1), 30);
+    const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "5"), 1), 90);
 
     const counts = await scrapeAllRegionsRange(days, 600);
 

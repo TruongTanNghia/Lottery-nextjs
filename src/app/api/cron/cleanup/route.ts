@@ -17,7 +17,9 @@ export async function GET(req: Request) {
     }
     await ensureDb();
 
-    const deleted = await cleanupOldData(30);
+    // Keep 90 days of history so prediction (default 60-day window) always has
+    // a full window plus 30 days of "lookback" buffer.
+    const deleted = await cleanupOldData(90);
     return NextResponse.json({
       status: "success",
       deleted_records: deleted,
