@@ -8,6 +8,7 @@
  * Uses Cheerio (jQuery-like server-side HTML parsing).
  */
 import * as cheerio from "cheerio";
+import type { Element } from "domhandler";
 import {
   isDateScraped,
   saveLotteryResults,
@@ -63,7 +64,7 @@ async function fetchPage(url: string, retries: number = 3): Promise<string | nul
   return null;
 }
 
-function extractNumbersFromCell($: cheerio.CheerioAPI, cell: cheerio.Cheerio<cheerio.Element>): string[] {
+function extractNumbersFromCell($: cheerio.CheerioAPI, cell: cheerio.Cheerio<Element>): string[] {
   const numbers: string[] = [];
   // Method 1: child elements
   cell.find("div, span, p, em").each((_, el) => {
@@ -104,7 +105,7 @@ function parseXsmnPage(html: string): Record<string, { prize_type: string; numbe
 
 function parseMultiProvinceTable(
   $: cheerio.CheerioAPI,
-  table: cheerio.Cheerio<cheerio.Element>,
+  table: cheerio.Cheerio<Element>,
   results: Record<string, { prize_type: string; number: string }[]>
 ): void {
   const provinces: string[] = [];

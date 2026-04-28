@@ -5,8 +5,8 @@
  * Bù  = Σ điểm × 75 × occurrences      (chi trả cho lô về)
  * Lãi = Thu - Bù
  */
-import { query } from "./db";
-import { COST_MULTIPLIER, PRICE_PER_POINT, type Region } from "./limit-engine";
+import { query, type Region } from "./db";
+import { COST_MULTIPLIER, PRICE_PER_POINT } from "./limit-engine";
 
 export interface DailyProfit {
   date: string;
