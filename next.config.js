@@ -1,15 +1,7 @@
-const path = require("path");
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  webpack: (config) => {
-    config.resolve = config.resolve || {};
-    config.resolve.alias = {
-      ...(config.resolve.alias || {}),
-      "@": path.resolve(__dirname, "src"),
-    };
-    return config;
-  },
+  // Next 16 enables Turbopack by default; tsconfig "paths" handles @/* aliases.
+  turbopack: {},
 };
 
 module.exports = nextConfig;
