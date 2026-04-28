@@ -35,20 +35,36 @@ const WEIGHTS: Record<string, number> = {
 async function loadHistory(
   region: Region,
   days: number = 60,
-  endDate?: string   // YYYY-MM-DD (exclusive). Default = today.
+  endDate?: string   // YYYY-MM-DD; if provided, only data BEFORE this date.
+                     // If omitted (forward prediction), use ALL recent data
+                     // including today.
 ): Promise<DateMap> {
-  const end = endDate ?? new Date().toISOString().slice(0, 10);
-  const [ey, em, ed] = end.split("-").map(Number);
-  const endMs = Date.UTC(ey, em - 1, ed);
-  const startMs = endMs - days * 86_400_000;
-  const startStr = new Date(startMs).toISOString().slice(0, 10);
+  let rows: { date: string; lo_number: string; count: number }[];
 
-  const rows = await query<{ date: string; lo_number: string; count: number }>(
-    `SELECT date, lo_number, count FROM lo_daily
-     WHERE region = ? AND date >= ? AND date < ?
-     ORDER BY date ASC`,
-    [region, startStr, end]
-  );
+  if (endDate) {
+    // Historical replay: data strictly BEFORE endDate (don't peek at target day)
+    const [ey, em, ed] = endDate.split("-").map(Number);
+    const endMs = Date.UTC(ey, em - 1, ed);
+    const startMs = endMs - days * 86_400_000;
+    const startStr = new Date(startMs).toISOString().slice(0, 10);
+    rows = await query<{ date: string; lo_number: string; count: number }>(
+      `SELECT date, lo_number, count FROM lo_daily
+       WHERE region = ? AND date >= ? AND date < ?
+       ORDER BY date ASC`,
+      [region, startStr, endDate]
+    );
+  } else {
+    // Forward prediction: include all recent data up to and including today
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    rows = await query<{ date: string; lo_number: string; count: number }>(
+      `SELECT date, lo_number, count FROM lo_daily
+       WHERE region = ? AND date >= ?
+       ORDER BY date ASC`,
+      [region, cutoffStr]
+    );
+  }
 
   const out: DateMap = {};
   for (const r of rows) {

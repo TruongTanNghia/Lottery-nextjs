@@ -42,7 +42,7 @@ interface AccuracyResponse {
 export default function AccuracyPage({ region }: { region: Region }) {
   const [data, setData] = useState<AccuracyResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [topN, setTopN] = useState(10);
+  const [topN, setTopN] = useState(20);
   const [days, setDays] = useState(14);
 
   useEffect(() => {

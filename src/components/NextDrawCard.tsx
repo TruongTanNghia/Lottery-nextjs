@@ -42,7 +42,7 @@ export default function NextDrawCard({ region, latestScraped, onSeeAll, onRefres
       .then((r) => r.json())
       .then((d) => {
         if (d.predictions && d.predictions.length > 0) {
-          setPicks(d.predictions.slice(0, 5));
+          setPicks(d.predictions.slice(0, 20));
         } else {
           setPicks([]);
         }
@@ -120,38 +120,44 @@ export default function NextDrawCard({ region, latestScraped, onSeeAll, onRefres
             Cần ít nhất 5 ngày data. Bấm 🔄 Cập nhật ở header.
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3">
-            {picks.map((p) => {
-              const rankClass =
-                p.rank === 1
-                  ? "border-amber-400/60 bg-amber-500/10"
-                  : p.rank === 2
-                  ? "border-slate-300/40 bg-slate-300/5"
-                  : p.rank === 3
-                  ? "border-orange-400/40 bg-orange-500/5"
-                  : "border-blue-500/30 bg-blue-500/5";
-              const rankLabel = p.rank === 1 ? "🥇" : p.rank === 2 ? "🥈" : p.rank === 3 ? "🥉" : `#${p.rank}`;
-              return (
-                <div
-                  key={p.lo_number}
-                  className={`rounded-xl border ${rankClass} p-3 text-center hover:scale-105 transition-transform cursor-pointer`}
-                >
-                  <div className="text-[0.65rem] font-mono font-bold text-slate-400 mb-1">
-                    {rankLabel}
+          <>
+            <p className="text-[0.7rem] text-slate-400 mb-2 md:mb-3">
+              Top 20 lô khả năng cao nhất — đặt cược trong nhóm này:
+            </p>
+            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-10 gap-1.5 md:gap-2">
+              {picks.map((p) => {
+                const rankClass =
+                  p.rank === 1
+                    ? "border-amber-400/70 bg-amber-500/10"
+                    : p.rank === 2
+                    ? "border-slate-300/40 bg-slate-300/5"
+                    : p.rank === 3
+                    ? "border-orange-400/40 bg-orange-500/5"
+                    : p.rank <= 5
+                    ? "border-emerald-500/40 bg-emerald-500/5"
+                    : p.rank <= 10
+                    ? "border-blue-500/30 bg-blue-500/5"
+                    : "border-white/[0.08] bg-white/[0.02]";
+                return (
+                  <div
+                    key={p.lo_number}
+                    className={`rounded-lg border ${rankClass} p-1.5 md:p-2 text-center hover:scale-105 transition-transform cursor-pointer`}
+                    title={`Rank #${p.rank} • ${p.probability.toFixed(2)}% • conf ${p.confidence}%`}
+                  >
+                    <div className="text-[0.55rem] font-mono font-bold text-slate-500">
+                      #{p.rank}
+                    </div>
+                    <div className="font-mono text-base md:text-xl font-extrabold text-white leading-none my-0.5">
+                      {p.lo_number}
+                    </div>
+                    <div className="font-mono text-[0.6rem] md:text-xs font-bold text-emerald-400">
+                      {p.probability.toFixed(1)}%
+                    </div>
                   </div>
-                  <div className="font-mono text-2xl md:text-3xl font-extrabold text-white leading-none mb-1">
-                    {p.lo_number}
-                  </div>
-                  <div className="font-mono text-xs md:text-sm font-bold text-emerald-400">
-                    {p.probability.toFixed(2)}%
-                  </div>
-                  <div className="text-[0.55rem] md:text-[0.6rem] text-slate-500 font-mono mt-0.5">
-                    conf {p.confidence}%
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </section>
