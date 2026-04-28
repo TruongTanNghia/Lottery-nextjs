@@ -17,7 +17,6 @@ import {
 } from "./db";
 
 const XSMN_BASE = "https://xsmn.mobi";
-const XSKT_BASE = "https://xskt.com.vn";
 
 const HEADERS = {
   "User-Agent":
@@ -177,33 +176,48 @@ function parseXsmbPage(html: string): Record<string, { prize_type: string; numbe
   const $ = cheerio.load(html);
   const results: Record<string, { prize_type: string; number: string }[]> = { "Mien Bac": [] };
 
-  let table = $('table.result[id^="MB"]').first();
-  if (!table.length) table = $("table.result").first();
-  if (!table.length) return results;
-
   const labelMap: Record<string, string> = {
-    "ĐB": "G.DB", DB: "G.DB",
+    "ĐB": "G.DB", DB: "G.DB", "Đ.B": "G.DB",
+    "Mã ĐB": "MA_DB",
     G1: "G.1", G2: "G.2", G3: "G.3", G4: "G.4",
     G5: "G.5", G6: "G.6", G7: "G.7",
   };
 
+  // Try xsmn.mobi pattern first: table.colgiai (same as XSMN)
+  let table = $("table.colgiai").first();
+  // Fallback: legacy xskt.com.vn pattern
+  if (!table.length) table = $('table.result[id^="MB"]').first();
+  if (!table.length) table = $("table.result").first();
+  if (!table.length) return results;
+
   table.find("tr").each((_, row) => {
     const $row = $(row);
+    if ($row.hasClass("header")) return;
     const cells = $row.find("td");
     if (cells.length < 2) return;
 
-    const labelCell = cells.eq(0);
+    // xsmn.mobi uses td.txt-giai for label; legacy uses cells.eq(0)
+    let labelCell = $row.find("td.txt-giai").first();
+    if (!labelCell.length) labelCell = cells.eq(0);
     const labelText = labelCell.text().trim();
     const titleAttr = labelCell.attr("title") || "";
 
     let prizeType = normPrize(labelText) || normPrize(titleAttr);
-    if (!prizeType) prizeType = labelMap[labelText] ?? null;
-    if (!prizeType) return;
-
-    const numberCell = cells.eq(1);
-    for (const num of extractNumbersFromCell($, numberCell)) {
-      results["Mien Bac"].push({ prize_type: prizeType, number: num });
+    if (!prizeType) {
+      const cleaned = labelText.replace(/[\s.]/g, "");
+      prizeType = labelMap[cleaned] ?? labelMap[labelText] ?? null;
     }
+    if (!prizeType || prizeType === "MA_DB") return;
+
+    // xsmn.mobi: td.v-giai may have multiple value cells; legacy: cells.slice(1)
+    let valueCells = $row.find("td.v-giai");
+    if (!valueCells.length) valueCells = cells.slice(1);
+
+    valueCells.each((_, cell) => {
+      for (const num of extractNumbersFromCell($, $(cell))) {
+        results["Mien Bac"].push({ prize_type: prizeType!, number: num });
+      }
+    });
   });
 
   return results;
@@ -213,7 +227,8 @@ async function scrapeXsmbDay(date: Date): Promise<Record<string, { prize_type: s
   const dateStr = date.toISOString().slice(0, 10);
   if (await isDateScraped(dateStr, "xsmb")) return null;
 
-  const url = `${XSKT_BASE}/xsmb/ngay-${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
+  // xsmn.mobi pattern: xsmb-{d}-{m}-{y}.html
+  const url = `${XSMN_BASE}/xsmb-${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}.html`;
   console.log(`[XSMB] Fetching ${url}`);
   const html = await fetchPage(url);
   if (!html) return null;
@@ -245,7 +260,9 @@ function parseXsmtPage(html: string): Record<string, { prize_type: string; numbe
   const $ = cheerio.load(html);
   const results: Record<string, { prize_type: string; number: string }[]> = {};
 
-  let table = $('table.tbl-xsmn[id^="MT"]').first();
+  // xsmn.mobi uses table.colgiai (same as XSMN), legacy xskt.com.vn uses table.tbl-xsmn
+  let table = $("table.colgiai").first();
+  if (!table.length) table = $('table.tbl-xsmn[id^="MT"]').first();
   if (!table.length) table = $("table.tbl-xsmn").first();
   if (!table.length) {
     $("table").each((_, t) => {
@@ -257,6 +274,16 @@ function parseXsmtPage(html: string): Record<string, { prize_type: string; numbe
     });
   }
   if (!table.length) return results;
+
+  // If table.colgiai found → use same multi-province parser as XSMN
+  if (table.hasClass("colgiai")) {
+    parseMultiProvinceTable($, table, results);
+    // Drop empty provinces
+    for (const p of Object.keys(results)) {
+      if (results[p].length === 0) delete results[p];
+    }
+    return results;
+  }
 
   // Extract provinces from header
   const provinces: string[] = [];
@@ -318,7 +345,8 @@ async function scrapeXsmtDay(date: Date): Promise<Record<string, { prize_type: s
   const dateStr = date.toISOString().slice(0, 10);
   if (await isDateScraped(dateStr, "xsmt")) return null;
 
-  const url = `${XSKT_BASE}/xsmt/ngay-${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
+  // xsmn.mobi pattern: xsmt-{d}-{m}-{y}.html
+  const url = `${XSMN_BASE}/xsmt-${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}.html`;
   console.log(`[XSMT] Fetching ${url}`);
   const html = await fetchPage(url);
   if (!html) return null;
