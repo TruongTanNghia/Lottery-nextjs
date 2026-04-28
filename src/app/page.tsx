@@ -118,23 +118,23 @@ function Dashboard() {
 
     setIsScraping(true);
     setScrapeProgress(5);
-    setScrapeStatusText(`Đang crawl 3 miền (${days} ngày)...`);
+    setScrapeStatusText(`Bước 1/2: Crawl 3 miền (${days} ngày)...`);
     setRegionStatus({ xsmn: "⏳", xsmb: "⏳", xsmt: "⏳" });
 
-    // Estimate progress based on time (rough): ~4.5s per day total for 3 regions
-    const estimatedMs = days * 4500;
+    const estimatedMs = days * 3500;
     const tickMs = 1000;
-    const tickIncrement = (90 - 5) / (estimatedMs / tickMs);
+    const tickIncrement = (60 - 5) / (estimatedMs / tickMs);
     let progress = 5;
     const interval = setInterval(() => {
-      progress = Math.min(progress + tickIncrement, 90);
+      progress = Math.min(progress + tickIncrement, 60);
       setScrapeProgress(progress);
-      if (progress > 30) setRegionStatus((r) => ({ ...r, xsmn: "✅" }));
-      if (progress > 60) setRegionStatus((r) => ({ ...r, xsmb: "✅" }));
-      if (progress > 80) setRegionStatus((r) => ({ ...r, xsmt: "✅" }));
+      if (progress > 20) setRegionStatus((r) => ({ ...r, xsmn: "✅" }));
+      if (progress > 35) setRegionStatus((r) => ({ ...r, xsmb: "✅" }));
+      if (progress > 50) setRegionStatus((r) => ({ ...r, xsmt: "✅" }));
     }, tickMs);
 
     try {
+      // Step 1: Scrape (no DB recalc)
       const res = await fetch(`/api/scrape/all?days=${days}`, { method: "POST" });
       clearInterval(interval);
 
@@ -145,15 +145,24 @@ function Dashboard() {
       }
       const body = await res.json();
 
-      setScrapeProgress(100);
+      setScrapeProgress(65);
       setRegionStatus({ xsmn: "✅", xsmb: "✅", xsmt: "✅" });
-      setScrapeStatusText("Hoàn tất! Đang tải lại dữ liệu...");
+      setScrapeStatusText("Bước 2/2: Tính lại hạn mức từ data mới...");
 
-      await new Promise((r) => setTimeout(r, 800));
+      // Step 2: Recalc lo_status (separate request → its own 60s budget)
+      const recalcRes = await fetch(`/api/recalculate`, { method: "POST" });
+      if (!recalcRes.ok) {
+        toast.show("error", "Recalc lỗi — data đã save nhưng limits có thể chưa update. Bấm Cập nhật lại.");
+        return;
+      }
+
+      setScrapeProgress(100);
+      setScrapeStatusText("Hoàn tất! Đang tải lại UI...");
+      await new Promise((r) => setTimeout(r, 600));
       await loadAll();
 
       const totalDays = body.counts ? Object.values<number>(body.counts).reduce((s, n) => s + n, 0) : 0;
-      toast.show("success", `Cập nhật xong — ${totalDays} day-records`);
+      toast.show("success", `Cập nhật xong — ${totalDays} day-records + limits đã recalc`);
     } catch (err) {
       clearInterval(interval);
       toast.show("error", `Lỗi: ${err instanceof Error ? err.message : err}`);
@@ -192,12 +201,12 @@ function Dashboard() {
         badges={tabBadges}
       />
 
-      <main className="max-w-[1600px] mx-auto px-7 py-6">
+      <main className="max-w-[1600px] mx-auto px-3 sm:px-5 md:px-7 py-3 md:py-6">
         {view === "dashboard" ? (
           <>
             <StatsBar stats={profit} />
 
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-6 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 md:gap-6 items-start">
               <section className="rounded-2xl bg-[#111827] border border-white/[0.06] overflow-hidden">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06]">
                   <h2 className="text-sm font-bold">
