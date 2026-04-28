@@ -2,11 +2,13 @@
 
 import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
 
+type ViewKey = "dashboard" | "prediction" | "today";
+
 interface Props {
   current: Region;
   onChange: (r: Region) => void;
-  view: "dashboard" | "prediction";
-  onViewChange: (v: "dashboard" | "prediction") => void;
+  view: ViewKey;
+  onViewChange: (v: ViewKey) => void;
   badges?: Record<Region, number>;
 }
 
@@ -46,17 +48,19 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
       </div>
 
       <div className="flex gap-1 md:gap-1.5 p-1 rounded-full bg-[#111827] border border-[#1f2937]">
-        {(["dashboard", "prediction"] as const).map((v) => (
+        {(["dashboard", "prediction", "today"] as const).map((v) => (
           <button
             key={v}
             onClick={() => onViewChange(v)}
-            className={`px-2 md:px-4 py-1 md:py-1.5 rounded-full text-[0.65rem] md:text-xs font-semibold transition-colors ${
+            className={`px-2 md:px-4 py-1 md:py-1.5 rounded-full text-[0.65rem] md:text-xs font-semibold transition-colors whitespace-nowrap ${
               v === view
-                ? "bg-blue-900 text-white shadow-[0_1px_6px_rgba(59,130,246,0.25)]"
+                ? v === "today"
+                  ? "bg-emerald-700 text-white shadow-[0_1px_6px_rgba(16,185,129,0.25)]"
+                  : "bg-blue-900 text-white shadow-[0_1px_6px_rgba(59,130,246,0.25)]"
                 : "text-slate-400 hover:text-slate-100"
             }`}
           >
-            {v === "dashboard" ? "📊 Dashboard" : "🔮 Dự Đoán"}
+            {v === "dashboard" ? "📊 Dashboard" : v === "prediction" ? "🔮 Dự Đoán" : "📡 Hôm Nay"}
           </button>
         ))}
       </div>

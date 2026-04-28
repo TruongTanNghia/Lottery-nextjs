@@ -13,6 +13,7 @@ import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import StatsBar from "@/components/StatsBar";
 import { ToastProvider, useToast } from "@/components/Toast";
 import PredictionPage from "@/components/PredictionPage";
+import TodayPage from "@/components/TodayPage";
 import { formatDate } from "@/lib/format";
 import {
   REGION_LABELS,
@@ -37,7 +38,7 @@ function Dashboard() {
   const toast = useToast();
 
   const [region, setRegion] = useState<Region>("xsmn");
-  const [view, setView] = useState<"dashboard" | "prediction">("dashboard");
+  const [view, setView] = useState<"dashboard" | "prediction" | "today">("dashboard");
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -338,8 +339,10 @@ function Dashboard() {
               </aside>
             </div>
           </>
-        ) : (
+        ) : view === "prediction" ? (
           <PredictionPage region={region} />
+        ) : (
+          <TodayPage />
         )}
       </main>
 

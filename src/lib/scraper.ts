@@ -146,9 +146,9 @@ function parseMultiProvinceTable(
   });
 }
 
-async function scrapeXsmnDay(date: Date): Promise<Record<string, { prize_type: string; number: string }[]> | null> {
+async function scrapeXsmnDay(date: Date, force: boolean = false): Promise<Record<string, { prize_type: string; number: string }[]> | null> {
   const dateStr = date.toISOString().slice(0, 10);
-  if (await isDateScraped(dateStr, "xsmn")) return null;
+  if (!force && await isDateScraped(dateStr, "xsmn")) return null;
 
   const url = `${XSMN_BASE}/xsmn-${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}.html`;
   console.log(`[XSMN] Fetching ${url}`);
@@ -223,9 +223,9 @@ function parseXsmbPage(html: string): Record<string, { prize_type: string; numbe
   return results;
 }
 
-async function scrapeXsmbDay(date: Date): Promise<Record<string, { prize_type: string; number: string }[]> | null> {
+async function scrapeXsmbDay(date: Date, force: boolean = false): Promise<Record<string, { prize_type: string; number: string }[]> | null> {
   const dateStr = date.toISOString().slice(0, 10);
-  if (await isDateScraped(dateStr, "xsmb")) return null;
+  if (!force && await isDateScraped(dateStr, "xsmb")) return null;
 
   // xsmn.mobi pattern: xsmb-{d}-{m}-{y}.html
   const url = `${XSMN_BASE}/xsmb-${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}.html`;
@@ -341,9 +341,9 @@ function parseXsmtPage(html: string): Record<string, { prize_type: string; numbe
   return results;
 }
 
-async function scrapeXsmtDay(date: Date): Promise<Record<string, { prize_type: string; number: string }[]> | null> {
+async function scrapeXsmtDay(date: Date, force: boolean = false): Promise<Record<string, { prize_type: string; number: string }[]> | null> {
   const dateStr = date.toISOString().slice(0, 10);
-  if (await isDateScraped(dateStr, "xsmt")) return null;
+  if (!force && await isDateScraped(dateStr, "xsmt")) return null;
 
   // xsmn.mobi pattern: xsmt-{d}-{m}-{y}.html
   const url = `${XSMN_BASE}/xsmt-${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}.html`;
@@ -368,10 +368,16 @@ async function scrapeXsmtDay(date: Date): Promise<Record<string, { prize_type: s
 // Unified API
 // ─────────────────────────────────────────────
 
-export async function scrapeDay(date: Date, region: Region): Promise<unknown> {
-  if (region === "xsmb") return scrapeXsmbDay(date);
-  if (region === "xsmt") return scrapeXsmtDay(date);
-  return scrapeXsmnDay(date);
+export async function scrapeDay(date: Date, region: Region, force: boolean = false): Promise<unknown> {
+  if (region === "xsmb") return scrapeXsmbDay(date, force);
+  if (region === "xsmt") return scrapeXsmtDay(date, force);
+  return scrapeXsmnDay(date, force);
+}
+
+export async function scrapeTodayForce(region: Region): Promise<unknown> {
+  // Always force re-scrape — bypass isDateScraped cache so refresh works
+  // even if today was already scraped (e.g., before draws finished).
+  return scrapeDay(new Date(), region, true);
 }
 
 export async function scrapeRange(
