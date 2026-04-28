@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+
 interface Props {
   scrapedDays: number | null;
   lastUpdate: string;
@@ -17,6 +19,19 @@ export default function Header({
   onScrape,
   isScraping,
 }: Props) {
+  const router = useRouter();
+
+  async function handleLogout() {
+    if (!confirm("Đăng xuất?")) return;
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // ignore — middleware will redirect anyway on next request
+    }
+    router.push("/login");
+    router.refresh();
+  }
+
   const dotColor =
     status === "connected"
       ? "bg-emerald-500"
@@ -65,6 +80,14 @@ export default function Header({
         >
           <span className={isScraping ? "animate-spin" : ""}>🔄</span>
           <span className="hidden sm:inline">{isScraping ? "Đang cập nhật..." : "Cập nhật"}</span>
+        </button>
+        <button
+          onClick={handleLogout}
+          title="Đăng xuất"
+          className="inline-flex items-center gap-1.5 px-2.5 md:px-3 py-2 md:py-2.5 rounded-md bg-white/[0.03] border border-white/[0.08] hover:bg-red-500/15 hover:border-red-500/30 hover:text-red-300 text-slate-300 font-semibold text-xs transition-colors"
+        >
+          <span>🚪</span>
+          <span className="hidden md:inline">Đăng xuất</span>
         </button>
       </div>
     </header>
