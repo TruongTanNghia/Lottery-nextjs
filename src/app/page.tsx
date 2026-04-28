@@ -211,6 +211,8 @@ function Dashboard() {
               region={region}
               latestScraped={latestScraped}
               onSeeAll={() => setView("prediction")}
+              onRefresh={handleScrape}
+              refreshing={isScraping}
             />
             <StatsBar stats={profit} />
 

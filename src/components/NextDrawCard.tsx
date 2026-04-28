@@ -15,6 +15,8 @@ interface Props {
   region: Region;
   latestScraped: string | null;
   onSeeAll: () => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }
 
 function nextDateOf(dateStr: string | null): string | null {
@@ -28,7 +30,7 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function NextDrawCard({ region, latestScraped, onSeeAll }: Props) {
+export default function NextDrawCard({ region, latestScraped, onSeeAll, onRefresh, refreshing }: Props) {
   const [picks, setPicks] = useState<TopPick[] | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -51,6 +53,11 @@ export default function NextDrawCard({ region, latestScraped, onSeeAll }: Props)
   const hasToday = latestScraped === today;
   const nextDate = hasToday ? nextDateOf(latestScraped) : today;
 
+  const nowVN = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));
+  const hourVN = nowVN.getHours();
+  const drawsClosed = hourVN >= 19;       // sau 19:00 VN tất cả miền quay xong
+  const showRefreshHint = !hasToday && drawsClosed;
+
   return (
     <section className="rounded-2xl bg-gradient-to-br from-blue-900/30 to-purple-900/20 border border-blue-500/30 overflow-hidden mb-4 md:mb-6">
       <div className="px-4 md:px-6 py-3 md:py-4 border-b border-white/[0.06] flex flex-wrap items-center justify-between gap-2">
@@ -71,13 +78,36 @@ export default function NextDrawCard({ region, latestScraped, onSeeAll }: Props)
               </>
             )}
           </p>
+          {showRefreshHint && onRefresh && (
+            <p className="text-[0.62rem] md:text-[0.7rem] text-amber-400/80 mt-1">
+              💡 Cron chạy 19:00 VN. Nếu data {hourVN}:00 chưa có → bấm Cập nhật để force scrape.
+            </p>
+          )}
+          {!drawsClosed && (
+            <p className="text-[0.62rem] md:text-[0.7rem] text-slate-500 mt-1">
+              ⏰ Chưa đến 19:00 VN — chờ cron tự động hoặc các miền chưa quay xong.
+            </p>
+          )}
         </div>
-        <button
-          onClick={onSeeAll}
-          className="px-3 py-1.5 text-xs rounded-md bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-300 font-semibold transition-colors"
-        >
-          Xem đầy đủ →
-        </button>
+        <div className="flex gap-2">
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="px-3 py-1.5 text-xs rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold transition-colors disabled:opacity-50"
+              title="Force scrape data hôm nay"
+            >
+              <span className={refreshing ? "inline-block animate-spin" : ""}>↻</span>{" "}
+              {refreshing ? "Đang..." : "Refresh"}
+            </button>
+          )}
+          <button
+            onClick={onSeeAll}
+            className="px-3 py-1.5 text-xs rounded-md bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-300 font-semibold transition-colors"
+          >
+            Xem đầy đủ →
+          </button>
+        </div>
       </div>
 
       <div className="p-3 md:p-5">
