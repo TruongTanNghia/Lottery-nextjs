@@ -110,11 +110,11 @@ function Dashboard() {
 
   async function handleScrape() {
     const daysInput = window.prompt(
-      "Scrape bao nhiêu ngày? (1-30)\n• 5 = nhanh ~25s\n• 30 = đầy đủ ~3-5 phút",
-      "30"
+      "Scrape bao nhiêu ngày? (1-7 cho Vercel free tier)\n• 3 = an toàn (~12s)\n• 5 = ổn (~20s)\n• 7+ = có thể timeout 60s\n\nMỗi lần scrape các ngày đã có sẽ được skip — gọi nhiều lần để có nhiều data.",
+      "5"
     );
     if (!daysInput) return;
-    const days = Math.min(Math.max(parseInt(daysInput) || 30, 1), 30);
+    const days = Math.min(Math.max(parseInt(daysInput) || 5, 1), 30);
 
     setIsScraping(true);
     setScrapeProgress(5);

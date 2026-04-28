@@ -47,18 +47,18 @@ function normPrize(label: string | null | undefined): string | null {
   return null;
 }
 
-async function fetchPage(url: string, retries: number = 3): Promise<string | null> {
+async function fetchPage(url: string, retries: number = 2): Promise<string | null> {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const res = await fetch(url, {
         headers: HEADERS,
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(8_000),  // 8s timeout per fetch
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.text();
     } catch (err) {
       console.log(`[Scraper] attempt ${attempt + 1}/${retries} failed for ${url}: ${err}`);
-      if (attempt < retries - 1) await new Promise((r) => setTimeout(r, 2000));
+      if (attempt < retries - 1) await new Promise((r) => setTimeout(r, 1000));
     }
   }
   return null;
@@ -350,7 +350,7 @@ export async function scrapeRange(
   start: Date,
   end: Date,
   region: Region,
-  delayMs: number = 1000
+  delayMs: number = 600
 ): Promise<number> {
   let count = 0;
   let cur = new Date(start);
@@ -363,7 +363,7 @@ export async function scrapeRange(
   return count;
 }
 
-export async function scrapeLastNDays(n: number, region: Region, delayMs: number = 1000): Promise<number> {
+export async function scrapeLastNDays(n: number, region: Region, delayMs: number = 600): Promise<number> {
   const end = new Date();
   end.setDate(end.getDate() - 1);
   const start = new Date(end);
@@ -376,13 +376,15 @@ export async function scrapeToday(region: Region): Promise<unknown> {
 }
 
 export async function scrapeAllRegionsRange(
-  n: number = 30,
-  delayMs: number = 1500
+  n: number = 5,
+  delayMs: number = 600
 ): Promise<Record<Region, number>> {
-  const out = {} as Record<Region, number>;
-  for (const region of VALID_REGIONS) {
-    console.log(`\n=== Scraping ${region.toUpperCase()} (${n} days) ===`);
-    out[region] = await scrapeLastNDays(n, region, delayMs);
-  }
-  return out;
+  // Run all 3 regions in parallel (different domains so no rate-limit conflict)
+  const results = await Promise.all(
+    VALID_REGIONS.map(async (region) => {
+      console.log(`=== Scraping ${region.toUpperCase()} (${n} days) ===`);
+      return scrapeLastNDays(n, region, delayMs);
+    })
+  );
+  return Object.fromEntries(VALID_REGIONS.map((r, i) => [r, results[i]])) as Record<Region, number>;
 }
