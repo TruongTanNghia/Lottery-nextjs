@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "@/components/Header";
 import LoDetailModal from "@/components/LoDetailModal";
 import LoGrid from "@/components/LoGrid";
+import NextDrawCard from "@/components/NextDrawCard";
 import PricingCard from "@/components/PricingCard";
 import ProfitChart from "@/components/ProfitChart";
 import RegionTabs from "@/components/RegionTabs";
@@ -46,6 +47,7 @@ function Dashboard() {
   const [consecutive, setConsecutive] = useState<{ lo_number: string; consecutive_days: number; current_limit: number }[]>([]);
   const [recent, setRecent] = useState<{ date: string; lo_number: string; count: number }[]>([]);
   const [scrapedDays, setScrapedDays] = useState<number | null>(null);
+  const [latestScraped, setLatestScraped] = useState<string | null>(null);
   const [tabBadges, setTabBadges] = useState<Record<Region, number>>({ xsmn: 0, xsmb: 0, xsmt: 0 });
 
   const [status, setStatus] = useState<"loading" | "connected" | "error">("loading");
@@ -83,6 +85,7 @@ function Dashboard() {
       if (statusRes.status === "fulfilled") {
         const byRegion = statusRes.value.by_region ?? {};
         setScrapedDays(byRegion[region]?.count ?? 0);
+        setLatestScraped(byRegion[region]?.latest ?? null);
         setTabBadges({
           xsmn: byRegion.xsmn?.count ?? 0,
           xsmb: byRegion.xsmb?.count ?? 0,
@@ -204,6 +207,11 @@ function Dashboard() {
       <main className="max-w-[1600px] mx-auto px-3 sm:px-5 md:px-7 py-3 md:py-6">
         {view === "dashboard" ? (
           <>
+            <NextDrawCard
+              region={region}
+              latestScraped={latestScraped}
+              onSeeAll={() => setView("prediction")}
+            />
             <StatsBar stats={profit} />
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 md:gap-6 items-start">
