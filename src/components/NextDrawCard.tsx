@@ -21,13 +21,15 @@ interface Props {
 
 function nextDateOf(dateStr: string | null): string | null {
   if (!dateStr) return null;
-  const d = new Date(dateStr + "T00:00:00");
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+  // Parse as YYYY-MM-DD parts and use Date.UTC to avoid timezone drift
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const nextMs = Date.UTC(y, m - 1, d) + 86_400_000;
+  return new Date(nextMs).toISOString().slice(0, 10);
 }
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Use VN timezone since lottery is VN-based; en-CA gives YYYY-MM-DD format
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
 }
 
 export default function NextDrawCard({ region, latestScraped, onSeeAll, onRefresh, refreshing }: Props) {
