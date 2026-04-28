@@ -12,9 +12,7 @@ import {
   getAppearanceCounts,
   getConfigValue,
   getLoAppearedOnDate,
-  getLoStatus,
   setConfigValue,
-  updateLoStatus,
   type LoStatus,
   type Region,
   VALID_REGIONS,
@@ -137,20 +135,30 @@ function previousDate(dateStr: string): string {
 }
 
 export async function updateAllLoStatus(targetDate: string, region: Region): Promise<void> {
+  const { getDb, getAllLoStatus } = await import("./db");
+  const db = getDb();
+
   const appearedToday = await getLoAppearedOnDate(targetDate, region);
   const schedule = await loadSchedule();
   const resetAfter = schedule.consecutive_reset_after;
 
+  // 1 round-trip to read all 100 lô status at once
+  const allStatus = await getAllLoStatus(region);
+  const byLo = new Map(allStatus.map((s) => [s.lo_number, s]));
+
+  const updates: { sql: string; args: (string | number | null)[] }[] = [];
+  const prevDate = previousDate(targetDate);
+
   for (let i = 0; i < 100; i++) {
     const lo = String(i).padStart(2, "0");
-    const current = await getLoStatus(lo, region);
+    const current = byLo.get(lo);
 
     let daysSince = current?.days_since_last ?? 0;
     let consec = current?.consecutive_days ?? 0;
     let lastDate: string | null = current?.last_appeared_date ?? null;
 
     if (appearedToday.has(lo)) {
-      if (lastDate === previousDate(targetDate)) consec += 1;
+      if (lastDate === prevDate) consec += 1;
       else consec = 1;
       if (consec > resetAfter) consec = 1;
       daysSince = 0;
@@ -160,36 +168,38 @@ export async function updateAllLoStatus(targetDate: string, region: Region): Pro
     }
 
     const newLimit = calculateEffectiveLimit(daysSince, consec, schedule);
-    await updateLoStatus({
-      loNumber: lo,
-      region,
-      lastAppearedDate: lastDate,
-      daysSinceLast: daysSince,
-      consecutiveDays: consec,
-      currentLimit: newLimit,
+
+    updates.push({
+      sql: `UPDATE lo_status SET last_appeared_date = ?, days_since_last = ?,
+            consecutive_days = ?, current_limit = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE lo_number = ? AND region = ?`,
+      args: [lastDate, daysSince, consec, newLimit, lo, region],
     });
   }
+
+  // 1 round-trip for all 100 updates as a transaction
+  await db.batch(updates, "write");
 }
 
 export async function recalculateAllFromHistory(region?: Region): Promise<void> {
   const regions: Region[] = region ? [region] : [...VALID_REGIONS];
+  const { query, exec } = await import("./db");
 
   for (const rgn of regions) {
-    const { query } = await import("./db");
     const dates = await query<{ date: string }>(
       "SELECT DISTINCT date FROM lo_daily WHERE region = ? ORDER BY date ASC",
       [rgn]
     );
     if (dates.length === 0) continue;
 
-    // Reset all lô statuses
-    const { exec } = await import("./db");
+    // Reset all 100 lô statuses for this region in a single statement
     await exec(
       `UPDATE lo_status SET last_appeared_date = NULL, days_since_last = 0,
        consecutive_days = 0, current_limit = 200 WHERE region = ?`,
       [rgn]
     );
 
+    // Process each historical date with batched updates (each call = 2 round-trips)
     for (const { date } of dates) {
       await updateAllLoStatus(date, rgn);
     }
