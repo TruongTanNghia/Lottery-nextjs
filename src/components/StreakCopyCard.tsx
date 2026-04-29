@@ -11,12 +11,13 @@ interface Props {
   limits: LimitItem[];
 }
 
+// Note: consecutive_days max = 4 (spec: "qua 4 ngày liên tiếp → reset về 1")
+// → no "5+" / "6+" buckets because they would always be empty.
 const STREAK_OPTIONS: Array<{ key: string; label: string; match: (l: LimitItem) => boolean }> = [
   { key: "1", label: "1 ngày", match: (l) => l.consecutive_days === 1 },
   { key: "2", label: "2 ngày", match: (l) => l.consecutive_days === 2 },
   { key: "3", label: "3 ngày", match: (l) => l.consecutive_days === 3 },
-  { key: "4", label: "4 ngày", match: (l) => l.consecutive_days === 4 },
-  { key: "5+", label: "5+ ngày (hot)", match: (l) => l.consecutive_days >= 5 },
+  { key: "4", label: "4 ngày (max)", match: (l) => l.consecutive_days === 4 },
 ];
 
 const COLD_OPTIONS: Array<{ key: string; label: string; match: (l: LimitItem) => boolean }> = [
