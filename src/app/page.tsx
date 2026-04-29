@@ -11,6 +11,7 @@ import RegionTabs from "@/components/RegionTabs";
 import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import StatsBar from "@/components/StatsBar";
+import StreakCopyCard from "@/components/StreakCopyCard";
 import { ToastProvider, useToast } from "@/components/Toast";
 import AccuracyPage from "@/components/AccuracyPage";
 import PredictionPage from "@/components/PredictionPage";
@@ -246,6 +247,7 @@ function Dashboard() {
               refreshing={isScraping}
             />
             <StatsBar stats={profit} />
+            <StreakCopyCard limits={limits} />
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 md:gap-6 items-start">
               <section className="rounded-2xl bg-[#111827] border border-white/[0.06] overflow-hidden">
