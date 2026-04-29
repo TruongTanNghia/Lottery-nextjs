@@ -62,6 +62,7 @@ function Dashboard() {
   const [scrapeProgress, setScrapeProgress] = useState(0);
   const [scrapeStatusText, setScrapeStatusText] = useState("");
   const [regionStatus, setRegionStatus] = useState({ xsmn: "⏳", xsmb: "⏳", xsmt: "⏳" });
+  const [isDedupeRunning, setIsDedupeRunning] = useState(false);
 
   const loadAll = useCallback(async () => {
     setStatus("loading");
@@ -177,6 +178,32 @@ function Dashboard() {
     }
   }
 
+  async function handleDedupe() {
+    if (!confirm("Quét và xóa data bị scrape lặp lại?\n\nViệc này KHÔNG mất data thật — chỉ xóa các dòng duplicate do bấm Refresh nhiều lần.")) return;
+    setIsDedupeRunning(true);
+    try {
+      const res = await fetch("/api/dedupe", { method: "POST" });
+      const j = await res.json();
+      if (!res.ok) {
+        toast.show("error", `Lỗi: ${j.detail ?? res.statusText}`);
+        return;
+      }
+      if (j.duplicates_found === 0) {
+        toast.show("success", "DB đã sạch — không có duplicate nào.");
+      } else {
+        toast.show(
+          "success",
+          `Đã dọn ${j.duplicates_found} ngày bị lặp, xóa ${j.total_rows_removed} rows duplicate.`
+        );
+      }
+      await loadAll();
+    } catch (err) {
+      toast.show("error", `Lỗi: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setIsDedupeRunning(false);
+    }
+  }
+
   const recentByDate = useMemo(() => {
     const groups: Record<string, { lo_number: string; count: number }[]> = {};
     for (const r of recent) {
@@ -197,6 +224,8 @@ function Dashboard() {
         statusText={statusText}
         onScrape={handleScrape}
         isScraping={isScraping}
+        onDedupe={handleDedupe}
+        isDedupeRunning={isDedupeRunning}
       />
       <RegionTabs
         current={region}

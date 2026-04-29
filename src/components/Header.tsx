@@ -10,6 +10,8 @@ interface Props {
   statusText: string;
   onScrape: () => void;
   isScraping: boolean;
+  onDedupe?: () => void;
+  isDedupeRunning?: boolean;
 }
 
 function getCookie(name: string): string | null {
@@ -25,6 +27,8 @@ export default function Header({
   statusText,
   onScrape,
   isScraping,
+  onDedupe,
+  isDedupeRunning,
 }: Props) {
   const router = useRouter();
 
@@ -88,6 +92,19 @@ export default function Header({
           <span className={isScraping ? "animate-spin" : ""}>🔄</span>
           <span className="hidden sm:inline">{isScraping ? "Đang cập nhật..." : "Cập nhật"}</span>
         </button>
+        {onDedupe && (
+          <button
+            onClick={onDedupe}
+            disabled={isDedupeRunning}
+            title="Dọn data bị scrape lặp lại nhiều lần"
+            className="inline-flex items-center gap-1.5 px-2.5 md:px-3 py-2 md:py-2.5 rounded-md bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 text-amber-300 font-semibold text-xs disabled:opacity-50 transition-colors"
+          >
+            <span className={isDedupeRunning ? "inline-block animate-spin" : ""}>🧹</span>
+            <span className="hidden md:inline">
+              {isDedupeRunning ? "Đang dọn..." : "Dọn DB"}
+            </span>
+          </button>
+        )}
         <button
           onClick={handleLogout}
           title="Đăng xuất"

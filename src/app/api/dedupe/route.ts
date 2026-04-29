@@ -15,7 +15,7 @@
  * Auth: requires CRON_SECRET to prevent accidental destructive use.
  */
 import { NextResponse } from "next/server";
-import { checkCronAuth, ensureDb, jsonError } from "@/lib/api-utils";
+import { ensureDb, jsonError } from "@/lib/api-utils";
 import { exec, query, type Region, VALID_REGIONS } from "@/lib/db";
 import { updateAllLoStatus } from "@/lib/limit-engine";
 
@@ -23,11 +23,9 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+// Auth handled by middleware (logged-in admin session). No extra CRON_SECRET needed.
+export async function POST() {
   try {
-    if (!checkCronAuth(req)) {
-      return NextResponse.json({ status: "unauthorized" }, { status: 401 });
-    }
     await ensureDb();
 
     // Find (date, region) pairs that have duplicate rows
