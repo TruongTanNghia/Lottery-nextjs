@@ -26,9 +26,7 @@ const COLD_OPTIONS: Array<{ key: string; label: string; match: (l: LimitItem) =>
   { key: "3", label: "3 ngày", match: (l) => l.days_since_last === 3 },
   { key: "4", label: "4 ngày", match: (l) => l.days_since_last === 4 },
   { key: "5", label: "5 ngày", match: (l) => l.days_since_last === 5 },
-  { key: "6", label: "6 ngày", match: (l) => l.days_since_last === 6 },
-  { key: "7", label: "7 ngày", match: (l) => l.days_since_last === 7 },
-  { key: "8+", label: "8+ ngày", match: (l) => l.days_since_last >= 8 },
+  { key: "6+", label: "6+ ngày", match: (l) => l.days_since_last >= 6 },
 ];
 
 export default function StreakCopyCard({ limits }: Props) {
