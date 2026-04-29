@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { REGION_LABELS, type PredictionResult, type Region } from "@/lib/types";
+import { useToast } from "./Toast";
 
 const MODEL_LABELS: Record<string, string> = {
   frequency: "Frequency",
@@ -52,6 +53,9 @@ export default function PredictionPage({ region }: { region: Region }) {
         <Stat icon="📈" label="Lift so với uniform (1%)" value={`${result.top_lift?.toFixed(2) ?? "--"}×`} valueClass="text-blue-400" />
         <Stat icon="🎯" label="Confidence trung bình" value={`${avgConf.toFixed(1)}%`} valueClass="text-amber-500" />
       </section>
+
+      {/* Copy section */}
+      <CopySection predictions={result.predictions} />
 
       {/* Top 20 + Models + Methodology */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-6 mb-6 items-start">
@@ -241,5 +245,119 @@ function Stat({
         <div className={`text-xl font-extrabold font-mono ${valueClass}`}>{value}</div>
       </div>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Copy Section — for batch-copying lo numbers
+// ─────────────────────────────────────────────
+
+const COPY_PRESETS = [5, 10, 20, 50, 100] as const;
+type CopySep = "space" | "comma" | "newline";
+
+function CopySection({
+  predictions,
+}: {
+  predictions: { lo_number: string; rank: number; probability: number }[];
+}) {
+  const toast = useToast();
+  const [copyN, setCopyN] = useState<number>(20);
+  const [sep, setSep] = useState<CopySep>("space");
+
+  const formatted = useMemo(() => {
+    const nums = predictions.slice(0, copyN).map((p) => p.lo_number);
+    const sepChar = sep === "space" ? " " : sep === "comma" ? ", " : "\n";
+    return nums.join(sepChar);
+  }, [predictions, copyN, sep]);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(formatted);
+      toast.show("success", `Đã copy ${copyN} số vào clipboard`);
+    } catch {
+      toast.show("error", "Trình duyệt không cho phép copy. Bấm Ctrl+C trên textbox.");
+    }
+  }
+
+  const sepLabels: Record<CopySep, string> = {
+    space: "Khoảng cách",
+    comma: "Dấu phẩy",
+    newline: "Mỗi số 1 dòng",
+  };
+
+  return (
+    <section className="mb-4 md:mb-6 rounded-2xl bg-gradient-to-br from-emerald-900/30 to-teal-900/20 border border-emerald-500/30 overflow-hidden">
+      <div className="px-4 md:px-6 py-3 md:py-4 border-b border-white/[0.06]">
+        <h2 className="text-sm md:text-base font-bold flex items-center gap-2">
+          📋 Copy Danh Sách Lô Dự Đoán
+        </h2>
+        <p className="text-[0.7rem] md:text-xs text-slate-400 mt-0.5">
+          Chọn số lượng + format → bấm Copy.
+        </p>
+      </div>
+
+      <div className="p-4 md:p-5">
+        {/* Preset buttons */}
+        <div className="mb-3">
+          <div className="text-[0.7rem] text-slate-400 mb-1.5 font-semibold">Số lượng:</div>
+          <div className="flex flex-wrap gap-1.5">
+            {COPY_PRESETS.map((n) => (
+              <button
+                key={n}
+                onClick={() => setCopyN(n)}
+                className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${
+                  copyN === n
+                    ? "bg-emerald-500 text-white"
+                    : "bg-white/[0.05] text-slate-300 hover:bg-white/[0.1]"
+                }`}
+              >
+                Top {n}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Separator buttons */}
+        <div className="mb-3">
+          <div className="text-[0.7rem] text-slate-400 mb-1.5 font-semibold">Format:</div>
+          <div className="flex flex-wrap gap-1.5">
+            {(Object.keys(sepLabels) as CopySep[]).map((s) => (
+              <button
+                key={s}
+                onClick={() => setSep(s)}
+                className={`px-3 py-1.5 text-xs rounded transition-colors ${
+                  sep === s
+                    ? "bg-blue-500/30 border border-blue-400/50 text-blue-200"
+                    : "bg-white/[0.03] border border-white/[0.08] text-slate-400 hover:bg-white/[0.08]"
+                }`}
+              >
+                {sepLabels[s]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Preview */}
+        <textarea
+          readOnly
+          value={formatted}
+          rows={sep === "newline" ? Math.min(copyN, 10) : 4}
+          className="w-full px-3 py-2.5 rounded-lg bg-[#0f1623] border border-[#1f2937] text-slate-100 font-mono text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+          onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+        />
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 justify-between">
+          <span className="text-[0.7rem] text-slate-500">
+            {copyN} số • {formatted.length} ký tự
+          </span>
+          <button
+            onClick={handleCopy}
+            className="px-4 py-2 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-bold text-sm shadow-[0_2px_12px_rgba(16,185,129,0.35)] hover:shadow-[0_4px_20px_rgba(16,185,129,0.5)]"
+          >
+            📋 Copy ({copyN} số)
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
