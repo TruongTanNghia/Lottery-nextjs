@@ -12,25 +12,29 @@ interface Props {
 }
 
 const STREAK_OPTIONS: Array<{ key: string; label: string; match: (l: LimitItem) => boolean }> = [
-  { key: "all_streak", label: "Tất cả ≥2 ngày", match: (l) => l.consecutive_days >= 2 },
-  { key: "2", label: "2 ngày liên tiếp", match: (l) => l.consecutive_days === 2 },
-  { key: "3", label: "3 ngày liên tiếp", match: (l) => l.consecutive_days === 3 },
-  { key: "4", label: "4 ngày liên tiếp", match: (l) => l.consecutive_days === 4 },
-  { key: "5+", label: "Hot ≥5 ngày", match: (l) => l.consecutive_days >= 5 },
+  { key: "1", label: "1 ngày", match: (l) => l.consecutive_days === 1 },
+  { key: "2", label: "2 ngày", match: (l) => l.consecutive_days === 2 },
+  { key: "3", label: "3 ngày", match: (l) => l.consecutive_days === 3 },
+  { key: "4", label: "4 ngày", match: (l) => l.consecutive_days === 4 },
+  { key: "5+", label: "5+ ngày (hot)", match: (l) => l.consecutive_days >= 5 },
 ];
 
 const COLD_OPTIONS: Array<{ key: string; label: string; match: (l: LimitItem) => boolean }> = [
-  { key: "0", label: "Mới về hôm nay", match: (l) => l.days_since_last === 0 },
-  { key: "1-3", label: "1-3 ngày chưa về", match: (l) => l.days_since_last >= 1 && l.days_since_last <= 3 },
-  { key: "4-7", label: "4-7 ngày chưa về", match: (l) => l.days_since_last >= 4 && l.days_since_last <= 7 },
-  { key: "8-14", label: "8-14 ngày", match: (l) => l.days_since_last >= 8 && l.days_since_last <= 14 },
-  { key: "15+", label: "≥15 ngày (rất nguội)", match: (l) => l.days_since_last >= 15 },
+  { key: "0", label: "0 ngày (mới về)", match: (l) => l.days_since_last === 0 },
+  { key: "1", label: "1 ngày", match: (l) => l.days_since_last === 1 },
+  { key: "2", label: "2 ngày", match: (l) => l.days_since_last === 2 },
+  { key: "3", label: "3 ngày", match: (l) => l.days_since_last === 3 },
+  { key: "4", label: "4 ngày", match: (l) => l.days_since_last === 4 },
+  { key: "5", label: "5 ngày", match: (l) => l.days_since_last === 5 },
+  { key: "6", label: "6 ngày", match: (l) => l.days_since_last === 6 },
+  { key: "7", label: "7 ngày", match: (l) => l.days_since_last === 7 },
+  { key: "8+", label: "8+ ngày", match: (l) => l.days_since_last >= 8 },
 ];
 
 export default function StreakCopyCard({ limits }: Props) {
   const toast = useToast();
   const [filterMode, setFilterMode] = useState<Filter>("consecutive");
-  const [optionKey, setOptionKey] = useState<string>("all_streak");
+  const [optionKey, setOptionKey] = useState<string>("2");
   const [sep, setSep] = useState<CopySep>("space");
 
   const options = filterMode === "consecutive" ? STREAK_OPTIONS : COLD_OPTIONS;
@@ -48,7 +52,7 @@ export default function StreakCopyCard({ limits }: Props) {
 
   function switchMode(m: Filter) {
     setFilterMode(m);
-    setOptionKey(m === "consecutive" ? "all_streak" : "0");
+    setOptionKey(m === "consecutive" ? "2" : "0");
   }
 
   async function handleCopy() {
