@@ -218,16 +218,37 @@ function RegionCard({ region, state, onScrape, onReload }: RegionCardProps) {
               <Stat label="Lô unique" value={String(data.unique_lo_count)} valueClass="text-emerald-400" />
             </div>
 
-            <h4 className="text-xs text-slate-400 mb-2 font-semibold">Lô về hôm nay:</h4>
+            <h4 className="text-xs text-slate-400 mb-2 font-semibold">
+              Lô về hôm nay:{" "}
+              <span className="text-slate-500 font-normal">
+                ({data.unique_lo_count} unique / {data.total_numbers} tổng — lô có ×N là về nhiều lần)
+              </span>
+            </h4>
             <div className="flex flex-wrap gap-1 mb-4">
-              {data.unique_lo.map((lo) => (
-                <span
-                  key={lo}
-                  className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-semibold text-xs"
-                >
-                  {lo}
-                </span>
-              ))}
+              {(() => {
+                const counts: Record<string, number> = {};
+                for (const rows of Object.values(data.by_province)) {
+                  for (const r of rows) counts[r.lo_number] = (counts[r.lo_number] ?? 0) + 1;
+                }
+                return data.unique_lo.map((lo) => {
+                  const c = counts[lo] ?? 1;
+                  const dup = c > 1;
+                  return (
+                    <span
+                      key={lo}
+                      title={dup ? `Lô ${lo} về ${c} lần hôm nay` : `Lô ${lo}`}
+                      className={`px-2 py-0.5 rounded font-mono font-semibold text-xs ${
+                        dup
+                          ? "bg-amber-500/20 border border-amber-400/50 text-amber-200"
+                          : "bg-emerald-500/15 border border-emerald-500/30 text-emerald-300"
+                      }`}
+                    >
+                      {lo}
+                      {dup && <span className="ml-0.5 text-[0.65rem]">×{c}</span>}
+                    </span>
+                  );
+                });
+              })()}
             </div>
 
             <details className="text-xs">
