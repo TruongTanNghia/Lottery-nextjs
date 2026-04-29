@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface Props {
@@ -9,6 +10,12 @@ interface Props {
   statusText: string;
   onScrape: () => void;
   isScraping: boolean;
+}
+
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return m ? decodeURIComponent(m[1]) : null;
 }
 
 export default function Header({

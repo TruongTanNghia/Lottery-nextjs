@@ -250,6 +250,22 @@ export async function getScrapedDates(region?: Region): Promise<{ date: string; 
   );
 }
 
+/**
+ * Wipe all data for a specific (date, region). Used before re-scraping
+ * the same date to avoid duplicate rows / inflated counts.
+ */
+export async function deleteDataForDate(date: string, region: Region): Promise<void> {
+  const db = getDb();
+  await db.batch(
+    [
+      { sql: "DELETE FROM lottery_results WHERE date = ? AND region = ?", args: [date, region] },
+      { sql: "DELETE FROM lo_daily WHERE date = ? AND region = ?", args: [date, region] },
+      { sql: "DELETE FROM scraped_dates WHERE date = ? AND region = ?", args: [date, region] },
+    ],
+    "write"
+  );
+}
+
 export async function cleanupOldData(days: number = 30): Promise<number> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);

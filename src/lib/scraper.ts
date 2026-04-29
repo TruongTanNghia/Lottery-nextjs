@@ -10,6 +10,7 @@
 import * as cheerio from "cheerio";
 import type { Element } from "domhandler";
 import {
+  deleteDataForDate,
   isDateScraped,
   saveLotteryResults,
   VALID_REGIONS,
@@ -157,6 +158,8 @@ async function scrapeXsmnDay(date: Date, force: boolean = false): Promise<Record
 
   const results = parseXsmnPage(html);
   if (Object.keys(results).length > 0) {
+    // Force re-scrape: wipe old data first to avoid duplicate rows + inflated counts
+    if (force) await deleteDataForDate(dateStr, "xsmn");
     for (const [prov, nums] of Object.entries(results)) {
       if (nums.length > 0) {
         await saveLotteryResults({ date: dateStr, province: prov, region: "xsmn", results: nums });
@@ -235,6 +238,7 @@ async function scrapeXsmbDay(date: Date, force: boolean = false): Promise<Record
 
   const results = parseXsmbPage(html);
   if (results["Mien Bac"]?.length > 0) {
+    if (force) await deleteDataForDate(dateStr, "xsmb");
     await saveLotteryResults({
       date: dateStr,
       province: "Mien Bac",
@@ -353,6 +357,7 @@ async function scrapeXsmtDay(date: Date, force: boolean = false): Promise<Record
 
   const results = parseXsmtPage(html);
   if (Object.keys(results).length > 0) {
+    if (force) await deleteDataForDate(dateStr, "xsmt");
     for (const [prov, nums] of Object.entries(results)) {
       if (nums.length > 0) {
         await saveLotteryResults({ date: dateStr, province: prov, region: "xsmt", results: nums });
