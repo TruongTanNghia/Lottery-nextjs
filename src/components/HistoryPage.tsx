@@ -52,6 +52,52 @@ export default function HistoryPage({ region }: { region: Region }) {
   const [days, setDays] = useState(45);
   const [rescraping, setRescraping] = useState(false);
   const [rescrapeStatus, setRescrapeStatus] = useState("");
+  const [healthChecking, setHealthChecking] = useState(false);
+
+  async function runHealthCheck() {
+    setHealthChecking(true);
+    try {
+      const res = await fetch("/api/diagnostic");
+      const j = await res.json();
+      if (!res.ok) {
+        toast.show("error", `Lỗi: ${j.detail ?? res.statusText}`);
+        return;
+      }
+
+      const s = j.summary;
+      const isHealthy = j.health === "healthy";
+
+      const lines: string[] = [
+        `XSMN: ${s.total_dates_xsmn} ngày`,
+        `XSMB: ${s.total_dates_xsmb} ngày`,
+        `XSMT: ${s.total_dates_xsmt} ngày`,
+      ];
+      if (s.total_anomalies > 0) lines.push(`⚠️ ${s.total_anomalies} anomalies`);
+      if (s.total_placeholder_provinces > 0)
+        lines.push(`⚠️ ${s.total_placeholder_provinces} placeholder provinces`);
+
+      const message = (isHealthy ? "✅ DB sạch! " : "⚠️ DB có vấn đề. ") + lines.join(" • ");
+      toast.show(isHealthy ? "success" : "error", message);
+
+      // Log full details to console for inspection
+      console.log("=== /api/diagnostic ===", j);
+      if (!isHealthy) {
+        for (const region of ["xsmn", "xsmb", "xsmt"] as const) {
+          const det = j.details[region];
+          if (det.anomalies.length > 0) {
+            console.warn(`${region.toUpperCase()} anomalies:`, det.anomalies);
+          }
+          if (det.placeholder_provinces.length > 0) {
+            console.warn(`${region.toUpperCase()} placeholders:`, det.placeholder_provinces);
+          }
+        }
+      }
+    } catch (err) {
+      toast.show("error", `Lỗi: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setHealthChecking(false);
+    }
+  }
 
   function reload() {
     setLoading(true);
@@ -162,6 +208,14 @@ export default function HistoryPage({ region }: { region: Region }) {
                 </button>
               ))}
             </div>
+            <button
+              onClick={runHealthCheck}
+              disabled={healthChecking}
+              title="Kiểm tra DB count vs expected"
+              className="px-3 py-1.5 text-xs rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-200 font-semibold disabled:opacity-50"
+            >
+              {healthChecking ? "⏳" : "🩺 Check DB"}
+            </button>
             <button
               onClick={fullRescrape}
               disabled={rescraping}
