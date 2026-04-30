@@ -129,13 +129,11 @@ export default function HistoryPage({ region }: { region: Region }) {
 function DayCard({ day, view }: { day: DayBlock; view: ViewMode }) {
   const provinceCount = day.provinces.length;
 
-  // Collect all unique prize types across provinces (in order)
   const prizeOrder = ["G.DB", "G.1", "G.2", "G.3", "G.4", "G.5", "G.6", "G.7", "G.8"];
   const prizeSet = new Set<string>();
   for (const p of day.provinces) for (const pr of p.prizes) prizeSet.add(pr.prize_type);
   const prizes = prizeOrder.filter((p) => prizeSet.has(p));
 
-  // Build cell map: prize_type × province → numbers
   function getNumbers(prizeType: string, provinceName: string): string[] {
     const prov = day.provinces.find((p) => p.name === provinceName);
     if (!prov) return [];
@@ -143,27 +141,35 @@ function DayCard({ day, view }: { day: DayBlock; view: ViewMode }) {
     return pr?.numbers ?? [];
   }
 
-  const valueColor =
-    view === "last2"
-      ? "text-emerald-400"
-      : view === "last3"
-      ? "text-amber-400"
-      : "text-slate-100";
+  // Total numbers per province (for verification)
+  function totalNumbers(provName: string): number {
+    const prov = day.provinces.find((p) => p.name === provName);
+    if (!prov) return 0;
+    return prov.prizes.reduce((s, pr) => s + pr.numbers.length, 0);
+  }
+
+  const chipBase = "inline-block px-1.5 py-0.5 rounded font-mono font-bold leading-none border";
+  const chipColor: Record<ViewMode, string> = {
+    normal: "bg-white/[0.04] border-white/[0.08] text-slate-100",
+    last2: "bg-emerald-500/10 border-emerald-500/30 text-emerald-300",
+    last3: "bg-amber-500/10 border-amber-500/30 text-amber-300",
+  };
 
   return (
     <section className="rounded-2xl bg-[#111827] border border-white/[0.06] overflow-hidden">
-      <div className="px-4 md:px-5 py-3 border-b border-white/[0.06] flex items-center justify-between">
+      <div className="px-4 md:px-5 py-3 border-b border-white/[0.06] flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm md:text-base font-bold">
           {formatDate(day.date)}{" "}
           <span className="text-slate-500 font-mono text-xs">({day.date})</span>
         </h3>
         <span className="text-[0.7rem] text-slate-400">
-          {provinceCount} đài
+          {provinceCount} đài •{" "}
+          {day.provinces.map((p) => `${p.name}(${totalNumbers(p.name)})`).join(" / ")}
         </span>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-xs md:text-sm font-mono border-collapse">
+        <table className="w-full text-xs md:text-sm border-collapse">
           <thead>
             <tr className="bg-[#0f1623] border-b border-white/[0.06]">
               <th className="px-2 md:px-3 py-2 text-left text-[0.7rem] font-semibold text-amber-400 uppercase tracking-wide w-12 md:w-14">
@@ -172,7 +178,7 @@ function DayCard({ day, view }: { day: DayBlock; view: ViewMode }) {
               {day.provinces.map((p) => (
                 <th
                   key={p.name}
-                  className="px-2 md:px-3 py-2 text-center text-[0.7rem] font-semibold text-slate-300 border-l border-white/[0.04]"
+                  className="px-2 md:px-3 py-2 text-center text-[0.72rem] font-semibold text-slate-200 border-l border-white/[0.04]"
                 >
                   {p.name}
                 </th>
@@ -182,21 +188,29 @@ function DayCard({ day, view }: { day: DayBlock; view: ViewMode }) {
           <tbody>
             {prizes.map((prize) => (
               <tr key={prize} className="border-b border-white/[0.03] hover:bg-white/[0.01]">
-                <td className="px-2 md:px-3 py-2 font-bold text-amber-300 text-[0.72rem]">
+                <td className="px-2 md:px-3 py-2 font-bold text-amber-300 text-[0.72rem] align-top">
                   {PRIZE_LABELS[prize] ?? prize}
                 </td>
                 {day.provinces.map((prov) => {
                   const nums = getNumbers(prize, prov.name);
+                  const isDB = prize === "G.DB";
                   return (
                     <td
                       key={prov.name}
-                      className={`px-2 md:px-3 py-1.5 text-center border-l border-white/[0.04] ${
-                        prize === "G.DB" ? "font-extrabold text-base md:text-lg" : "font-semibold"
-                      } ${valueColor}`}
+                      className="px-2 md:px-3 py-2 text-center border-l border-white/[0.04] align-top"
                     >
-                      <div className="flex flex-wrap justify-center gap-x-1.5 gap-y-0.5">
+                      <div className="flex flex-wrap justify-center gap-1">
                         {nums.map((n, i) => (
-                          <span key={i}>{transformNumber(n, view)}</span>
+                          <span
+                            key={i}
+                            className={`${chipBase} ${chipColor[view]} ${
+                              isDB
+                                ? "text-sm md:text-base px-2 py-1"
+                                : "text-[0.72rem] md:text-xs"
+                            }`}
+                          >
+                            {transformNumber(n, view)}
+                          </span>
                         ))}
                       </div>
                     </td>
