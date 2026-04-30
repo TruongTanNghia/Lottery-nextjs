@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { formatDate } from "@/lib/format";
 import { REGION_LABELS, type Region } from "@/lib/types";
+import { useToast } from "./Toast";
 
 type ViewMode = "normal" | "last2" | "last3";
 
@@ -44,19 +45,68 @@ function transformNumber(num: string, mode: ViewMode): string {
 }
 
 export default function HistoryPage({ region }: { region: Region }) {
+  const toast = useToast();
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewMode>("normal");
   const [days, setDays] = useState(45);
+  const [rescraping, setRescraping] = useState(false);
+  const [rescrapeStatus, setRescrapeStatus] = useState("");
 
-  useEffect(() => {
+  function reload() {
     setLoading(true);
     fetch(`/api/results/history-full?region=${region}&days=${days}`)
       .then((r) => r.json())
       .then((d) => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [region, days]);
+
+  async function fullRescrape() {
+    if (
+      !confirm(
+        "🔁 QUÉT LẠI TỪ ĐẦU?\n\nSẽ XÓA TOÀN BỘ data đã scrape rồi crawl lại 30 ngày từ xsmn.mobi với parser mới.\n\nMất ~3-5 phút. Tiếp tục?"
+      )
+    )
+      return;
+
+    setRescraping(true);
+    try {
+      // Step 1: wipe
+      setRescrapeStatus("1/4: Xóa data cũ...");
+      const r0 = await fetch("/api/reset-data", { method: "POST" });
+      if (!r0.ok) throw new Error(`reset failed: ${r0.status}`);
+
+      // Step 2-3: chunked scrape (5 days at a time, force=false skips already-scraped)
+      const chunks = [10, 20, 30];
+      for (let i = 0; i < chunks.length; i++) {
+        const d = chunks[i];
+        setRescrapeStatus(`${i + 2}/4: Scrape ${d} ngày...`);
+        const r = await fetch(`/api/scrape/all?days=${d}`, { method: "POST" });
+        if (!r.ok) {
+          console.warn(`Scrape ${d} ngày fail, tiếp tục...`);
+        }
+      }
+
+      // Step 4: recalc
+      setRescrapeStatus("4/4: Tính lại hạn mức...");
+      const r4 = await fetch("/api/recalculate", { method: "POST" });
+      if (!r4.ok) throw new Error(`recalc failed: ${r4.status}`);
+
+      toast.show("success", "✅ Quét lại xong! Reload data...");
+      reload();
+    } catch (err) {
+      toast.show("error", `Lỗi: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setRescraping(false);
+      setRescrapeStatus("");
+    }
+  }
 
   if (loading) {
     return <div className="text-center py-20 text-slate-500">Đang tải lịch sử...</div>;
@@ -112,6 +162,14 @@ export default function HistoryPage({ region }: { region: Region }) {
                 </button>
               ))}
             </div>
+            <button
+              onClick={fullRescrape}
+              disabled={rescraping}
+              title="Xóa toàn bộ data và scrape lại 30 ngày"
+              className="px-3 py-1.5 text-xs rounded bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/40 text-rose-200 font-semibold disabled:opacity-50"
+            >
+              {rescraping ? "⏳ " + rescrapeStatus : "🔁 Quét lại từ đầu"}
+            </button>
           </div>
         </div>
       </section>
