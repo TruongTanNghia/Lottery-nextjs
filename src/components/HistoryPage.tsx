@@ -122,32 +122,80 @@ export default function HistoryPage({ region }: { region: Region }) {
       return;
 
     setRescraping(true);
+    let resetOk = false;
+    let scrapeAttempts = 0;
+    let scrapeOk = 0;
+
     try {
       // Step 1: wipe
-      setRescrapeStatus("1/4: Xóa data cũ...");
+      setRescrapeStatus("1/5: Xóa data cũ...");
       const r0 = await fetch("/api/reset-data", { method: "POST" });
-      if (!r0.ok) throw new Error(`reset failed: ${r0.status}`);
+      if (!r0.ok) {
+        const errBody = await r0.text();
+        throw new Error(`Reset failed (${r0.status}): ${errBody.slice(0, 100)}`);
+      }
+      resetOk = true;
 
-      // Step 2-3: chunked scrape (5 days at a time, force=false skips already-scraped)
+      // Step 2-4: chunked scrape with retry on failure
       const chunks = [10, 20, 30];
       for (let i = 0; i < chunks.length; i++) {
         const d = chunks[i];
-        setRescrapeStatus(`${i + 2}/4: Scrape ${d} ngày...`);
-        const r = await fetch(`/api/scrape/all?days=${d}`, { method: "POST" });
-        if (!r.ok) {
-          console.warn(`Scrape ${d} ngày fail, tiếp tục...`);
+        setRescrapeStatus(`${i + 2}/5: Scrape ${d} ngày...`);
+        scrapeAttempts++;
+
+        let attempted = false;
+        for (let retry = 0; retry < 2; retry++) {
+          try {
+            const r = await fetch(`/api/scrape/all?days=${d}`, { method: "POST" });
+            if (r.ok) {
+              scrapeOk++;
+              attempted = true;
+              break;
+            }
+            console.warn(`Scrape ${d} ngày fail attempt ${retry + 1}: ${r.status}`);
+            await new Promise((res) => setTimeout(res, 2000));
+          } catch (e) {
+            console.warn(`Scrape ${d} ngày exception attempt ${retry + 1}:`, e);
+            await new Promise((res) => setTimeout(res, 2000));
+          }
+        }
+        if (!attempted) {
+          console.warn(`Scrape ${d} ngày bỏ qua sau 2 lần thử`);
         }
       }
 
-      // Step 4: recalc
-      setRescrapeStatus("4/4: Tính lại hạn mức...");
+      // Step 5: recalc
+      setRescrapeStatus("5/5: Tính lại hạn mức...");
       const r4 = await fetch("/api/recalculate", { method: "POST" });
-      if (!r4.ok) throw new Error(`recalc failed: ${r4.status}`);
+      if (!r4.ok) console.warn(`Recalc failed: ${r4.status}`);
 
-      toast.show("success", "✅ Quét lại xong! Reload data...");
+      // Bonus: auto health check
+      setRescrapeStatus("Verify...");
+      const diag = await fetch("/api/diagnostic");
+      const dj = await diag.json();
+      const healthy = dj.health === "healthy";
+      const summary =
+        `XSMN ${dj.summary?.total_dates_xsmn ?? 0}d, ` +
+        `XSMB ${dj.summary?.total_dates_xsmb ?? 0}d, ` +
+        `XSMT ${dj.summary?.total_dates_xsmt ?? 0}d` +
+        (dj.summary?.total_anomalies ? ` • ${dj.summary.total_anomalies} anomalies` : "") +
+        (dj.summary?.total_placeholder_provinces
+          ? ` • ${dj.summary.total_placeholder_provinces} placeholder`
+          : "");
+
+      if (healthy) {
+        toast.show("success", `✅ DB sạch! ${summary}`);
+      } else {
+        toast.show("error", `⚠️ Vẫn có vấn đề: ${summary}`);
+        console.warn("Diagnostic details:", dj);
+      }
       reload();
     } catch (err) {
-      toast.show("error", `Lỗi: ${err instanceof Error ? err.message : err}`);
+      toast.show(
+        "error",
+        `Lỗi: ${err instanceof Error ? err.message : err}` +
+          (resetOk ? ` (reset OK, ${scrapeOk}/${scrapeAttempts} scrapes OK)` : "")
+      );
     } finally {
       setRescraping(false);
       setRescrapeStatus("");
