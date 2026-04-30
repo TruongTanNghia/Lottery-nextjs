@@ -14,6 +14,7 @@ import StatsBar from "@/components/StatsBar";
 import StreakCopyCard from "@/components/StreakCopyCard";
 import { ToastProvider, useToast } from "@/components/Toast";
 import AccuracyPage from "@/components/AccuracyPage";
+import HistoryPage from "@/components/HistoryPage";
 import PredictionPage from "@/components/PredictionPage";
 import TodayPage from "@/components/TodayPage";
 import { formatDate } from "@/lib/format";
@@ -40,7 +41,7 @@ function Dashboard() {
   const toast = useToast();
 
   const [region, setRegion] = useState<Region>("xsmn");
-  const [view, setView] = useState<"dashboard" | "prediction" | "today" | "accuracy">("dashboard");
+  const [view, setView] = useState<"dashboard" | "prediction" | "today" | "accuracy" | "history">("dashboard");
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -375,8 +376,10 @@ function Dashboard() {
           <PredictionPage region={region} />
         ) : view === "today" ? (
           <TodayPage />
-        ) : (
+        ) : view === "accuracy" ? (
           <AccuracyPage region={region} />
+        ) : (
+          <HistoryPage region={region} />
         )}
       </main>
 
