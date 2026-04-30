@@ -8,18 +8,16 @@
  * After reset, run /api/scrape/all?days=N to re-populate.
  */
 import { NextResponse } from "next/server";
-import { checkCronAuth, ensureDb, jsonError } from "@/lib/api-utils";
+import { ensureDb, jsonError } from "@/lib/api-utils";
 import { exec } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request) {
+// Auth handled by middleware (logged-in admin session). No extra CRON_SECRET needed.
+export async function POST() {
   try {
-    if (!checkCronAuth(req)) {
-      return NextResponse.json({ status: "unauthorized" }, { status: 401 });
-    }
     await ensureDb();
 
     const r1 = await exec("DELETE FROM lottery_results");
