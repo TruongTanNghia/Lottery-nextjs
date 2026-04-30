@@ -109,12 +109,23 @@ function parseMultiProvinceTable(
   results: Record<string, { prize_type: string; number: string }[]>
 ): void {
   const provinces: string[] = [];
-  const headerRow = table.find("tr.header").first();
+
+  // Find ANY tr that contains <th> elements (header row, regardless of class).
+  // xsmn.mobi uses different classes for different regions:
+  //   XSMN: <tr> (no class)
+  //   XSMT: <tr class="gr-yellow">
+  //   Legacy:  <tr class="header">
+  const headerRow = table
+    .find("tr")
+    .filter((_, r) => $(r).find("th").length > 0)
+    .first();
+
   if (headerRow.length) {
     headerRow.find("th").each((_, th) => {
       const $th = $(th);
       const link = $th.find("a").first();
       const name = (link.length ? link.text() : $th.text()).trim();
+      // Skip empty labels (e.g., the prize-column header is often "")
       if (name && !/^\d+$/.test(name) && name.length > 1) provinces.push(name);
     });
   }
@@ -123,7 +134,9 @@ function parseMultiProvinceTable(
 
   table.find("tr").each((_, row) => {
     const $row = $(row);
-    if ($row.hasClass("header")) return;
+    // Skip ANY row with <th> elements (header rows)
+    if ($row.find("th").length > 0) return;
+
     const cells = $row.find("td");
     if (cells.length === 0) return;
 
