@@ -49,8 +49,8 @@ export async function GET(req: Request) {
     const recalcMs = Date.now() - t1;
     console.log(`[Cron] Recalc done in ${recalcMs}ms`);
 
-    // Trim to rolling 45-day window
-    const deleted = await cleanupOldData(45);
+    // Trim to rolling 30-day window
+    const deleted = await cleanupOldData(30);
     console.log(`[Cron] Cleanup deleted ${deleted} stale rows`);
 
     const total = Object.values(counts).reduce((s, n) => s + n, 0);

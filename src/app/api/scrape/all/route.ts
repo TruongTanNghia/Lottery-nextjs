@@ -17,12 +17,12 @@ export async function POST(req: Request) {
   try {
     await ensureDb();
     const url = new URL(req.url);
-    const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "5"), 1), 45);
+    const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "5"), 1), 30);
 
     const counts = await scrapeAllRegionsRange(days, 600);
 
-    // Maintain rolling 45-day window: trim anything older than 45 days
-    const deleted = await cleanupOldData(45);
+    // Maintain rolling 30-day window: trim anything older than 30 days
+    const deleted = await cleanupOldData(30);
 
     return NextResponse.json({
       status: "success",
