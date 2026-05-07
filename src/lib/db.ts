@@ -66,6 +66,20 @@ export async function initDb(): Promise<void> {
          value TEXT NOT NULL,
          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
        )`,
+      `CREATE TABLE IF NOT EXISTS model_performance (
+         date TEXT NOT NULL,
+         region TEXT NOT NULL,
+         model_name TEXT NOT NULL,
+         top_n INTEGER NOT NULL,
+         hit_count INTEGER NOT NULL,
+         total_lo_appeared INTEGER NOT NULL,
+         hit_rate REAL NOT NULL,
+         baseline_rate REAL NOT NULL,
+         lift REAL NOT NULL,
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+         PRIMARY KEY (date, region, model_name, top_n)
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_model_perf_region_date ON model_performance(region, date DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_results_date ON lottery_results(date)`,
       `CREATE INDEX IF NOT EXISTS idx_results_region ON lottery_results(region)`,
       `CREATE INDEX IF NOT EXISTS idx_lo_daily_date ON lo_daily(date)`,

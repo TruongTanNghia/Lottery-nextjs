@@ -376,7 +376,7 @@ function Dashboard() {
         ) : view === "prediction" ? (
           <PredictionPage region={region} />
         ) : view === "vip" ? (
-          <PredictionVipPage region={region} />
+          <PredictionVipPage region={region} latestScraped={latestScraped} />
         ) : view === "today" ? (
           <TodayPage />
         ) : view === "accuracy" ? (

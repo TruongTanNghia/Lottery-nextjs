@@ -14,6 +14,7 @@ import { checkCronAuth, ensureDb, jsonError } from "@/lib/api-utils";
 import { scrapeAllRegionsRange } from "@/lib/scraper";
 import { updateAllLoStatus } from "@/lib/limit-engine";
 import { cleanupOldData, query, VALID_REGIONS } from "@/lib/db";
+import { computeAndSaveModelPerformance } from "@/lib/prediction";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -53,13 +54,34 @@ export async function GET(req: Request) {
     const deleted = await cleanupOldData(30);
     console.log(`[Cron] Cleanup deleted ${deleted} stale rows`);
 
+    // Compute model performance for the latest scraped date per region
+    // (Used by /api/predict/adaptive for self-tuning weights.)
+    const t2 = Date.now();
+    const perfResults: Record<string, number> = {};
+    for (const region of VALID_REGIONS) {
+      const latestRow = await query<{ date: string }>(
+        "SELECT MAX(date) as date FROM lo_daily WHERE region = ?",
+        [region]
+      );
+      const latestDate = latestRow[0]?.date;
+      if (latestDate) {
+        const r = await computeAndSaveModelPerformance(region, latestDate, 10, 60);
+        perfResults[region] = r.saved;
+      } else {
+        perfResults[region] = 0;
+      }
+    }
+    const perfMs = Date.now() - t2;
+    console.log(`[Cron] Model performance computed in ${perfMs}ms:`, perfResults);
+
     const total = Object.values(counts).reduce((s, n) => s + n, 0);
     return NextResponse.json({
       status: "success",
-      message: `Scraped ${total} day-records, recalc ${recalcMs}ms, cleanup ${deleted} rows`,
+      message: `Scraped ${total}, recalc ${recalcMs}ms, cleanup ${deleted}, perf ${perfMs}ms`,
       counts,
       cleanup_deleted: deleted,
-      timing_ms: { scrape: scrapeMs, recalc: recalcMs, total: scrapeMs + recalcMs },
+      performance_saved: perfResults,
+      timing_ms: { scrape: scrapeMs, recalc: recalcMs, perf: perfMs, total: scrapeMs + recalcMs + perfMs },
       ran_at: startedAt,
     });
   } catch (err) {
