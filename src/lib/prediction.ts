@@ -1267,3 +1267,45 @@ export async function getAdaptiveScorecard(
 function formatVnd(n: number): string {
   return new Intl.NumberFormat("vi-VN").format(Math.round(n)) + "đ";
 }
+
+/**
+ * Predict top-N picks for a HISTORICAL date using the adaptive ensemble
+ * with weights derived from data strictly BEFORE that date.
+ *
+ * Used by simulation.ts to replay history without leaking the target day.
+ */
+export async function predictTopNHistorical(
+  region: Region,
+  date: string,
+  topN: number = 10,
+  perfWindowDays: number = 14
+): Promise<{ picks: string[]; using_default: boolean }> {
+  const history = await loadHistory(region, 60, date);
+  if (Object.keys(history).length < 3) {
+    return { picks: ALL_LOS.slice(0, topN), using_default: true };
+  }
+
+  const today = new Date();
+  const todayMs = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const [y, m, d] = date.split("-").map(Number);
+  const offsetDays = Math.max(0, Math.floor((todayMs - Date.UTC(y, m - 1, d)) / 86_400_000));
+
+  const cfg = await getAdaptiveWeights(region, perfWindowDays, topN, offsetDays);
+  const usingDefault = cfg.days_with_data === 0;
+
+  const raw = runAllNineModels(history);
+  const composite = emptyScores();
+  for (const k of MODEL_KEYS) {
+    const norm = normalize(raw[k]);
+    const w = cfg.weights[k];
+    for (const lo of ALL_LOS) composite[lo] += w * norm[lo];
+  }
+
+  const picks = ALL_LOS
+    .map((lo) => ({ lo, s: composite[lo] }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, topN)
+    .map((p) => p.lo);
+
+  return { picks, using_default: usingDefault };
+}

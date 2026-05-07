@@ -17,6 +17,7 @@ import AccuracyPage from "@/components/AccuracyPage";
 import HistoryPage from "@/components/HistoryPage";
 import PredictionPage from "@/components/PredictionPage";
 import PredictionVipPage from "@/components/PredictionVipPage";
+import SimPage from "@/components/SimPage";
 import TodayPage from "@/components/TodayPage";
 import { formatDate } from "@/lib/format";
 import {
@@ -42,7 +43,7 @@ function Dashboard() {
   const toast = useToast();
 
   const [region, setRegion] = useState<Region>("xsmn");
-  const [view, setView] = useState<"dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip">("dashboard");
+  const [view, setView] = useState<"dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim">("dashboard");
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -377,6 +378,8 @@ function Dashboard() {
           <PredictionPage region={region} />
         ) : view === "vip" ? (
           <PredictionVipPage region={region} latestScraped={latestScraped} />
+        ) : view === "sim" ? (
+          <SimPage region={region} />
         ) : view === "today" ? (
           <TodayPage />
         ) : view === "accuracy" ? (
