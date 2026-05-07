@@ -276,6 +276,53 @@ function modelPair(history: DateMap): Record<string, number> {
 }
 
 // ─────────────────────────────────────────────
+// Model 8: Mirror Pair (kép đảo: 12↔21, 36↔63...)
+// ─────────────────────────────────────────────
+
+function mirrorOf(lo: string): string {
+  return lo[1] + lo[0];
+}
+
+function modelMirror(history: DateMap): Record<string, number> {
+  if (Object.keys(history).length === 0) return emptyScores();
+  const base = modelFrequency(history);
+  // Score for X = freq of mirror(X) — if mirror is hot, boost X
+  const out: Record<string, number> = {};
+  for (const lo of ALL_LOS) {
+    out[lo] = base[mirrorOf(lo)] ?? 0;
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────
+// Model 9: Day-of-Week (lô hay về cùng thứ trong tuần)
+// ─────────────────────────────────────────────
+
+function modelDayOfWeek(history: DateMap): Record<string, number> {
+  const dates = Object.keys(history).sort();
+  if (dates.length === 0) return emptyScores();
+
+  const lastDate = new Date(dates[dates.length - 1] + "T00:00:00");
+  const tomorrow = new Date(lastDate);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const targetDow = tomorrow.getDay(); // 0=Sun ... 6=Sat
+
+  const counts = emptyScores();
+  let matchingDays = 0;
+  for (const dateStr of dates) {
+    const d = new Date(dateStr + "T00:00:00");
+    if (d.getDay() !== targetDow) continue;
+    matchingDays++;
+    for (const lo of Object.keys(history[dateStr])) counts[lo] += 1;
+  }
+
+  if (matchingDays === 0) return emptyScores();
+  const out: Record<string, number> = {};
+  for (const lo of ALL_LOS) out[lo] = counts[lo] / matchingDays;
+  return out;
+}
+
+// ─────────────────────────────────────────────
 // Model 7: Streak boost
 // ─────────────────────────────────────────────
 
@@ -430,5 +477,225 @@ export async function predict(
     model_weights: WEIGHTS,
     top_lift: Math.round(topLift * 100) / 100,
     predictions: items,
+  };
+}
+
+// ─────────────────────────────────────────────
+// VIP Prediction — 9 models, max parameters, per-model rankings
+// ─────────────────────────────────────────────
+
+const VIP_WEIGHTS: Record<string, number> = {
+  frequency: 0.17,
+  recency: 0.22,
+  poisson: 0.13,
+  markov: 0.10,
+  temperature: 0.10,
+  pair: 0.09,
+  streak: 0.09,
+  mirror: 0.05,
+  dayOfWeek: 0.05,
+};
+
+const MODEL_META: Record<string, { label: string; description: string; question: string }> = {
+  frequency: {
+    label: "Frequency",
+    description: "Tần suất tổng thể trong window",
+    question: "Lô nào lâu nay về NHIỀU?",
+  },
+  recency: {
+    label: "Recency EWMA",
+    description: "Tần suất ưu tiên gần đây (half-life 7 ngày)",
+    question: "Lô nào về nhiều GẦN ĐÂY?",
+  },
+  poisson: {
+    label: "Poisson Gap",
+    description: "Xác suất overdue: P = 1 - e^(-rate × gap)",
+    question: "Lô nào ĐANG QUÁ HẠN, sắp về?",
+  },
+  markov: {
+    label: "Markov 1-day",
+    description: "Transition: P(lô X ngày sau | lô set hôm qua)",
+    question: "Sau lô Y, lô nào HAY về tiếp?",
+  },
+  temperature: {
+    label: "Temperature",
+    description: "Z-score: (recent - base) / std → sigmoid",
+    question: "Lô nào đang HOT vượt baseline?",
+  },
+  pair: {
+    label: "Pair Co-occurrence",
+    description: "Co-occurrence với lô của hôm qua",
+    question: "Lô nào hay đi CHUNG NHÓM với hôm qua?",
+  },
+  streak: {
+    label: "Streak Boost",
+    description: "Boost theo chuỗi liên tiếp (1-4 ngày)",
+    question: "Lô đang về LIÊN TIẾP có nên đánh tiếp?",
+  },
+  mirror: {
+    label: "Mirror Pair (kép đảo)",
+    description: "Boost X nếu mirror(X) đang hot. VD: 36↔63, 12↔21",
+    question: "Lô đảo của số hot có hay về theo?",
+  },
+  dayOfWeek: {
+    label: "Day-of-Week Pattern",
+    description: "Tần suất lô về cùng thứ trong tuần (so với target day)",
+    question: "Lô nào hay về vào THỨ này?",
+  },
+};
+
+export interface ModelTopPick {
+  rank: number;
+  lo_number: string;
+  raw_score: number;       // normalized 0..1
+  norm_score: number;      // same as raw_score (kept for clarity)
+}
+
+export interface ModelBreakdown {
+  key: string;
+  label: string;
+  description: string;
+  question: string;
+  weight: number;
+  top_picks: ModelTopPick[];   // top 10 of THIS model
+}
+
+export interface VipPredictionResult {
+  region: Region;
+  window_days: number;
+  days_available: number;
+  warning?: string;
+  model_weights: Record<string, number>;
+  top_lift?: number;
+  // Final ensemble (same as predict() but with 9 models)
+  final: PredictionItem[];
+  // Per-model rankings
+  models: ModelBreakdown[];
+  // Consensus: lô numbers appearing in top 10 of >= 5 models
+  consensus: { lo_number: string; appearances_in_top10: number; models: string[] }[];
+  // Controversial: lô numbers in only 1-2 models' top 10
+  controversial: { lo_number: string; appearances_in_top10: number; models: string[] }[];
+}
+
+export async function predictVip(
+  region: Region,
+  windowDays: number = 90   // VIP uses MAX window for max signal
+): Promise<VipPredictionResult> {
+  const history = await loadHistory(region, windowDays);
+  const daysAvailable = Object.keys(history).length;
+
+  if (daysAvailable < 5) {
+    return {
+      region,
+      window_days: windowDays,
+      days_available: daysAvailable,
+      warning: "Cần ít nhất 5 ngày dữ liệu để dự đoán VIP",
+      model_weights: VIP_WEIGHTS,
+      final: [],
+      models: [],
+      consensus: [],
+      controversial: [],
+    };
+  }
+
+  const rawModels = {
+    frequency: modelFrequency(history),
+    recency: modelRecency(history),
+    poisson: modelPoissonGap(history),
+    markov: modelMarkov(history),
+    temperature: modelTemperature(history),
+    pair: modelPair(history),
+    streak: modelStreak(history),
+    mirror: modelMirror(history),
+    dayOfWeek: modelDayOfWeek(history),
+  };
+
+  const normModels: Record<string, Record<string, number>> = {};
+  for (const [name, m] of Object.entries(rawModels)) {
+    normModels[name] = normalize(m);
+  }
+
+  // Per-model top 10 picks
+  const models: ModelBreakdown[] = Object.entries(normModels).map(([key, scores]) => {
+    const ranked = ALL_LOS.map((lo) => ({
+      lo_number: lo,
+      raw_score: scores[lo],
+      norm_score: scores[lo],
+    }))
+      .sort((a, b) => b.norm_score - a.norm_score)
+      .slice(0, 10)
+      .map((p, idx) => ({ rank: idx + 1, ...p }));
+
+    return {
+      key,
+      label: MODEL_META[key]?.label ?? key,
+      description: MODEL_META[key]?.description ?? "",
+      question: MODEL_META[key]?.question ?? "",
+      weight: VIP_WEIGHTS[key] ?? 0,
+      top_picks: ranked,
+    };
+  });
+
+  // Final ensemble with VIP weights
+  const composite: Record<string, number> = emptyScores();
+  for (const [name, m] of Object.entries(normModels)) {
+    const w = VIP_WEIGHTS[name] ?? 0;
+    for (const lo of ALL_LOS) composite[lo] += w * m[lo];
+  }
+  const probs = softmax(composite, 0.15);
+
+  const confidence: Record<string, number> = {};
+  for (const lo of ALL_LOS) {
+    const scores = Object.values(normModels).map((m) => m[lo]);
+    const meanS = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const varS = scores.reduce((s, v) => s + Math.pow(v - meanS, 2), 0) / scores.length;
+    confidence[lo] = 1 - Math.sqrt(varS);
+  }
+
+  const final: PredictionItem[] = ALL_LOS.map((lo) => ({
+    rank: 0,
+    lo_number: lo,
+    probability: Math.round(probs[lo] * 100 * 10000) / 10000,
+    composite_score: Math.round(composite[lo] * 10000) / 10000,
+    confidence: Math.round(confidence[lo] * 100 * 10) / 10,
+    breakdown: Object.fromEntries(
+      Object.entries(normModels).map(([k, m]) => [k, Math.round(m[lo] * 10000) / 10000])
+    ),
+  }));
+  final.sort((a, b) => b.probability - a.probability);
+  final.forEach((p, idx) => { p.rank = idx + 1; });
+
+  // Consensus & Controversial
+  const top10ByModel: Record<string, Set<string>> = {};
+  for (const m of models) {
+    top10ByModel[m.key] = new Set(m.top_picks.map((p) => p.lo_number));
+  }
+  const appearancesPerLo: Record<string, string[]> = {};
+  for (const lo of ALL_LOS) {
+    appearancesPerLo[lo] = [];
+    for (const [modelKey, set] of Object.entries(top10ByModel)) {
+      if (set.has(lo)) appearancesPerLo[lo].push(modelKey);
+    }
+  }
+  const allRanked = Object.entries(appearancesPerLo)
+    .map(([lo, ms]) => ({ lo_number: lo, appearances_in_top10: ms.length, models: ms }))
+    .filter((x) => x.appearances_in_top10 > 0)
+    .sort((a, b) => b.appearances_in_top10 - a.appearances_in_top10);
+
+  const consensus = allRanked.filter((x) => x.appearances_in_top10 >= 5);
+  const controversial = allRanked.filter((x) => x.appearances_in_top10 <= 2);
+
+  const topLift = final[0].probability / 1.0;
+
+  return {
+    region,
+    window_days: windowDays,
+    days_available: daysAvailable,
+    model_weights: VIP_WEIGHTS,
+    top_lift: Math.round(topLift * 100) / 100,
+    final,
+    models,
+    consensus,
+    controversial,
   };
 }
