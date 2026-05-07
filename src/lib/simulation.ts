@@ -30,6 +30,9 @@ export interface SimDay {
   date: string;
   action: string;
   picks: string[];
+  hit_picks: string[];      // picks that actually appeared
+  miss_picks: string[];     // picks that didn't appear
+  pick_occurrences: Record<string, number>;  // per-pick appearance count
   bet_per_pick?: number;
   total_cost: number;
   total_payout: number;
@@ -37,6 +40,8 @@ export interface SimDay {
   balance_after: number;
   hits?: number;
   occurrences?: number;
+  break_even_hits: number;  // hits needed this day to break even
+  lesson: string;           // human-readable takeaway
   note?: string;
 }
 
@@ -58,6 +63,94 @@ export interface SimResult {
   bankrupt: boolean;
   bankrupt_date?: string;
   timeline: SimDay[];
+}
+
+// ─────────────────────────────────────────────
+// Lesson generators — convert numbers into human takeaways
+// ─────────────────────────────────────────────
+
+function playerLesson(args: {
+  hits: number;
+  topN: number;
+  breakEven: number;
+  occ: number;
+  profit: number;
+  hitPicks: string[];
+  recentProfits: number[];
+  betPerPick: number;
+}): string {
+  const { hits, topN, breakEven, occ, profit, hitPicks, recentProfits, betPerPick } = args;
+  const parts: string[] = [];
+
+  // Hit assessment
+  if (hits >= breakEven + 1) {
+    parts.push(`✅ Hit ${hits}/${topN} (vượt break-even ${breakEven.toFixed(1)}) → chiến thuật ổn`);
+  } else if (hits >= Math.ceil(breakEven)) {
+    parts.push(`⚖️ Hit ${hits}/${topN} (đúng break-even ${breakEven.toFixed(1)}) → hoà vốn`);
+  } else if (hits === 0) {
+    parts.push(`💀 0/${topN} hit — toàn bộ pick lệch khỏi kết quả thực`);
+  } else {
+    parts.push(`❌ Hit ${hits}/${topN} (cần ≥ ${Math.ceil(breakEven)}) → dưới break-even`);
+  }
+
+  // Specific hit numbers
+  if (hitPicks.length > 0) {
+    parts.push(`Trúng: ${hitPicks.join(" ")} (${occ} lần xuất hiện)`);
+  }
+
+  // Streak detection from recent profits
+  const last3 = recentProfits.slice(-3);
+  if (last3.length === 3) {
+    const allUp = last3.every((p) => p > 0);
+    const allDown = last3.every((p) => p < 0);
+    if (allUp && profit > 0) {
+      parts.push(`🔥 4 ngày liên tiếp lãi → tự tin, có thể tăng cược`);
+    } else if (allDown && profit < 0) {
+      parts.push(`⚠️ 4 ngày liên tiếp lỗ → cân nhắc đổi chiến thuật hoặc nghỉ`);
+    } else if (allDown && profit > 0) {
+      parts.push(`🔄 Phá streak lỗ — bắt đầu hồi vốn`);
+    }
+  }
+
+  // Bet size signal
+  if (betPerPick >= 3 && profit < 0) {
+    parts.push(`Cược lớn (${betPerPick}đ/pick) gặp ngày tệ → mất nhiều hơn`);
+  } else if (betPerPick >= 3 && profit > 0) {
+    parts.push(`Cược lớn (${betPerPick}đ/pick) gặp ngày tốt → ăn đậm`);
+  }
+
+  return parts.join(" • ");
+}
+
+function houseLesson(args: {
+  picks: string[];
+  hitInPicks: number;
+  topN: number;
+  profit: number;
+  thuShort: string;
+  buShort: string;
+  hitPicks: string[];
+}): string {
+  const { hitInPicks, topN, profit, hitPicks } = args;
+  const parts: string[] = [];
+
+  if (profit > 0) {
+    parts.push(`✅ Nhà cái lãi: thu nhiều hơn bù`);
+  } else {
+    parts.push(`❌ Nhà cái lỗ: bù vượt thu`);
+  }
+
+  if (hitInPicks <= topN * 0.2) {
+    parts.push(`Top ${topN} dự đoán chỉ ${hitInPicks} lô về → AI dự đoán SAI nhiều, các lô ngoài top mới về`);
+  } else if (hitInPicks >= topN * 0.4) {
+    parts.push(`Top ${topN} có ${hitInPicks} lô về → AI dự đoán ĐÚNG nhiều → lý do nhà cái phải giảm limit`);
+  }
+
+  if (hitPicks.length > 0) {
+    parts.push(`Lô top trúng (limit đã giảm): ${hitPicks.slice(0, 5).join(" ")}${hitPicks.length > 5 ? "…" : ""}`);
+  }
+
+  return parts.join(" • ");
 }
 
 // ─────────────────────────────────────────────
@@ -118,8 +211,12 @@ export async function simulatePlayer(
     if (action === "skip") {
       timeline.push({
         date, action: "skip", picks: [],
+        hit_picks: [], miss_picks: [], pick_occurrences: {},
         total_cost: 0, total_payout: 0, profit: 0,
-        balance_after: balance, note,
+        balance_after: balance,
+        break_even_hits: 0,
+        lesson: `⏸️ Bỏ qua hôm nay để bảo toàn vốn — chiến lược "Né ngày tệ" thấy 3 ngày gần TB lỗ ${Math.round(recentAvg).toLocaleString("vi-VN")}đ`,
+        note,
       });
       skipDays++;
       recentProfits.push(0);
@@ -135,8 +232,11 @@ export async function simulatePlayer(
         bankruptDate = date;
         timeline.push({
           date, action: "skip", picks: [],
+          hit_picks: [], miss_picks: [], pick_occurrences: {},
           total_cost: 0, total_payout: 0, profit: 0,
           balance_after: balance,
+          break_even_hits: 0,
+          lesson: `💀 Phá sản — vốn còn ${balance.toLocaleString("vi-VN")}đ không đủ chơi 1 ván nữa. Chiến thuật này KHÔNG hợp với data hiện tại.`,
           note: `💀 Hết vốn — không đủ ${(POINT_COST * topN).toLocaleString("vi-VN")}đ để chơi 1 vòng`,
         });
         break;
@@ -156,11 +256,18 @@ export async function simulatePlayer(
 
     let hits = 0;
     let occ = 0;
+    const hitPicks: string[] = [];
+    const missPicks: string[] = [];
+    const pickOcc: Record<string, number> = {};
     for (const pick of picks) {
       const c = actualMap.get(pick) ?? 0;
+      pickOcc[pick] = c;
       if (c > 0) {
         hits++;
         occ += c;
+        hitPicks.push(pick);
+      } else {
+        missPicks.push(pick);
       }
     }
 
@@ -174,17 +281,28 @@ export async function simulatePlayer(
     if (balance > maxBalance) maxBalance = balance;
     if (balance < minBalance) minBalance = balance;
 
+    const breakEven = (POINT_COST * topN) / WIN_PER_HIT;  // hits/day to break even
+
+    const lesson = playerLesson({
+      hits, topN, breakEven, occ, profit,
+      hitPicks, recentProfits: [...recentProfits], betPerPick,
+    });
+
     recentProfits.push(profit);
     if (recentProfits.length > 3) recentProfits.shift();
 
     timeline.push({
       date, action: "bet", picks,
+      hit_picks: hitPicks, miss_picks: missPicks, pick_occurrences: pickOcc,
       bet_per_pick: betPerPick,
       total_cost: cost,
       total_payout: payout,
       profit,
       balance_after: balance,
-      hits, occurrences: occ, note,
+      hits, occurrences: occ,
+      break_even_hits: breakEven,
+      lesson,
+      note,
     });
   }
 
@@ -302,16 +420,33 @@ export async function simulateHouse(
       bankruptDate = date;
     }
 
-    const hitsInPicks = picks.filter((p) => (actualMap.get(p) ?? 0) > 0).length;
+    const hitPicks: string[] = [];
+    const missPicks: string[] = [];
+    const pickOcc: Record<string, number> = {};
+    for (const p of picks) {
+      const c = actualMap.get(p) ?? 0;
+      pickOcc[p] = c;
+      if (c > 0) hitPicks.push(p);
+      else missPicks.push(p);
+    }
+    const hitsInPicks = hitPicks.length;
+
+    const lesson = houseLesson({
+      picks, hitInPicks: hitsInPicks, topN, profit,
+      thuShort: thu.toString(), buShort: bu.toString(), hitPicks,
+    });
 
     timeline.push({
       date, action: "play", picks,
+      hit_picks: hitPicks, miss_picks: missPicks, pick_occurrences: pickOcc,
       total_cost: thu,
       total_payout: bu,
       profit,
       balance_after: balance,
       hits: hitsInPicks,
       occurrences: actualLo.size,
+      break_even_hits: 0, // house mode break-even depends on volume, not relevant per-day
+      lesson,
       note: strategy === "none" ? "Baseline: limit 200 đều" : `Strategy: ${strategy}`,
     });
   }

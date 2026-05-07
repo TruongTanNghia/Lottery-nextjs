@@ -8,6 +8,9 @@ interface SimDay {
   date: string;
   action: string;
   picks: string[];
+  hit_picks: string[];
+  miss_picks: string[];
+  pick_occurrences: Record<string, number>;
   bet_per_pick?: number;
   total_cost: number;
   total_payout: number;
@@ -15,6 +18,8 @@ interface SimDay {
   balance_after: number;
   hits?: number;
   occurrences?: number;
+  break_even_hits: number;
+  lesson: string;
   note?: string;
 }
 
@@ -338,71 +343,18 @@ export default function SimPage({ region }: { region: Region }) {
             </section>
           )}
 
-          {/* Timeline table */}
-          <section className="mb-4 md:mb-6 rounded-2xl bg-[#0f1722] border border-slate-700/50 overflow-hidden">
-            <div className="px-4 md:px-6 py-3 border-b border-white/[0.06]">
-              <h3 className="text-sm md:text-base font-bold">📋 Nhật ký từng ngày</h3>
+          {/* Timeline — verbose per-day cards */}
+          <section className="mb-4 md:mb-6">
+            <div className="flex items-baseline justify-between mb-3">
+              <h3 className="text-sm md:text-base font-bold">📋 Nhật ký AI từng ngày</h3>
+              <span className="text-[0.7rem] text-slate-500">
+                Mới nhất ở trên • Cuộn xuống để xem ngày cũ
+              </span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[0.72rem] md:text-xs">
-                <thead className="bg-white/[0.03] text-slate-400 uppercase">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Ngày</th>
-                    <th className="px-3 py-2 text-left">Action</th>
-                    {tab === "player" && <th className="px-3 py-2 text-left">Picks</th>}
-                    <th className="px-2 py-2 text-center">Hit</th>
-                    <th className="px-3 py-2 text-right">{tab === "player" ? "Cược" : "Thu"}</th>
-                    <th className="px-3 py-2 text-right">{tab === "player" ? "Trúng" : "Bù"}</th>
-                    <th className="px-3 py-2 text-right">Lãi/Lỗ</th>
-                    <th className="px-3 py-2 text-right">Số dư</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...result.timeline].reverse().map((d) => {
-                    const profitC = d.profit > 0 ? "text-emerald-400" : d.profit < 0 ? "text-rose-400" : "text-slate-400";
-                    const rowBg = d.action === "skip"
-                      ? "bg-slate-500/5 border-l-2 border-slate-500/40"
-                      : d.profit > 0
-                      ? "bg-emerald-500/5 border-l-2 border-emerald-500/40"
-                      : "bg-rose-500/5 border-l-2 border-rose-500/40";
-                    return (
-                      <tr key={d.date} className={`${rowBg} border-t border-white/[0.04]`}>
-                        <td className="px-3 py-2 font-mono text-slate-300 whitespace-nowrap">{d.date.slice(5)}</td>
-                        <td className="px-3 py-2">
-                          {d.action === "skip" ? (
-                            <span className="text-amber-400">⏸️ skip</span>
-                          ) : (
-                            <span className="text-slate-200">
-                              {tab === "player"
-                                ? `${d.bet_per_pick ?? 1}đ × ${d.picks.length}`
-                                : "play"}
-                            </span>
-                          )}
-                          {d.note && (
-                            <div className="text-[0.6rem] text-slate-500 italic mt-0.5">{d.note}</div>
-                          )}
-                        </td>
-                        {tab === "player" && (
-                          <td className="px-3 py-2 font-mono text-slate-300 max-w-xs truncate">
-                            {d.picks.join(" ")}
-                          </td>
-                        )}
-                        <td className="px-2 py-2 text-center font-mono text-slate-300">
-                          {d.hits != null ? `${d.hits}/${d.picks.length}` : "—"}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-slate-400">{fmtVndShort(d.total_cost)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-emerald-400">{fmtVndShort(d.total_payout)}</td>
-                        <td className={`px-3 py-2 text-right font-mono font-bold ${profitC}`}>
-                          {d.profit >= 0 ? "+" : ""}{fmtVndShort(d.profit)}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-slate-200">
-                          {fmtVndShort(d.balance_after)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="space-y-2.5">
+              {[...result.timeline].reverse().map((d, idx) => (
+                <DayCard key={d.date} day={d} mode={tab} dayIndex={result.timeline.length - idx} />
+              ))}
             </div>
           </section>
 
@@ -414,6 +366,142 @@ export default function SimPage({ region }: { region: Region }) {
         </>
       )}
     </>
+  );
+}
+
+function DayCard({ day, mode, dayIndex }: { day: SimDay; mode: SubTab; dayIndex: number }) {
+  const isSkip = day.action === "skip";
+  const profitColor = day.profit > 0 ? "text-emerald-400" : day.profit < 0 ? "text-rose-400" : "text-slate-400";
+  const borderColor = isSkip
+    ? "border-amber-500/40 bg-amber-900/10"
+    : day.profit > 0
+    ? "border-emerald-500/40 bg-emerald-900/10"
+    : "border-rose-500/40 bg-rose-900/10";
+
+  // Format date as "Thứ X, dd/mm"
+  const [y, m, d] = day.date.split("-").map(Number);
+  const dateObj = new Date(Date.UTC(y, m - 1, d));
+  const dayName = ["Chủ Nhật", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy"][dateObj.getUTCDay()];
+  const ddmm = `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
+
+  if (isSkip) {
+    return (
+      <div className={`rounded-xl border ${borderColor} p-3 md:p-4`}>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <span className="text-[0.65rem] text-slate-500 font-mono">Ngày #{dayIndex}</span>
+            <h4 className="text-sm md:text-base font-bold text-amber-300">
+              ⏸️ {dayName}, {ddmm} — BỎ QUA
+            </h4>
+          </div>
+          <div className="text-right">
+            <div className="text-[0.65rem] text-slate-500">Số dư giữ nguyên</div>
+            <div className="font-mono font-bold text-slate-200">{fmtVnd(day.balance_after)}</div>
+          </div>
+        </div>
+        <p className="text-[0.75rem] md:text-sm text-amber-200 mt-2 italic">
+          💡 {day.lesson}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`rounded-xl border ${borderColor} p-3 md:p-4`}>
+      {/* Header row */}
+      <div className="flex items-start justify-between gap-2 flex-wrap mb-2">
+        <div>
+          <span className="text-[0.65rem] text-slate-500 font-mono">Ngày #{dayIndex}</span>
+          <h4 className="text-sm md:text-base font-bold text-slate-100">
+            📅 {dayName}, {ddmm}
+            {mode === "player" && day.bet_per_pick != null && (
+              <span className="ml-2 text-[0.7rem] font-normal text-slate-400">
+                — Cược {day.bet_per_pick}đ × {day.picks.length} pick
+              </span>
+            )}
+            {mode === "house" && (
+              <span className="ml-2 text-[0.7rem] font-normal text-slate-400">
+                — Vai trò Nhà cái
+              </span>
+            )}
+          </h4>
+        </div>
+        <div className="text-right">
+          <div className={`text-base md:text-lg font-extrabold font-mono ${profitColor}`}>
+            {day.profit >= 0 ? "+" : ""}{fmtVnd(day.profit)}
+          </div>
+          <div className="text-[0.65rem] text-slate-500">
+            Số dư: <span className="font-mono font-bold text-slate-200">{fmtVnd(day.balance_after)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Picks visualization */}
+      <div className="mb-2.5">
+        <div className="text-[0.7rem] text-slate-400 font-semibold mb-1">
+          🎯 AI {mode === "player" ? "đặt cược" : "giảm limit"} vào {day.picks.length} số:
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {day.picks.map((pick, i) => {
+            const occ = day.pick_occurrences[pick] ?? 0;
+            const isHit = occ > 0;
+            return (
+              <div
+                key={pick}
+                title={isHit ? `${pick}: trúng ${occ} lần` : `${pick}: không về`}
+                className={`relative font-mono font-bold text-sm md:text-base px-2 py-1 rounded border-2 ${
+                  isHit
+                    ? "bg-emerald-500/25 border-emerald-400 text-emerald-100"
+                    : "bg-slate-700/30 border-slate-600 text-slate-400 opacity-60"
+                }`}
+              >
+                <span className="text-[0.55rem] absolute -top-1.5 left-1 text-slate-500 font-normal">
+                  #{i + 1}
+                </span>
+                {pick}
+                {isHit && occ > 1 && (
+                  <span className="absolute -top-1.5 -right-1.5 text-[0.55rem] bg-emerald-400 text-emerald-900 rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold">
+                    {occ}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Money breakdown */}
+      <div className="grid grid-cols-3 gap-2 text-[0.7rem] mb-2.5">
+        <div className="rounded bg-slate-700/20 px-2 py-1.5">
+          <div className="text-slate-500 uppercase">{mode === "player" ? "Đã chi" : "Thu"}</div>
+          <div className="font-mono font-bold text-slate-200">{fmtVndShort(day.total_cost)}</div>
+        </div>
+        <div className="rounded bg-emerald-700/15 px-2 py-1.5">
+          <div className="text-emerald-300/70 uppercase">{mode === "player" ? "Trúng" : "Bù"}</div>
+          <div className="font-mono font-bold text-emerald-300">{fmtVndShort(day.total_payout)}</div>
+        </div>
+        <div className={`rounded ${day.profit >= 0 ? "bg-emerald-700/20" : "bg-rose-700/20"} px-2 py-1.5`}>
+          <div className="text-slate-400 uppercase">Lãi/Lỗ</div>
+          <div className={`font-mono font-bold ${profitColor}`}>
+            {day.profit >= 0 ? "+" : ""}{fmtVndShort(day.profit)}
+          </div>
+        </div>
+      </div>
+
+      {/* Lesson */}
+      <div className="rounded bg-white/[0.03] border-l-2 border-blue-400/50 px-3 py-2">
+        <div className="text-[0.65rem] text-blue-300 font-bold uppercase mb-0.5">
+          💡 Bài học AI rút ra
+        </div>
+        <p className="text-[0.75rem] md:text-sm text-slate-200">{day.lesson}</p>
+      </div>
+
+      {day.note && (
+        <p className="text-[0.65rem] text-slate-500 italic mt-1.5">
+          📝 {day.note}
+        </p>
+      )}
+    </div>
   );
 }
 
