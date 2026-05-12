@@ -683,7 +683,13 @@ export async function predictVip(
     .filter((x) => x.appearances_in_top10 > 0)
     .sort((a, b) => b.appearances_in_top10 - a.appearances_in_top10);
 
-  const consensus = allRanked.filter((x) => x.appearances_in_top10 >= 5);
+  // Per-region consensus threshold:
+  //   MN: ≥ 5/9 model agree (predictions are accurate here, keep strict)
+  //   MT: ≥ 3/9 (weaker predictions — relax to surface enough candidates)
+  //   MB: ≥ 4/9 (weaker than MN, slightly relaxed)
+  const consensusThreshold: Record<Region, number> = { xsmn: 5, xsmt: 3, xsmb: 4 };
+  const minAgree = consensusThreshold[region];
+  const consensus = allRanked.filter((x) => x.appearances_in_top10 >= minAgree);
   const controversial = allRanked.filter((x) => x.appearances_in_top10 <= 2);
 
   const topLift = final[0].probability / 1.0;

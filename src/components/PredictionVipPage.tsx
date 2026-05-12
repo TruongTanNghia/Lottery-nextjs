@@ -731,9 +731,14 @@ export default function PredictionVipPage({
         <section className="rounded-2xl bg-emerald-900/15 border border-emerald-500/30 overflow-hidden">
           <div className="px-4 md:px-5 py-3 border-b border-white/[0.06] flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-bold text-emerald-300">🤝 Consensus (≥ 5/9 model)</h3>
+              <h3 className="text-sm font-bold text-emerald-300">
+                🤝 Consensus (≥ {region === "xsmn" ? 5 : region === "xsmb" ? 4 : 3}/9 model)
+              </h3>
               <p className="text-[0.7rem] text-slate-400 mt-0.5">
                 Lô được nhiều model agree → tin cậy CAO
+                {region !== "xsmn" && (
+                  <span className="text-amber-400/80"> • Ngưỡng hạ vì {region === "xsmb" ? "MB" : "MT"} dự đoán yếu hơn</span>
+                )}
               </p>
             </div>
             <button
