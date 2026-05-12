@@ -44,6 +44,7 @@ const REGION_PARAMS: Record<"xsmn" | "xsmb" | "xsmt", RegionParams> = {
     vipWeights: {
       frequency: 0.17, recency: 0.22, poisson: 0.13, markov: 0.10,
       temperature: 0.10, pair: 0.09, streak: 0.09, mirror: 0.05, dayOfWeek: 0.05,
+      provinceOfDay: 0.00,
     },
     baseWeights: {
       frequency: 0.20, recency: 0.25, poisson: 0.15, markov: 0.10,
@@ -57,6 +58,7 @@ const REGION_PARAMS: Record<"xsmn" | "xsmb" | "xsmt", RegionParams> = {
     vipWeights: {
       frequency: 0.22, recency: 0.20, poisson: 0.13, markov: 0.14,
       temperature: 0.10, pair: 0.08, streak: 0.10, mirror: 0.03, dayOfWeek: 0.00,
+      provinceOfDay: 0.00,
     },
     baseWeights: {
       frequency: 0.26, recency: 0.22, poisson: 0.15, markov: 0.14,
@@ -67,9 +69,13 @@ const REGION_PARAMS: Record<"xsmn" | "xsmb" | "xsmt", RegionParams> = {
     shrinkage: 0.15,
   },
   xsmt: {
+    // Province-of-Day is the primary signal (30%) — it's a refinement of
+    // dayOfWeek that filters out off-schedule draws. dayOfWeek kept at 10%
+    // as a back-up for weekdays with sparse province history.
     vipWeights: {
-      frequency: 0.15, recency: 0.12, poisson: 0.10, markov: 0.05,
-      temperature: 0.08, pair: 0.10, streak: 0.05, mirror: 0.05, dayOfWeek: 0.30,
+      frequency: 0.12, recency: 0.10, poisson: 0.08, markov: 0.05,
+      temperature: 0.07, pair: 0.08, streak: 0.05, mirror: 0.05, dayOfWeek: 0.10,
+      provinceOfDay: 0.30,
     },
     baseWeights: {
       frequency: 0.30, recency: 0.18, poisson: 0.13, markov: 0.05,
@@ -138,6 +144,46 @@ async function loadHistory(
   for (const r of rows) {
     if (!out[r.date]) out[r.date] = {};
     out[r.date][r.lo_number] = r.count;
+  }
+  return out;
+}
+
+// Province-level history for MT (and any region we want province granularity).
+// Each lottery_results row is a single prize drawing → multiple rows per draw,
+// one lo_number per row. We store them all per (date, province) so we can
+// count repetitions when computing Province-of-Day frequencies.
+type ProvinceMap = Record<string, Record<string, string[]>>;
+
+async function loadProvinceHistory(
+  region: Region,
+  days: number = 60,
+  endDate?: string
+): Promise<ProvinceMap> {
+  let rows: { date: string; province: string; lo_number: string }[];
+  if (endDate) {
+    const [ey, em, ed] = endDate.split("-").map(Number);
+    const endMs = Date.UTC(ey, em - 1, ed);
+    const startStr = new Date(endMs - days * 86_400_000).toISOString().slice(0, 10);
+    rows = await query<{ date: string; province: string; lo_number: string }>(
+      `SELECT date, province, lo_number FROM lottery_results
+       WHERE region = ? AND date >= ? AND date < ?`,
+      [region, startStr, endDate]
+    );
+  } else {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    rows = await query<{ date: string; province: string; lo_number: string }>(
+      `SELECT date, province, lo_number FROM lottery_results
+       WHERE region = ? AND date >= ?`,
+      [region, cutoffStr]
+    );
+  }
+  const out: ProvinceMap = {};
+  for (const r of rows) {
+    if (!out[r.date]) out[r.date] = {};
+    if (!out[r.date][r.province]) out[r.date][r.province] = [];
+    out[r.date][r.province].push(r.lo_number);
   }
   return out;
 }
@@ -391,6 +437,78 @@ function modelDayOfWeek(history: DateMap): Record<string, number> {
 }
 
 // ─────────────────────────────────────────────
+// Model 10: Province-of-Day (MT-specific)
+//
+// MT has 2-3 provinces rotating BY day-of-week. Plain dayOfWeek model is
+// noisy because:
+//   - With 30 days of data, only ~4 samples per weekday
+//   - Off-schedule draws (different province on a given weekday) pollute counts
+//
+// This model:
+//   1. Determines target weekday
+//   2. Finds "canonical" provinces — those that appear on ≥40% of matching
+//      weekdays (anomalous schedule changes get excluded)
+//   3. Counts lô appearances ONLY in (matching weekday × canonical province)
+//      draws → more focused signal
+//
+// For MN/MB this returns zeros (their weight is 0% anyway).
+// ─────────────────────────────────────────────
+
+function modelProvinceOfDay(
+  provinceHistory: ProvinceMap,
+  region: Region
+): Record<string, number> {
+  const out = emptyScores();
+  if (region !== "xsmt") return out;
+
+  const dates = Object.keys(provinceHistory).sort();
+  if (dates.length === 0) return out;
+
+  // Target = day AFTER latest date (forward prediction)
+  const lastDate = new Date(dates[dates.length - 1] + "T00:00:00");
+  const tomorrow = new Date(lastDate);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const targetDow = tomorrow.getDay();
+
+  // Step 1: matching-weekday dates + per-province frequency
+  const matchingDates: string[] = [];
+  const provinceFreq = new Map<string, number>();
+  for (const date of dates) {
+    const d = new Date(date + "T00:00:00");
+    if (d.getDay() !== targetDow) continue;
+    matchingDates.push(date);
+    const provs = Object.keys(provinceHistory[date] ?? {});
+    for (const p of provs) provinceFreq.set(p, (provinceFreq.get(p) ?? 0) + 1);
+  }
+  if (matchingDates.length === 0) return out;
+
+  // Step 2: canonical = provinces drawing on ≥40% of matching weekdays
+  const minPresence = Math.max(2, Math.floor(matchingDates.length * 0.4));
+  const canonical = new Set<string>();
+  for (const [p, c] of provinceFreq.entries()) {
+    if (c >= minPresence) canonical.add(p);
+  }
+  // Fallback when data is sparse: just use all observed provinces
+  const useProvinces = canonical.size > 0 ? canonical : new Set(provinceFreq.keys());
+
+  // Step 3: count lô appearances within (matching weekday × canonical province)
+  let totalDraws = 0;
+  for (const date of matchingDates) {
+    const day = provinceHistory[date] ?? {};
+    for (const p of useProvinces) {
+      const los = day[p];
+      if (!los) continue;
+      totalDraws++;
+      for (const lo of los) out[lo] = (out[lo] ?? 0) + 1;
+    }
+  }
+
+  if (totalDraws === 0) return out;
+  for (const lo of ALL_LOS) out[lo] = (out[lo] ?? 0) / totalDraws;
+  return out;
+}
+
+// ─────────────────────────────────────────────
 // Model 7: Streak boost
 // ─────────────────────────────────────────────
 
@@ -600,6 +718,11 @@ const MODEL_META: Record<string, { label: string; description: string; question:
     description: "Tần suất lô về cùng thứ trong tuần (so với target day)",
     question: "Lô nào hay về vào THỨ này?",
   },
+  provinceOfDay: {
+    label: "Province-of-Day (MT)",
+    description: "Tần suất lô theo (thứ × tỉnh thường quay thứ đó) — chỉ MT",
+    question: "Tỉnh nào hay quay thứ này, và lô nào hay về ở những tỉnh đó?",
+  },
 };
 
 export interface ModelTopPick {
@@ -642,6 +765,10 @@ export async function predictVip(
   const history = await loadHistory(region, windowDays);
   const daysAvailable = Object.keys(history).length;
   const params = regionParams(region);
+  // Province history loaded only for MT (other regions don't use provinceOfDay)
+  const provinceHistory = region === "xsmt"
+    ? await loadProvinceHistory(region, windowDays)
+    : {};
 
   if (daysAvailable < 5) {
     return {
@@ -667,6 +794,7 @@ export async function predictVip(
     streak: modelStreak(history),
     mirror: modelMirror(history),
     dayOfWeek: modelDayOfWeek(history),
+    provinceOfDay: modelProvinceOfDay(provinceHistory, region),
   };
 
   const normModels: Record<string, Record<string, number>> = {};
@@ -674,26 +802,29 @@ export async function predictVip(
     normModels[name] = normalize(m);
   }
 
-  // Per-model top 10 picks
-  const models: ModelBreakdown[] = Object.entries(normModels).map(([key, scores]) => {
-    const ranked = ALL_LOS.map((lo) => ({
-      lo_number: lo,
-      raw_score: scores[lo],
-      norm_score: scores[lo],
-    }))
-      .sort((a, b) => b.norm_score - a.norm_score)
-      .slice(0, 10)
-      .map((p, idx) => ({ rank: idx + 1, ...p }));
+  // Per-model top 10 picks — filter out zero-weight models (provinceOfDay
+  // for MN/MB) to keep the UI focused on active models
+  const models: ModelBreakdown[] = Object.entries(normModels)
+    .filter(([key]) => (params.vipWeights[key] ?? 0) > 0)
+    .map(([key, scores]) => {
+      const ranked = ALL_LOS.map((lo) => ({
+        lo_number: lo,
+        raw_score: scores[lo],
+        norm_score: scores[lo],
+      }))
+        .sort((a, b) => b.norm_score - a.norm_score)
+        .slice(0, 10)
+        .map((p, idx) => ({ rank: idx + 1, ...p }));
 
-    return {
-      key,
-      label: MODEL_META[key]?.label ?? key,
-      description: MODEL_META[key]?.description ?? "",
-      question: MODEL_META[key]?.question ?? "",
-      weight: params.vipWeights[key] ?? 0,
-      top_picks: ranked,
-    };
-  });
+      return {
+        key,
+        label: MODEL_META[key]?.label ?? key,
+        description: MODEL_META[key]?.description ?? "",
+        question: MODEL_META[key]?.question ?? "",
+        weight: params.vipWeights[key] ?? 0,
+        top_picks: ranked,
+      };
+    });
 
   // Final ensemble with region-specific VIP weights
   const composite: Record<string, number> = emptyScores();
@@ -776,12 +907,14 @@ export async function predictVip(
 
 const MODEL_KEYS = [
   "frequency", "recency", "poisson", "markov", "temperature",
-  "pair", "streak", "mirror", "dayOfWeek",
+  "pair", "streak", "mirror", "dayOfWeek", "provinceOfDay",
 ] as const;
 type ModelKey = (typeof MODEL_KEYS)[number];
 
-function runAllNineModels(
+function runAllModels(
   history: DateMap,
+  provinceHistory: ProvinceMap,
+  region: Region,
   recencyHalfLife: number = 7
 ): Record<ModelKey, Record<string, number>> {
   return {
@@ -794,6 +927,7 @@ function runAllNineModels(
     streak: modelStreak(history),
     mirror: modelMirror(history),
     dayOfWeek: modelDayOfWeek(history),
+    provinceOfDay: modelProvinceOfDay(provinceHistory, region),
   };
 }
 
@@ -816,11 +950,14 @@ export async function computeAndSaveModelPerformance(
   const actual = await getLoAppearedOnDate(targetDate, region);
   if (actual.size === 0) return { saved: 0 };
 
+  const provinceHistory = region === "xsmt"
+    ? await loadProvinceHistory(region, windowDays, targetDate)
+    : {};
   const baselineRate = actual.size / 100;
-  const raw = runAllNineModels(history, regionParams(region).recencyHalfLife);
+  const raw = runAllModels(history, provinceHistory, region, regionParams(region).recencyHalfLife);
 
   const details: Record<string, number> = {};
-  for (const [modelName, scores] of Object.entries(raw)) {
+  for (const [modelName, scores] of Object.entries(raw) as [ModelKey, Record<string, number>][]) {
     const norm = normalize(scores);
     const topPicks = ALL_LOS
       .map((lo) => ({ lo, score: norm[lo] }))
@@ -989,8 +1126,11 @@ export async function predictAdaptive(
   const previousCfg = await getAdaptiveWeights(region, performanceWindow, 10, performanceWindow);
   const usingDefault = adaptiveCfg.days_with_data === 0;
   const params = regionParams(region);
+  const provinceHistory = region === "xsmt"
+    ? await loadProvinceHistory(region, windowDays)
+    : {};
 
-  const raw = runAllNineModels(history, params.recencyHalfLife);
+  const raw = runAllModels(history, provinceHistory, region, params.recencyHalfLife);
   const normModels: Record<ModelKey, Record<string, number>> = {} as Record<ModelKey, Record<string, number>>;
   for (const k of MODEL_KEYS) normModels[k] = normalize(raw[k]);
 
@@ -1106,6 +1246,7 @@ const MODEL_LABELS: Record<ModelKey, string> = {
   streak: "Streak",
   mirror: "Mirror",
   dayOfWeek: "Day-of-Week",
+  provinceOfDay: "Province-of-Day",
 };
 
 export async function getAdaptiveScorecard(
@@ -1144,7 +1285,8 @@ export async function getAdaptiveScorecard(
     if (Object.keys(history).length < 3) continue;
 
     const sParams = regionParams(region);
-    const raw = runAllNineModels(history, sParams.recencyHalfLife);
+    const sProvince = region === "xsmt" ? await loadProvinceHistory(region, 60, date) : {};
+    const raw = runAllModels(history, sProvince, region, sParams.recencyHalfLife);
     const norm: Record<ModelKey, Record<string, number>> = {} as Record<ModelKey, Record<string, number>>;
     for (const k of MODEL_KEYS) norm[k] = normalize(raw[k]);
 
@@ -1369,8 +1511,9 @@ export async function predictTopNHistorical(
   const cfg = await getAdaptiveWeights(region, perfWindowDays, topN, offsetDays);
   const usingDefault = cfg.days_with_data === 0;
   const params = regionParams(region);
+  const provinceHistory = region === "xsmt" ? await loadProvinceHistory(region, 60, date) : {};
 
-  const raw = runAllNineModels(history, params.recencyHalfLife);
+  const raw = runAllModels(history, provinceHistory, region, params.recencyHalfLife);
   const composite = emptyScores();
   for (const k of MODEL_KEYS) {
     const norm = normalize(raw[k]);

@@ -50,8 +50,9 @@ export async function GET(req: Request) {
     const recalcMs = Date.now() - t1;
     console.log(`[Cron] Recalc done in ${recalcMs}ms`);
 
-    // Trim to rolling 30-day window
-    const deleted = await cleanupOldData(30);
+    // Trim to rolling 60-day window (extended from 30 to give MT enough
+    // day-of-week samples for Province-of-Day prediction)
+    const deleted = await cleanupOldData(60);
     console.log(`[Cron] Cleanup deleted ${deleted} stale rows`);
 
     // Compute model performance for the latest scraped date per region

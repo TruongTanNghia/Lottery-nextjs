@@ -141,6 +141,7 @@ const MODEL_LABELS_FULL: Record<string, string> = {
   streak: "Streak",
   mirror: "Mirror",
   dayOfWeek: "Day-of-Week",
+  provinceOfDay: "Province-of-Day",
 };
 
 const MODEL_COLOR: Record<string, { border: string; bg: string; text: string }> = {
@@ -153,6 +154,7 @@ const MODEL_COLOR: Record<string, { border: string; bg: string; text: string }> 
   streak: { border: "border-rose-500/40", bg: "bg-rose-500/10", text: "text-rose-300" },
   mirror: { border: "border-amber-500/40", bg: "bg-amber-500/10", text: "text-amber-300" },
   dayOfWeek: { border: "border-teal-500/40", bg: "bg-teal-500/10", text: "text-teal-300" },
+  provinceOfDay: { border: "border-lime-500/40", bg: "bg-lime-500/10", text: "text-lime-300" },
 };
 
 export default function PredictionVipPage({
@@ -732,7 +734,7 @@ export default function PredictionVipPage({
           <div className="px-4 md:px-5 py-3 border-b border-white/[0.06] flex items-center justify-between">
             <div>
               <h3 className="text-sm font-bold text-emerald-300">
-                🤝 Consensus (≥ {region === "xsmn" ? 5 : region === "xsmb" ? 4 : 3}/9 model)
+                🤝 Consensus (≥ {region === "xsmn" ? 5 : region === "xsmb" ? 4 : 3}/{region === "xsmt" ? 10 : 9} model)
               </h3>
               <p className="text-[0.7rem] text-slate-400 mt-0.5">
                 Lô được nhiều model agree → tin cậy CAO

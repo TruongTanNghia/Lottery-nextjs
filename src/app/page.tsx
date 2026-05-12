@@ -120,11 +120,11 @@ function Dashboard() {
 
   async function handleScrape() {
     const daysInput = window.prompt(
-      "Scrape bao nhiêu ngày? (1-30 — DB giữ rolling 30 ngày)\n• 5 = an toàn Vercel free tier (~15s)\n• 10 = OK (~25s)\n• 20+ = có thể timeout 60s, gọi nhiều lần thay thế\n• 30 = full backfill\n\nNgày đã có sẽ skip. Sau scrape DB tự xóa data > 30 ngày.",
+      "Scrape bao nhiêu ngày? (1-60 — DB giữ rolling 60 ngày)\n• 5 = an toàn Vercel free tier (~15s)\n• 10 = OK (~25s)\n• 20+ = có thể timeout 60s, gọi nhiều lần thay thế\n• 60 = full backfill\n\nNgày đã có sẽ skip. Sau scrape DB tự xóa data > 60 ngày.",
       "5"
     );
     if (!daysInput) return;
-    const days = Math.min(Math.max(parseInt(daysInput) || 5, 1), 30);
+    const days = Math.min(Math.max(parseInt(daysInput) || 5, 1), 60);
 
     setIsScraping(true);
     setScrapeProgress(5);

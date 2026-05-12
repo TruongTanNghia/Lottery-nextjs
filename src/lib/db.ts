@@ -280,7 +280,7 @@ export async function deleteDataForDate(date: string, region: Region): Promise<v
   );
 }
 
-export async function cleanupOldData(days: number = 30): Promise<number> {
+export async function cleanupOldData(days: number = 60): Promise<number> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
   const cutoffStr = cutoff.toISOString().slice(0, 10);

@@ -17,8 +17,8 @@ export async function GET(req: Request) {
     }
     await ensureDb();
 
-    // Rolling window: always keep exactly the most recent 30 days
-    const deleted = await cleanupOldData(30);
+    // Rolling window: always keep exactly the most recent 60 days
+    const deleted = await cleanupOldData(60);
     return NextResponse.json({
       status: "success",
       deleted_records: deleted,
