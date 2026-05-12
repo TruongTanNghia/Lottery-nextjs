@@ -773,17 +773,23 @@ export default function PredictionVipPage({
 
         <section className="rounded-2xl bg-amber-900/15 border border-amber-500/30 overflow-hidden">
           <div className="px-4 md:px-5 py-3 border-b border-white/[0.06]">
-            <h3 className="text-sm font-bold text-amber-300">⚠️ Một phần đồng thuận (2-4/9 model)</h3>
+            <h3 className="text-sm font-bold text-amber-300">
+              ⚠️ Một phần đồng thuận (2-4/{region === "xsmt" ? 10 : 9} model)
+            </h3>
             <p className="text-[0.7rem] text-slate-400 mt-0.5">
               Lô có ít model agree → chia nhóm theo số tiêu chí đạt được. Càng nhiều model agree càng tin cậy hơn.
+              {region !== "xsmn" && (
+                <span className="text-slate-500"> • Nhóm 4 và 3 có thể trùng với Consensus (ngưỡng {region === "xsmb" ? 4 : 3})</span>
+              )}
             </p>
           </div>
           <div className="p-3 md:p-4 max-h-72 overflow-y-auto space-y-3">
             {(() => {
-              // Group by appearances_in_top10. Show in DESC order so 4/9 comes first.
-              const consensusMin =
-                region === "xsmn" ? 5 : region === "xsmb" ? 4 : 3;
-              const buckets = [4, 3, 2].filter((n) => n < consensusMin);
+              // Always show all 3 buckets [4, 3, 2] regardless of region — gives
+              // a clear "by agreement count" view. Consensus card shows the
+              // ≥ threshold UNION; this panel shows the per-count breakdown.
+              const totalModels = region === "xsmt" ? 10 : 9;
+              const buckets = [4, 3, 2];
               const groups = buckets.map((n) => ({
                 count: n,
                 items: data.controversial.filter((c) => c.appearances_in_top10 === n),
@@ -802,7 +808,7 @@ export default function PredictionVipPage({
                   wrap: "border-emerald-500/40 bg-emerald-500/5",
                   chip: "bg-emerald-500/20 border-emerald-400/50 text-emerald-100",
                   btn: "bg-emerald-500 hover:bg-emerald-400",
-                  label: "Gần consensus",
+                  label: "Mạnh — gần consensus",
                 },
                 3: {
                   wrap: "border-amber-500/40 bg-amber-500/5",
@@ -827,7 +833,7 @@ export default function PredictionVipPage({
                   >
                     <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
                       <div className="text-[0.7rem] font-bold text-slate-200">
-                        🎯 {g.count}/9 model agree
+                        🎯 {g.count}/{totalModels} model agree
                         <span className="ml-1.5 text-[0.65rem] font-normal text-slate-400">
                           • {style.label} • {g.items.length} lô
                         </span>

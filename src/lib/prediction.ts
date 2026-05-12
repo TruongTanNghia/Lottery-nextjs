@@ -880,10 +880,12 @@ export async function predictVip(
   const consensusThreshold: Record<Region, number> = { xsmn: 5, xsmt: 3, xsmb: 4 };
   const minAgree = consensusThreshold[region];
   const consensus = allRanked.filter((x) => x.appearances_in_top10 >= minAgree);
-  // Controversial: everything below consensus but with ≥ 2 model agree.
-  // We drop 1/9 (single-model picks) since they're too noisy to act on.
+  // Partial agreement buckets always include 2, 3, 4 model-agree lô regardless
+  // of region's consensus threshold — overlap with Consensus card is intentional
+  // (Consensus shows ≥ threshold UNION; partial agreement shows per-count breakdown).
+  // 1/9 is still dropped as too noisy.
   const controversial = allRanked.filter(
-    (x) => x.appearances_in_top10 >= 2 && x.appearances_in_top10 < minAgree
+    (x) => x.appearances_in_top10 >= 2 && x.appearances_in_top10 <= 4
   );
 
   const topLift = final[0].probability / 1.0;
