@@ -19,15 +19,82 @@ type DateMap = Record<string, Record<string, number>>; // date → {lo: count}
 
 const ALL_LOS = Array.from({ length: 100 }, (_, i) => String(i).padStart(2, "0"));
 
-const WEIGHTS: Record<string, number> = {
-  frequency: 0.2,
-  recency: 0.25,
-  poisson: 0.15,
-  markov: 0.1,
-  temperature: 0.1,
-  pair: 0.1,
-  streak: 0.1,
+// ─────────────────────────────────────────────
+// Per-region tuning. MN baseline preserved bit-for-bit; MB/MT retuned
+// because they perform much worse with one-size-fits-all params.
+//
+//   MB: 27 lô/draw, daily, single province → more data per day, stable.
+//       Lean on frequency/markov; day-of-week meaningless (always same province).
+//
+//   MT: 18 lô/draw, 2-3 provinces rotating BY DAY-OF-WEEK → DoW is THE key signal.
+//       Recency is misleading (provinces change), streak/markov weaker cross-day.
+//
+//   For weak regions also: softer softmax + shrinkage toward uniform to
+//   avoid placing too much confidence in noisy patterns.
+// ─────────────────────────────────────────────
+interface RegionParams {
+  vipWeights: Record<string, number>;
+  baseWeights: Record<string, number>;
+  softmaxT: number;
+  recencyHalfLife: number;
+  shrinkage: number;
+}
+const REGION_PARAMS: Record<"xsmn" | "xsmb" | "xsmt", RegionParams> = {
+  xsmn: {
+    vipWeights: {
+      frequency: 0.17, recency: 0.22, poisson: 0.13, markov: 0.10,
+      temperature: 0.10, pair: 0.09, streak: 0.09, mirror: 0.05, dayOfWeek: 0.05,
+    },
+    baseWeights: {
+      frequency: 0.20, recency: 0.25, poisson: 0.15, markov: 0.10,
+      temperature: 0.10, pair: 0.10, streak: 0.10,
+    },
+    softmaxT: 0.15,
+    recencyHalfLife: 7,
+    shrinkage: 0,
+  },
+  xsmb: {
+    vipWeights: {
+      frequency: 0.22, recency: 0.20, poisson: 0.13, markov: 0.14,
+      temperature: 0.10, pair: 0.08, streak: 0.10, mirror: 0.03, dayOfWeek: 0.00,
+    },
+    baseWeights: {
+      frequency: 0.26, recency: 0.22, poisson: 0.15, markov: 0.14,
+      temperature: 0.10, pair: 0.08, streak: 0.05,
+    },
+    softmaxT: 0.20,
+    recencyHalfLife: 10,
+    shrinkage: 0.15,
+  },
+  xsmt: {
+    vipWeights: {
+      frequency: 0.15, recency: 0.12, poisson: 0.10, markov: 0.05,
+      temperature: 0.08, pair: 0.10, streak: 0.05, mirror: 0.05, dayOfWeek: 0.30,
+    },
+    baseWeights: {
+      frequency: 0.30, recency: 0.18, poisson: 0.13, markov: 0.05,
+      temperature: 0.10, pair: 0.14, streak: 0.10,
+    },
+    softmaxT: 0.25,
+    recencyHalfLife: 5,
+    shrinkage: 0.25,
+  },
 };
+
+/** Pull region-specific params (with type-safe fallback to MN). */
+function regionParams(region: Region): RegionParams {
+  return REGION_PARAMS[region] ?? REGION_PARAMS.xsmn;
+}
+
+/** Bayesian shrinkage toward uniform — caps confidence for noisy regions. */
+function applyShrinkage(scores: Record<string, number>, shrink: number): Record<string, number> {
+  if (shrink <= 0) return scores;
+  const vals = Object.values(scores);
+  const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+  const out: Record<string, number> = {};
+  for (const lo of ALL_LOS) out[lo] = (1 - shrink) * scores[lo] + shrink * avg;
+  return out;
+}
 
 // ─────────────────────────────────────────────
 // Data loader
@@ -421,9 +488,10 @@ export async function predict(
     };
   }
 
+  const params = regionParams(region);
   const models = {
     frequency: modelFrequency(history),
-    recency: modelRecency(history),
+    recency: modelRecency(history, params.recencyHalfLife),
     poisson: modelPoissonGap(history),
     markov: modelMarkov(history),
     temperature: modelTemperature(history),
@@ -435,14 +503,15 @@ export async function predict(
     normModels[name] = normalize(m);
   }
 
-  // Weighted ensemble
+  // Weighted ensemble using region-specific base weights
   const composite: Record<string, number> = emptyScores();
   for (const [name, m] of Object.entries(normModels)) {
-    const w = WEIGHTS[name] ?? 0;
+    const w = params.baseWeights[name] ?? 0;
     for (const lo of ALL_LOS) composite[lo] += w * m[lo];
   }
 
-  const probs = softmax(composite, 0.15);
+  const smoothed = applyShrinkage(composite, params.shrinkage);
+  const probs = softmax(smoothed, params.softmaxT);
 
   // Confidence from variance across models
   const confidence: Record<string, number> = {};
@@ -475,7 +544,7 @@ export async function predict(
     region,
     window_days: windowDays,
     days_available: daysAvailable,
-    model_weights: WEIGHTS,
+    model_weights: params.baseWeights,
     top_lift: Math.round(topLift * 100) / 100,
     predictions: items,
   };
@@ -484,18 +553,6 @@ export async function predict(
 // ─────────────────────────────────────────────
 // VIP Prediction — 9 models, max parameters, per-model rankings
 // ─────────────────────────────────────────────
-
-const VIP_WEIGHTS: Record<string, number> = {
-  frequency: 0.17,
-  recency: 0.22,
-  poisson: 0.13,
-  markov: 0.10,
-  temperature: 0.10,
-  pair: 0.09,
-  streak: 0.09,
-  mirror: 0.05,
-  dayOfWeek: 0.05,
-};
 
 const MODEL_META: Record<string, { label: string; description: string; question: string }> = {
   frequency: {
@@ -584,6 +641,7 @@ export async function predictVip(
 ): Promise<VipPredictionResult> {
   const history = await loadHistory(region, windowDays);
   const daysAvailable = Object.keys(history).length;
+  const params = regionParams(region);
 
   if (daysAvailable < 5) {
     return {
@@ -591,7 +649,7 @@ export async function predictVip(
       window_days: windowDays,
       days_available: daysAvailable,
       warning: "Cần ít nhất 5 ngày dữ liệu để dự đoán VIP",
-      model_weights: VIP_WEIGHTS,
+      model_weights: params.vipWeights,
       final: [],
       models: [],
       consensus: [],
@@ -601,7 +659,7 @@ export async function predictVip(
 
   const rawModels = {
     frequency: modelFrequency(history),
-    recency: modelRecency(history),
+    recency: modelRecency(history, params.recencyHalfLife),
     poisson: modelPoissonGap(history),
     markov: modelMarkov(history),
     temperature: modelTemperature(history),
@@ -632,18 +690,19 @@ export async function predictVip(
       label: MODEL_META[key]?.label ?? key,
       description: MODEL_META[key]?.description ?? "",
       question: MODEL_META[key]?.question ?? "",
-      weight: VIP_WEIGHTS[key] ?? 0,
+      weight: params.vipWeights[key] ?? 0,
       top_picks: ranked,
     };
   });
 
-  // Final ensemble with VIP weights
+  // Final ensemble with region-specific VIP weights
   const composite: Record<string, number> = emptyScores();
   for (const [name, m] of Object.entries(normModels)) {
-    const w = VIP_WEIGHTS[name] ?? 0;
+    const w = params.vipWeights[name] ?? 0;
     for (const lo of ALL_LOS) composite[lo] += w * m[lo];
   }
-  const probs = softmax(composite, 0.15);
+  const smoothed = applyShrinkage(composite, params.shrinkage);
+  const probs = softmax(smoothed, params.softmaxT);
 
   const confidence: Record<string, number> = {};
   for (const lo of ALL_LOS) {
@@ -702,7 +761,7 @@ export async function predictVip(
     region,
     window_days: windowDays,
     days_available: daysAvailable,
-    model_weights: VIP_WEIGHTS,
+    model_weights: params.vipWeights,
     top_lift: Math.round(topLift * 100) / 100,
     final,
     models,
@@ -721,10 +780,13 @@ const MODEL_KEYS = [
 ] as const;
 type ModelKey = (typeof MODEL_KEYS)[number];
 
-function runAllNineModels(history: DateMap): Record<ModelKey, Record<string, number>> {
+function runAllNineModels(
+  history: DateMap,
+  recencyHalfLife: number = 7
+): Record<ModelKey, Record<string, number>> {
   return {
     frequency: modelFrequency(history),
-    recency: modelRecency(history),
+    recency: modelRecency(history, recencyHalfLife),
     poisson: modelPoissonGap(history),
     markov: modelMarkov(history),
     temperature: modelTemperature(history),
@@ -755,7 +817,7 @@ export async function computeAndSaveModelPerformance(
   if (actual.size === 0) return { saved: 0 };
 
   const baselineRate = actual.size / 100;
-  const raw = runAllNineModels(history);
+  const raw = runAllNineModels(history, regionParams(region).recencyHalfLife);
 
   const details: Record<string, number> = {};
   for (const [modelName, scores] of Object.entries(raw)) {
@@ -926,8 +988,9 @@ export async function predictAdaptive(
   const adaptiveCfg = await getAdaptiveWeights(region, performanceWindow, 10, 0);
   const previousCfg = await getAdaptiveWeights(region, performanceWindow, 10, performanceWindow);
   const usingDefault = adaptiveCfg.days_with_data === 0;
+  const params = regionParams(region);
 
-  const raw = runAllNineModels(history);
+  const raw = runAllNineModels(history, params.recencyHalfLife);
   const normModels: Record<ModelKey, Record<string, number>> = {} as Record<ModelKey, Record<string, number>>;
   for (const k of MODEL_KEYS) normModels[k] = normalize(raw[k]);
 
@@ -937,7 +1000,8 @@ export async function predictAdaptive(
     for (const lo of ALL_LOS) composite[lo] += w * normModels[k][lo];
   }
 
-  const probs = softmax(composite, 0.15);
+  const smoothed = applyShrinkage(composite, params.shrinkage);
+  const probs = softmax(smoothed, params.softmaxT);
 
   const confidence: Record<string, number> = {};
   for (const lo of ALL_LOS) {
@@ -1079,7 +1143,8 @@ export async function getAdaptiveScorecard(
     const history = await loadHistory(region, 60, date);
     if (Object.keys(history).length < 3) continue;
 
-    const raw = runAllNineModels(history);
+    const sParams = regionParams(region);
+    const raw = runAllNineModels(history, sParams.recencyHalfLife);
     const norm: Record<ModelKey, Record<string, number>> = {} as Record<ModelKey, Record<string, number>>;
     for (const k of MODEL_KEYS) norm[k] = normalize(raw[k]);
 
@@ -1088,8 +1153,9 @@ export async function getAdaptiveScorecard(
       const w = cfg.weights[k];
       for (const lo of ALL_LOS) composite[lo] += w * norm[k][lo];
     }
+    const smoothedComp = applyShrinkage(composite, sParams.shrinkage);
     const topPicks = ALL_LOS
-      .map((lo) => ({ lo, s: composite[lo] }))
+      .map((lo) => ({ lo, s: smoothedComp[lo] }))
       .sort((a, b) => b.s - a.s)
       .slice(0, topN)
       .map((p) => p.lo);
@@ -1302,17 +1368,19 @@ export async function predictTopNHistorical(
 
   const cfg = await getAdaptiveWeights(region, perfWindowDays, topN, offsetDays);
   const usingDefault = cfg.days_with_data === 0;
+  const params = regionParams(region);
 
-  const raw = runAllNineModels(history);
+  const raw = runAllNineModels(history, params.recencyHalfLife);
   const composite = emptyScores();
   for (const k of MODEL_KEYS) {
     const norm = normalize(raw[k]);
     const w = cfg.weights[k];
     for (const lo of ALL_LOS) composite[lo] += w * norm[lo];
   }
+  const smoothed = applyShrinkage(composite, params.shrinkage);
 
   const picks = ALL_LOS
-    .map((lo) => ({ lo, s: composite[lo] }))
+    .map((lo) => ({ lo, s: smoothed[lo] }))
     .sort((a, b) => b.s - a.s)
     .slice(0, topN)
     .map((p) => p.lo);
