@@ -771,28 +771,93 @@ export default function PredictionVipPage({
 
         <section className="rounded-2xl bg-amber-900/15 border border-amber-500/30 overflow-hidden">
           <div className="px-4 md:px-5 py-3 border-b border-white/[0.06]">
-            <h3 className="text-sm font-bold text-amber-300">⚠️ Controversial (1-2/9 model)</h3>
+            <h3 className="text-sm font-bold text-amber-300">⚠️ Một phần đồng thuận (2-4/9 model)</h3>
             <p className="text-[0.7rem] text-slate-400 mt-0.5">
-              Lô chỉ vài model chọn → ít tin cậy, nhưng có thể là "ngon" theo 1 góc nhìn
+              Lô có ít model agree → chia nhóm theo số tiêu chí đạt được. Càng nhiều model agree càng tin cậy hơn.
             </p>
           </div>
-          <div className="p-3 md:p-4 max-h-48 overflow-y-auto">
-            {data.controversial.length === 0 ? (
-              <p className="text-center text-slate-500 text-sm py-4">Không có controversial</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {data.controversial.slice(0, 30).map((c) => (
-                  <span
-                    key={c.lo_number}
-                    title={`${c.appearances_in_top10}/9 model: ${c.models.join(", ")}`}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-400/30 text-amber-200 font-mono font-semibold text-xs"
+          <div className="p-3 md:p-4 max-h-72 overflow-y-auto space-y-3">
+            {(() => {
+              // Group by appearances_in_top10. Show in DESC order so 4/9 comes first.
+              const consensusMin =
+                region === "xsmn" ? 5 : region === "xsmb" ? 4 : 3;
+              const buckets = [4, 3, 2].filter((n) => n < consensusMin);
+              const groups = buckets.map((n) => ({
+                count: n,
+                items: data.controversial.filter((c) => c.appearances_in_top10 === n),
+              }));
+              const total = groups.reduce((s, g) => s + g.items.length, 0);
+              if (total === 0) {
+                return (
+                  <p className="text-center text-slate-500 text-sm py-4">
+                    Không có lô nào trong nhóm này
+                  </p>
+                );
+              }
+              // Color intensity scales with count (more agreement → bolder)
+              const bucketStyle: Record<number, { wrap: string; chip: string; btn: string; label: string }> = {
+                4: {
+                  wrap: "border-emerald-500/40 bg-emerald-500/5",
+                  chip: "bg-emerald-500/20 border-emerald-400/50 text-emerald-100",
+                  btn: "bg-emerald-500 hover:bg-emerald-400",
+                  label: "Gần consensus",
+                },
+                3: {
+                  wrap: "border-amber-500/40 bg-amber-500/5",
+                  chip: "bg-amber-500/20 border-amber-400/50 text-amber-100",
+                  btn: "bg-amber-500 hover:bg-amber-400",
+                  label: "Khá đồng thuận",
+                },
+                2: {
+                  wrap: "border-orange-500/30 bg-orange-500/[0.04]",
+                  chip: "bg-orange-500/15 border-orange-400/40 text-orange-200",
+                  btn: "bg-orange-500 hover:bg-orange-400",
+                  label: "Yếu — chỉ vài model",
+                },
+              };
+              return groups.map((g) => {
+                const style = bucketStyle[g.count];
+                const nums = g.items.map((i) => i.lo_number);
+                return (
+                  <div
+                    key={g.count}
+                    className={`rounded-xl border ${style.wrap} p-2.5`}
                   >
-                    {c.lo_number}
-                    <span className="text-[0.6rem] opacity-70">×{c.appearances_in_top10}</span>
-                  </span>
-                ))}
-              </div>
-            )}
+                    <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
+                      <div className="text-[0.7rem] font-bold text-slate-200">
+                        🎯 {g.count}/9 model agree
+                        <span className="ml-1.5 text-[0.65rem] font-normal text-slate-400">
+                          • {style.label} • {g.items.length} lô
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => copy(nums, `${g.count}/9 model`)}
+                        disabled={g.items.length === 0}
+                        className={`px-2.5 py-1 text-[0.65rem] rounded ${style.btn} text-white font-bold disabled:opacity-50`}
+                      >
+                        📋 Copy {g.items.length}
+                      </button>
+                    </div>
+                    {g.items.length === 0 ? (
+                      <p className="text-[0.7rem] text-slate-500 italic">Không có lô nào</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {g.items.map((c) => (
+                          <span
+                            key={c.lo_number}
+                            title={`${c.appearances_in_top10}/9 model: ${c.models.join(", ")}`}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border font-mono font-semibold text-xs ${style.chip}`}
+                          >
+                            {c.lo_number}
+                            <span className="text-[0.6rem] opacity-70">×{c.appearances_in_top10}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
         </section>
       </div>

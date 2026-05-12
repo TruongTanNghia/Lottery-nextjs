@@ -690,7 +690,11 @@ export async function predictVip(
   const consensusThreshold: Record<Region, number> = { xsmn: 5, xsmt: 3, xsmb: 4 };
   const minAgree = consensusThreshold[region];
   const consensus = allRanked.filter((x) => x.appearances_in_top10 >= minAgree);
-  const controversial = allRanked.filter((x) => x.appearances_in_top10 <= 2);
+  // Controversial: everything below consensus but with ≥ 2 model agree.
+  // We drop 1/9 (single-model picks) since they're too noisy to act on.
+  const controversial = allRanked.filter(
+    (x) => x.appearances_in_top10 >= 2 && x.appearances_in_top10 < minAgree
+  );
 
   const topLift = final[0].probability / 1.0;
 
