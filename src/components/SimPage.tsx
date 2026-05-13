@@ -90,7 +90,7 @@ export default function SimPage({ region }: { region: Region }) {
     setResult(null);
     try {
       const res = await fetch(
-        `/api/sim/run?region=${region}&mode=${tab}&capital=${capital}&days=${days}&top_n=${topN}&strategy=${strategy}&perf=14`
+        `/api/sim/run?region=${region}&mode=${tab}&capital=${capital}&days=${days}&top_n=${topN}&strategy=${strategy}&perf=30`
       );
       const json = await res.json();
       if (json.status === "success") {

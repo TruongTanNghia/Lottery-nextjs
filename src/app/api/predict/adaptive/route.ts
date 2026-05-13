@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const region = validateRegion(url.searchParams.get("region"));
     const window = Math.min(Math.max(parseInt(url.searchParams.get("window") ?? "60"), 7), 180);
-    const perf = Math.min(Math.max(parseInt(url.searchParams.get("perf") ?? "14"), 3), 60);
+    const perf = Math.min(Math.max(parseInt(url.searchParams.get("perf") ?? "30"), 3), 60);
 
     const result = await predictAdaptive(region, window, perf);
     return NextResponse.json({ status: "success", ...result });

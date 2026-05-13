@@ -802,10 +802,10 @@ export async function predictVip(
     normModels[name] = normalize(m);
   }
 
-  // Per-model top 10 picks — filter out zero-weight models (provinceOfDay
-  // for MN/MB) to keep the UI focused on active models
+  // Per-model top 10 picks — keep all 9 standard models (even with weight 0,
+  // as informational); hide provinceOfDay for non-MT regions (it's MT-specific).
   const models: ModelBreakdown[] = Object.entries(normModels)
-    .filter(([key]) => (params.vipWeights[key] ?? 0) > 0)
+    .filter(([key]) => key !== "provinceOfDay" || region === "xsmt")
     .map(([key, scores]) => {
       const ranked = ALL_LOS.map((lo) => ({
         lo_number: lo,
@@ -1100,7 +1100,7 @@ export interface AdaptivePredictionResult {
 export async function predictAdaptive(
   region: Region,
   windowDays: number = 60,
-  performanceWindow: number = 14
+  performanceWindow: number = 30
 ): Promise<AdaptivePredictionResult> {
   const history = await loadHistory(region, windowDays);
   const daysAvailable = Object.keys(history).length;

@@ -36,7 +36,7 @@ export async function GET(req: Request) {
     const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "30"), 3), 60);
     const topN = Math.min(Math.max(parseInt(url.searchParams.get("top_n") ?? "10"), 5), 20);
     const strategy = url.searchParams.get("strategy") ?? (mode === "player" ? "smart" : "smart");
-    const perf = Math.min(Math.max(parseInt(url.searchParams.get("perf") ?? "14"), 3), 30);
+    const perf = Math.min(Math.max(parseInt(url.searchParams.get("perf") ?? "30"), 3), 60);
 
     if (mode !== "player" && mode !== "house") {
       return NextResponse.json({ status: "error", detail: "mode must be player|house" }, { status: 400 });

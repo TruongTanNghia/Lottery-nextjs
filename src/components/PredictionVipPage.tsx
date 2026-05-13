@@ -190,7 +190,7 @@ export default function PredictionVipPage({
 
   useEffect(() => {
     setAdaptiveLoading(true);
-    fetch(`/api/predict/adaptive?region=${region}&window=${windowDays}&perf=14`)
+    fetch(`/api/predict/adaptive?region=${region}&window=${windowDays}&perf=30`)
       .then((r) => r.json())
       .then((d) => setAdaptive(d))
       .catch(() => setAdaptive(null))
@@ -200,7 +200,7 @@ export default function PredictionVipPage({
   useEffect(() => {
     setScorecardLoading(true);
     fetch(
-      `/api/predict/adaptive/scorecard?region=${region}&days=${scorecardDays}&top_n=${scorecardTopN}&perf=14`
+      `/api/predict/adaptive/scorecard?region=${region}&days=${scorecardDays}&top_n=${scorecardTopN}&perf=30`
     )
       .then((r) => r.json())
       .then((d) => setScorecard(d))
@@ -221,8 +221,8 @@ export default function PredictionVipPage({
         setAdaptiveLoading(true);
         setScorecardLoading(true);
         const [r1, r2] = await Promise.all([
-          fetch(`/api/predict/adaptive?region=${region}&window=${windowDays}&perf=14`),
-          fetch(`/api/predict/adaptive/scorecard?region=${region}&days=${scorecardDays}&top_n=${scorecardTopN}&perf=14`),
+          fetch(`/api/predict/adaptive?region=${region}&window=${windowDays}&perf=30`),
+          fetch(`/api/predict/adaptive/scorecard?region=${region}&days=${scorecardDays}&top_n=${scorecardTopN}&perf=30`),
         ]);
         setAdaptive(await r1.json());
         setScorecard(await r2.json());
@@ -348,7 +348,7 @@ export default function PredictionVipPage({
               🤖 Adaptive Smart — Tự học từ accuracy
             </h3>
             <p className="text-[0.7rem] text-slate-400 mt-0.5">
-              Trọng số 9 model auto-điều chỉnh theo hit rate {adaptive?.performance_window_days ?? 14} ngày gần nhất
+              Trọng số {region === "xsmt" ? 10 : 9} model auto-điều chỉnh theo hit rate {adaptive?.performance_window_days ?? 30} ngày gần nhất
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -410,10 +410,13 @@ export default function PredictionVipPage({
                 </div>
               </div>
               {(() => {
-                const maxW = Math.max(...Object.values(adaptive.adaptive_weights), 0.001);
-                const sorted = Object.entries(adaptive.adaptive_weights).sort(
-                  (a, b) => b[1] - a[1]
+                // provinceOfDay is MT-only — hide for MN/MB even if backend
+                // returns it with weight 0.
+                const filtered = Object.entries(adaptive.adaptive_weights).filter(
+                  ([key]) => key !== "provinceOfDay" || region === "xsmt"
                 );
+                const maxW = Math.max(...filtered.map(([, w]) => w), 0.001);
+                const sorted = filtered.sort((a, b) => b[1] - a[1]);
                 return (
                   <div className="space-y-1">
                     {sorted.map(([key, w]) => {

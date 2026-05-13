@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     const region = validateRegion(url.searchParams.get("region"));
     const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "14"), 3), 30);
     const topN = Math.min(Math.max(parseInt(url.searchParams.get("top_n") ?? "10"), 5), 20);
-    const perf = Math.min(Math.max(parseInt(url.searchParams.get("perf") ?? "14"), 3), 30);
+    const perf = Math.min(Math.max(parseInt(url.searchParams.get("perf") ?? "30"), 3), 60);
 
     const result = await getAdaptiveScorecard(region, days, topN, perf);
     return NextResponse.json({ status: "success", ...result });
