@@ -44,7 +44,50 @@ interface SimResult {
   timeline: SimDay[];
 }
 
-type SubTab = "player" | "house";
+type SubTab = "player" | "house" | "criteria";
+
+interface CriteriaBucketDay {
+  date: string;
+  picks: string[];
+  hits: number;
+  hit_picks: string[];
+  cost_vnd: number;
+  win_vnd: number;
+  profit_vnd: number;
+}
+
+interface CriteriaBucketStats {
+  bucket_key: string;
+  label: string;
+  min_models: number;
+  max_models: number;
+  total_picks: number;
+  total_hits: number;
+  hit_rate: number;
+  total_cost_vnd: number;
+  total_win_vnd: number;
+  total_profit_vnd: number;
+  roi_pct: number;
+  win_days: number;
+  lose_days: number;
+  skip_days: number;
+  days: CriteriaBucketDay[];
+}
+
+interface CriteriaSimResult {
+  status: string;
+  mode: "player_criteria";
+  region: Region;
+  initial_capital: number;
+  days_simulated: number;
+  total_models: number;
+  buckets: CriteriaBucketStats[];
+  total_cost_vnd: number;
+  total_win_vnd: number;
+  total_profit_vnd: number;
+  roi_pct: number;
+  final_balance: number;
+}
 
 const PLAYER_STRATS: Record<string, { label: string; desc: string }> = {
   conservative: { label: "🐢 Cẩn thận", desc: "Chỉ chơi 1 điểm/pick mọi ngày — ít rủi ro nhất" },
@@ -81,6 +124,7 @@ export default function SimPage({ region }: { region: Region }) {
   const [playerStrategy, setPlayerStrategy] = useState("smart");
   const [houseStrategy, setHouseStrategy] = useState("smart");
   const [result, setResult] = useState<SimResult | null>(null);
+  const [criteriaResult, setCriteriaResult] = useState<CriteriaSimResult | null>(null);
   const [loading, setLoading] = useState(false);
 
   const strategy = tab === "player" ? playerStrategy : houseStrategy;
@@ -88,16 +132,30 @@ export default function SimPage({ region }: { region: Region }) {
   async function runSim() {
     setLoading(true);
     setResult(null);
+    setCriteriaResult(null);
     try {
-      const res = await fetch(
-        `/api/sim/run?region=${region}&mode=${tab}&capital=${capital}&days=${days}&top_n=${topN}&strategy=${strategy}&perf=30`
-      );
-      const json = await res.json();
-      if (json.status === "success") {
-        setResult(json);
-        toast.show("success", `Sim xong ${json.days_simulated} ngày — ROI ${json.roi_pct}%`);
+      if (tab === "criteria") {
+        const res = await fetch(
+          `/api/sim/criteria?region=${region}&capital=${capital}&days=${days}&top_n=${topN}`
+        );
+        const json = await res.json();
+        if (json.status === "success") {
+          setCriteriaResult(json);
+          toast.show("success", `Sim ${json.days_simulated} ngày × 4 nhóm tiêu chí — ROI ${json.roi_pct}%`);
+        } else {
+          toast.show("error", json.detail ?? "Sim thất bại");
+        }
       } else {
-        toast.show("error", json.detail ?? "Sim thất bại");
+        const res = await fetch(
+          `/api/sim/run?region=${region}&mode=${tab}&capital=${capital}&days=${days}&top_n=${topN}&strategy=${strategy}&perf=30`
+        );
+        const json = await res.json();
+        if (json.status === "success") {
+          setResult(json);
+          toast.show("success", `Sim xong ${json.days_simulated} ngày — ROI ${json.roi_pct}%`);
+        } else {
+          toast.show("error", json.detail ?? "Sim thất bại");
+        }
       }
     } catch {
       toast.show("error", "Lỗi khi chạy sim");
@@ -176,6 +234,19 @@ export default function SimPage({ region }: { region: Region }) {
             AI điều chỉnh limit để thu max
           </div>
         </button>
+        <button
+          onClick={() => setTab("criteria")}
+          className={`flex-1 px-4 py-3 rounded-xl border-2 font-bold transition-colors ${
+            tab === "criteria"
+              ? "bg-emerald-600 border-emerald-400 text-white shadow-lg"
+              : "bg-[#111827] border-slate-700 text-slate-400 hover:border-emerald-500/40 hover:text-slate-200"
+          }`}
+        >
+          📊 Theo tiêu chí
+          <div className="text-[0.7rem] font-normal opacity-80 mt-0.5">
+            Cược theo từng nhóm 5+/4/3/2 model
+          </div>
+        </button>
       </div>
 
       {/* Controls */}
@@ -216,7 +287,7 @@ export default function SimPage({ region }: { region: Region }) {
           </div>
           <div>
             <label className="text-[0.7rem] text-slate-400 font-semibold uppercase">
-              {tab === "player" ? "Top N để chơi" : "Top N để giảm limit"}
+              {tab === "player" ? "Top N để chơi" : tab === "house" ? "Top N để giảm limit" : "Top N mỗi model"}
             </label>
             <select
               value={topN}
@@ -229,27 +300,35 @@ export default function SimPage({ region }: { region: Region }) {
               <option value={20}>Top 20</option>
             </select>
           </div>
-          <div>
-            <label className="text-[0.7rem] text-slate-400 font-semibold uppercase">
-              Chiến thuật
-            </label>
-            <select
-              value={strategy}
-              onChange={(e) =>
-                tab === "player"
-                  ? setPlayerStrategy(e.target.value)
-                  : setHouseStrategy(e.target.value)
-              }
-              className="w-full mt-1 px-3 py-2 rounded text-sm bg-[#1a2332] border border-slate-600 text-slate-100"
-            >
-              {Object.entries(tab === "player" ? PLAYER_STRATS : HOUSE_STRATS).map(([k, v]) => (
-                <option key={k} value={k}>{v.label}</option>
-              ))}
-            </select>
-          </div>
+          {tab !== "criteria" ? (
+            <div>
+              <label className="text-[0.7rem] text-slate-400 font-semibold uppercase">
+                Chiến thuật
+              </label>
+              <select
+                value={strategy}
+                onChange={(e) =>
+                  tab === "player"
+                    ? setPlayerStrategy(e.target.value)
+                    : setHouseStrategy(e.target.value)
+                }
+                className="w-full mt-1 px-3 py-2 rounded text-sm bg-[#1a2332] border border-slate-600 text-slate-100"
+              >
+                {Object.entries(tab === "player" ? PLAYER_STRATS : HOUSE_STRATS).map(([k, v]) => (
+                  <option key={k} value={k}>{v.label}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="rounded bg-emerald-500/10 border border-emerald-500/30 px-3 py-2 text-[0.7rem] text-emerald-200">
+              <b>Auto strategy:</b> AI cược 1đ/pick cho từng nhóm 5+/4/3/2 model agree riêng biệt → so sánh ROI mỗi tiêu chí.
+            </div>
+          )}
         </div>
         <p className="text-[0.7rem] text-slate-400 mt-3 italic">
-          {(tab === "player" ? PLAYER_STRATS : HOUSE_STRATS)[strategy]?.desc}
+          {tab === "criteria"
+            ? "Mỗi nhóm tiêu chí được tính P&L riêng — nhóm nào lời, nhóm nào lỗ sẽ rõ ngay."
+            : (tab === "player" ? PLAYER_STRATS : HOUSE_STRATS)[strategy]?.desc}
         </p>
         <button
           onClick={runSim}
@@ -265,8 +344,13 @@ export default function SimPage({ region }: { region: Region }) {
         <div className="text-center py-12 text-slate-500">⏳ AI đang chơi {days} ngày...</div>
       )}
 
-      {/* Result */}
-      {result && !loading && (
+      {/* Criteria-mode result */}
+      {criteriaResult && !loading && tab === "criteria" && (
+        <CriteriaResultView result={criteriaResult} />
+      )}
+
+      {/* Player/House result */}
+      {result && !loading && tab !== "criteria" && (
         <>
           {/* Banner */}
           <section className={`mb-4 md:mb-6 rounded-2xl bg-gradient-to-br ${profitBg} to-transparent border ${result.total_profit >= 0 ? "border-emerald-500/40" : "border-rose-500/40"} p-4 md:p-5`}>
@@ -565,6 +649,222 @@ function Conclusion({ result, mode }: { result: SimResult; mode: SubTab }) {
       {lines.map((l, i) => (
         <p key={i}>{l}</p>
       ))}
+    </div>
+  );
+}
+
+function CriteriaResultView({ result }: { result: CriteriaSimResult }) {
+  const profitColor = result.total_profit_vnd >= 0 ? "text-emerald-400" : "text-rose-400";
+  const profitBg = result.total_profit_vnd >= 0 ? "from-emerald-900/30" : "from-rose-900/30";
+
+  // Pick the best/worst bucket by ROI
+  const ranked = [...result.buckets].sort((a, b) => b.roi_pct - a.roi_pct);
+  const bestBucket = ranked[0];
+  const worstBucket = ranked[ranked.length - 1];
+
+  return (
+    <>
+      {/* Top banner */}
+      <section className={`mb-4 md:mb-6 rounded-2xl bg-gradient-to-br ${profitBg} to-transparent border ${result.total_profit_vnd >= 0 ? "border-emerald-500/40" : "border-rose-500/40"} p-4 md:p-5`}>
+        <div className="flex items-start justify-between flex-wrap gap-3">
+          <div>
+            <h3 className="text-sm md:text-base font-bold text-slate-200">
+              {result.total_profit_vnd >= 0 ? "✅ LÃI TỔNG" : "❌ LỖ TỔNG"} — Theo tiêu chí
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {result.days_simulated} ngày × 4 nhóm tiêu chí ({result.total_models} model gốc)
+            </p>
+          </div>
+          <div className="text-right">
+            <div className={`text-2xl md:text-3xl font-extrabold font-mono ${profitColor}`}>
+              {result.total_profit_vnd >= 0 ? "+" : ""}{fmtVnd(result.total_profit_vnd)}
+            </div>
+            <div className={`text-xs font-bold ${profitColor}`}>
+              ROI {result.roi_pct >= 0 ? "+" : ""}{result.roi_pct}%
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Best/Worst summary */}
+      <div className="grid grid-cols-2 gap-3 mb-4 md:mb-6">
+        <div className="rounded-xl border border-emerald-500/40 bg-emerald-900/15 p-3">
+          <div className="text-[0.65rem] text-emerald-300 font-bold uppercase">🏆 Tiêu chí ăn nhất</div>
+          <div className="text-lg font-bold text-emerald-200 mt-1">{bestBucket?.label ?? "—"}</div>
+          <div className="text-[0.7rem] text-slate-300 mt-0.5">
+            ROI <b>{bestBucket?.roi_pct ?? 0}%</b> • Hit rate {bestBucket?.hit_rate ?? 0}%
+          </div>
+        </div>
+        <div className="rounded-xl border border-rose-500/40 bg-rose-900/15 p-3">
+          <div className="text-[0.65rem] text-rose-300 font-bold uppercase">💀 Tiêu chí tệ nhất</div>
+          <div className="text-lg font-bold text-rose-200 mt-1">{worstBucket?.label ?? "—"}</div>
+          <div className="text-[0.7rem] text-slate-300 mt-0.5">
+            ROI <b>{worstBucket?.roi_pct ?? 0}%</b> • Hit rate {worstBucket?.hit_rate ?? 0}%
+          </div>
+        </div>
+      </div>
+
+      {/* Per-bucket cards */}
+      <h3 className="text-sm md:text-base font-bold mb-3">📊 Chi tiết từng nhóm tiêu chí</h3>
+      <div className="space-y-3">
+        {result.buckets.map((b) => (
+          <BucketCard key={b.bucket_key} bucket={b} />
+        ))}
+      </div>
+
+      {/* Aggregate totals row */}
+      <section className="mt-4 md:mt-6 rounded-2xl bg-[#0f1722] border border-slate-700/50 p-4">
+        <h3 className="text-sm font-bold mb-2 text-slate-200">💰 Tổng cộng tất cả nhóm</h3>
+        <div className="grid grid-cols-3 gap-3 text-sm">
+          <div>
+            <div className="text-[0.65rem] text-slate-400 uppercase">Tổng chi</div>
+            <div className="font-mono font-bold text-slate-200">{fmtVnd(result.total_cost_vnd)}</div>
+          </div>
+          <div>
+            <div className="text-[0.65rem] text-slate-400 uppercase">Tổng trúng</div>
+            <div className="font-mono font-bold text-emerald-300">{fmtVnd(result.total_win_vnd)}</div>
+          </div>
+          <div>
+            <div className="text-[0.65rem] text-slate-400 uppercase">Tổng lãi/lỗ</div>
+            <div className={`font-mono font-bold ${profitColor}`}>
+              {result.total_profit_vnd >= 0 ? "+" : ""}{fmtVnd(result.total_profit_vnd)}
+            </div>
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function BucketCard({ bucket }: { bucket: CriteriaBucketStats }) {
+  const profit = bucket.total_profit_vnd;
+  const isWin = profit > 0;
+  const isLoss = profit < 0;
+  const isEmpty = bucket.total_picks === 0;
+
+  const wrap = isEmpty
+    ? "border-slate-600/40 bg-slate-800/20"
+    : isWin
+    ? "border-emerald-500/40 bg-emerald-900/15"
+    : isLoss
+    ? "border-rose-500/40 bg-rose-900/15"
+    : "border-amber-500/40 bg-amber-900/15";
+
+  const profitColor = isWin ? "text-emerald-400" : isLoss ? "text-rose-400" : "text-slate-400";
+
+  // Best 3 winning days and worst 3 losing days
+  const sortedDays = [...bucket.days];
+  const winDays = sortedDays.filter((d) => d.profit_vnd > 0).sort((a, b) => b.profit_vnd - a.profit_vnd).slice(0, 3);
+  const loseDays = sortedDays.filter((d) => d.profit_vnd < 0).sort((a, b) => a.profit_vnd - b.profit_vnd).slice(0, 3);
+
+  // Bucket strength label
+  const strength: Record<string, string> = {
+    "5plus": "🔥 Rất mạnh (consensus)",
+    "4": "💪 Mạnh",
+    "3": "👌 Trung bình",
+    "2": "🤏 Yếu",
+  };
+
+  return (
+    <div className={`rounded-xl border ${wrap} p-4 md:p-5`}>
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+        <div>
+          <h4 className="text-base md:text-lg font-extrabold text-slate-100">
+            🎯 {bucket.label} — {strength[bucket.bucket_key] ?? ""}
+          </h4>
+          <p className="text-[0.7rem] text-slate-400 mt-0.5">
+            Lô có {bucket.min_models === bucket.max_models ? `đúng ${bucket.min_models}` : `≥ ${bucket.min_models}`} model agree
+          </p>
+        </div>
+        <div className="text-right">
+          <div className={`text-xl md:text-2xl font-extrabold font-mono ${profitColor}`}>
+            {profit >= 0 ? "+" : ""}{fmtVnd(profit)}
+          </div>
+          <div className={`text-xs font-bold ${profitColor}`}>
+            ROI {bucket.roi_pct >= 0 ? "+" : ""}{bucket.roi_pct}%
+          </div>
+        </div>
+      </div>
+
+      {/* KPI grid */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
+        <KpiMini label="Tổng cược" value={fmtVnd(bucket.total_cost_vnd)} />
+        <KpiMini label="Tổng trúng" value={fmtVnd(bucket.total_win_vnd)} accent="text-emerald-300" />
+        <KpiMini label="Số lô cược" value={bucket.total_picks.toString()} />
+        <KpiMini
+          label="Hit rate"
+          value={`${bucket.hit_rate}%`}
+          accent={bucket.hit_rate >= 18 ? "text-emerald-300" : "text-rose-300"}
+          hint={`${bucket.total_hits} trúng / ${bucket.total_picks}`}
+        />
+        <KpiMini
+          label="Ngày thắng/thua"
+          value={`${bucket.win_days}/${bucket.lose_days}`}
+          accent="text-slate-200"
+          hint={bucket.skip_days > 0 ? `${bucket.skip_days} ngày trống` : undefined}
+        />
+      </div>
+
+      {/* Best/Worst days */}
+      {!isEmpty && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {winDays.length > 0 && (
+            <div className="rounded bg-emerald-500/10 border border-emerald-500/30 p-2">
+              <div className="text-[0.65rem] text-emerald-300 font-bold uppercase mb-1">🟢 3 ngày trúng nhất</div>
+              {winDays.map((d) => (
+                <div key={d.date} className="flex justify-between text-[0.7rem] font-mono py-0.5">
+                  <span className="text-slate-300">{d.date.slice(5)}</span>
+                  <span className="text-slate-400">{d.hits}/{d.picks.length} hit</span>
+                  <span className="text-emerald-300 font-bold">+{fmtVndShort(d.profit_vnd)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {loseDays.length > 0 && (
+            <div className="rounded bg-rose-500/10 border border-rose-500/30 p-2">
+              <div className="text-[0.65rem] text-rose-300 font-bold uppercase mb-1">🔴 3 ngày tệ nhất</div>
+              {loseDays.map((d) => (
+                <div key={d.date} className="flex justify-between text-[0.7rem] font-mono py-0.5">
+                  <span className="text-slate-300">{d.date.slice(5)}</span>
+                  <span className="text-slate-400">{d.hits}/{d.picks.length} hit</span>
+                  <span className="text-rose-300 font-bold">{fmtVndShort(d.profit_vnd)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Conclusion */}
+      <p className="text-[0.7rem] text-slate-400 italic mt-3">
+        💡 {isEmpty
+          ? `Không có ngày nào có lô đạt tiêu chí này — nhóm quá hiếm, không xét được.`
+          : bucket.roi_pct >= 5
+          ? `Tiêu chí này LỜI rõ ràng (ROI +${bucket.roi_pct}%) → nên ưu tiên dùng để đánh thực.`
+          : bucket.roi_pct >= 0
+          ? `Hoà vốn (ROI ${bucket.roi_pct}%) — không lỗ nhưng cũng chưa thắng đậm.`
+          : `LỖ (ROI ${bucket.roi_pct}%) — không nên dùng tiêu chí này một mình, có thể chỉ là phụ trợ.`}
+      </p>
+    </div>
+  );
+}
+
+function KpiMini({
+  label,
+  value,
+  accent,
+  hint,
+}: {
+  label: string;
+  value: string;
+  accent?: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded bg-white/[0.03] p-2">
+      <div className="text-[0.6rem] text-slate-500 uppercase">{label}</div>
+      <div className={`font-mono font-bold text-sm ${accent ?? "text-slate-200"}`}>{value}</div>
+      {hint && <div className="text-[0.55rem] text-slate-500 mt-0.5">{hint}</div>}
     </div>
   );
 }

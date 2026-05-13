@@ -1489,6 +1489,38 @@ function formatVnd(n: number): string {
 }
 
 /**
+ * For a HISTORICAL date, run each of the 9-10 models on data BEFORE that date
+ * and return each model's top-N picks. Used by criteria-based simulation to
+ * compute consensus buckets per day.
+ *
+ * Skips provinceOfDay for non-MT regions (where it returns all zeros).
+ */
+export async function getModelTop10PerDay(
+  region: Region,
+  date: string,
+  topN: number = 10
+): Promise<Record<string, string[]>> {
+  const history = await loadHistory(region, 60, date);
+  if (Object.keys(history).length < 3) return {};
+  const params = regionParams(region);
+  const provinceHistory = region === "xsmt"
+    ? await loadProvinceHistory(region, 60, date)
+    : {};
+  const raw = runAllModels(history, provinceHistory, region, params.recencyHalfLife);
+  const out: Record<string, string[]> = {};
+  for (const [key, scores] of Object.entries(raw)) {
+    if (key === "provinceOfDay" && region !== "xsmt") continue;
+    const norm = normalize(scores);
+    out[key] = ALL_LOS
+      .map((lo) => ({ lo, s: norm[lo] }))
+      .sort((a, b) => b.s - a.s)
+      .slice(0, topN)
+      .map((p) => p.lo);
+  }
+  return out;
+}
+
+/**
  * Predict top-N picks for a HISTORICAL date using the adaptive ensemble
  * with weights derived from data strictly BEFORE that date.
  *

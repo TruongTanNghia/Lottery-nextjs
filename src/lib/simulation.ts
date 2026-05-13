@@ -10,7 +10,7 @@
  */
 import { query, type Region, getLoAppearedOnDate } from "./db";
 import { POINT_VALUE, WIN_MULTIPLIER, COST_MULTIPLIER } from "./limit-engine";
-import { predictTopNHistorical } from "./prediction";
+import { predictTopNHistorical, getModelTop10PerDay } from "./prediction";
 
 const ALL_LOS = Array.from({ length: 100 }, (_, i) => String(i).padStart(2, "0"));
 const POINT_COST = POINT_VALUE;            // 23,000đ per điểm
@@ -33,6 +33,9 @@ export interface SimDay {
   hit_picks: string[];      // picks that actually appeared
   miss_picks: string[];     // picks that didn't appear
   pick_occurrences: Record<string, number>;  // per-pick appearance count
+  pick_limit?: Record<string, number>;       // per-pick limit (house mode only)
+  pick_bet_vnd?: number;    // VND bet on each pick (player mode)
+  pick_win_vnd?: Record<string, number>;     // VND won on each pick if hit (player)
   bet_per_pick?: number;
   total_cost: number;
   total_payout: number;
@@ -288,12 +291,24 @@ export async function simulatePlayer(
       hitPicks, recentProfits: [...recentProfits], betPerPick,
     });
 
+    // Per-pick win amounts (player mode):
+    //   bet per pick = betPerPick × POINT_COST
+    //   win per pick (if hit) = betPerPick × occurrences × WIN_PER_HIT
+    const pickBetVnd = betPerPick * POINT_COST;
+    const pickWinVnd: Record<string, number> = {};
+    for (const p of picks) {
+      const c = pickOcc[p] ?? 0;
+      pickWinVnd[p] = c > 0 ? betPerPick * c * WIN_PER_HIT : 0;
+    }
+
     recentProfits.push(profit);
     if (recentProfits.length > 3) recentProfits.shift();
 
     timeline.push({
       date, action: "bet", picks,
       hit_picks: hitPicks, miss_picks: missPicks, pick_occurrences: pickOcc,
+      pick_bet_vnd: pickBetVnd,
+      pick_win_vnd: pickWinVnd,
       bet_per_pick: betPerPick,
       total_cost: cost,
       total_payout: payout,
@@ -473,5 +488,180 @@ export async function simulateHouse(
     bankrupt,
     bankrupt_date: bankruptDate,
     timeline,
+  };
+}
+
+// ─────────────────────────────────────────────
+// CRITERIA-BASED PLAYER SIM — bets by consensus bucket
+//
+// Each historical day:
+//   1. Run all 9 (or 10 for MT) models, get each model's top 10
+//   2. Compute how many models agreed on each lô (appearance count in top-10s)
+//   3. Group lô into buckets by agreement count:
+//        5+/N  → very strong (consensus)
+//        4/N   → strong
+//        3/N   → medium
+//        2/N   → weak
+//   4. Bet 1 điểm per lô in EACH bucket separately
+//   5. Track per-bucket hits, profit, ROI → tells user which criterion pays
+// ─────────────────────────────────────────────
+
+export interface CriteriaBucketDay {
+  date: string;
+  picks: string[];
+  hits: number;
+  hit_picks: string[];
+  cost_vnd: number;
+  win_vnd: number;
+  profit_vnd: number;
+}
+
+export interface CriteriaBucketStats {
+  bucket_key: string;        // "5plus" | "4" | "3" | "2"
+  label: string;             // e.g. "5+/9", "4/10"
+  min_models: number;
+  max_models: number;
+  total_picks: number;       // sum of #picks across all days
+  total_hits: number;        // sum of #hits
+  hit_rate: number;          // hits / picks
+  total_cost_vnd: number;
+  total_win_vnd: number;
+  total_profit_vnd: number;
+  roi_pct: number;
+  win_days: number;          // days with profit > 0
+  lose_days: number;
+  skip_days: number;         // days with 0 picks in this bucket
+  days: CriteriaBucketDay[];
+}
+
+export interface CriteriaSimResult {
+  mode: "player_criteria";
+  region: Region;
+  initial_capital: number;
+  days_simulated: number;
+  total_models: number;
+  buckets: CriteriaBucketStats[];
+  total_cost_vnd: number;
+  total_win_vnd: number;
+  total_profit_vnd: number;
+  roi_pct: number;
+  final_balance: number;
+}
+
+export async function simulatePlayerByCriteria(
+  region: Region,
+  initialCapital: number,
+  days: number,
+  topN: number = 10
+): Promise<CriteriaSimResult> {
+  const dateRows = await query<{ date: string }>(
+    "SELECT DISTINCT date FROM lo_daily WHERE region = ? ORDER BY date DESC LIMIT ?",
+    [region, days]
+  );
+  const dates = dateRows.map((r) => r.date).reverse();
+
+  const totalModels = region === "xsmt" ? 10 : 9;
+  const buckets: Array<{ key: string; label: string; min: number; max: number }> = [
+    { key: "5plus", label: `5+/${totalModels}`, min: 5, max: totalModels },
+    { key: "4", label: `4/${totalModels}`, min: 4, max: 4 },
+    { key: "3", label: `3/${totalModels}`, min: 3, max: 3 },
+    { key: "2", label: `2/${totalModels}`, min: 2, max: 2 },
+  ];
+
+  const stats: Record<string, CriteriaBucketStats> = {};
+  for (const b of buckets) {
+    stats[b.key] = {
+      bucket_key: b.key, label: b.label,
+      min_models: b.min, max_models: b.max,
+      total_picks: 0, total_hits: 0, hit_rate: 0,
+      total_cost_vnd: 0, total_win_vnd: 0, total_profit_vnd: 0,
+      roi_pct: 0,
+      win_days: 0, lose_days: 0, skip_days: 0,
+      days: [],
+    };
+  }
+
+  for (const date of dates) {
+    const top10ByModel = await getModelTop10PerDay(region, date, topN);
+    if (Object.keys(top10ByModel).length === 0) continue;
+
+    // Count model appearances per lô
+    const appearances: Record<string, number> = {};
+    for (const picks of Object.values(top10ByModel)) {
+      for (const lo of picks) appearances[lo] = (appearances[lo] ?? 0) + 1;
+    }
+
+    // Actual results that day
+    const actualRows = await query<{ lo_number: string; count: number }>(
+      "SELECT lo_number, count FROM lo_daily WHERE region = ? AND date = ?",
+      [region, date]
+    );
+    const actualMap = new Map(actualRows.map((r) => [r.lo_number, r.count]));
+
+    // Per-bucket bets
+    for (const b of buckets) {
+      const bucketPicks: string[] = [];
+      const bucketHits: string[] = [];
+      let occ = 0;
+      for (const [lo, n] of Object.entries(appearances)) {
+        if (n >= b.min && n <= b.max) {
+          bucketPicks.push(lo);
+          const c = actualMap.get(lo) ?? 0;
+          if (c > 0) {
+            bucketHits.push(lo);
+            occ += c;
+          }
+        }
+      }
+      const cost = bucketPicks.length * POINT_VALUE;
+      const win = occ * WIN_MULTIPLIER * 1000;
+      const profit = win - cost;
+
+      const s = stats[b.key];
+      s.total_picks += bucketPicks.length;
+      s.total_hits += bucketHits.length;
+      s.total_cost_vnd += cost;
+      s.total_win_vnd += win;
+      s.total_profit_vnd += profit;
+      if (bucketPicks.length === 0) s.skip_days++;
+      else if (profit > 0) s.win_days++;
+      else s.lose_days++;
+      s.days.push({
+        date,
+        picks: bucketPicks,
+        hits: bucketHits.length,
+        hit_picks: bucketHits,
+        cost_vnd: cost,
+        win_vnd: win,
+        profit_vnd: profit,
+      });
+    }
+  }
+
+  // Finalize per-bucket stats
+  for (const b of buckets) {
+    const s = stats[b.key];
+    s.hit_rate = s.total_picks > 0 ? Math.round((s.total_hits / s.total_picks) * 10000) / 100 : 0;
+    s.roi_pct = s.total_cost_vnd > 0
+      ? Math.round((s.total_profit_vnd / s.total_cost_vnd) * 10000) / 100
+      : 0;
+  }
+
+  const totalCost = Object.values(stats).reduce((s, b) => s + b.total_cost_vnd, 0);
+  const totalWin = Object.values(stats).reduce((s, b) => s + b.total_win_vnd, 0);
+  const totalProfit = totalWin - totalCost;
+
+  return {
+    mode: "player_criteria",
+    region,
+    initial_capital: initialCapital,
+    days_simulated: dates.length,
+    total_models: totalModels,
+    buckets: buckets.map((b) => stats[b.key]),
+    total_cost_vnd: totalCost,
+    total_win_vnd: totalWin,
+    total_profit_vnd: totalProfit,
+    roi_pct: totalCost > 0 ? Math.round((totalProfit / totalCost) * 10000) / 100 : 0,
+    final_balance: initialCapital + totalProfit,
   };
 }
