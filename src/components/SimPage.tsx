@@ -50,7 +50,9 @@ interface CriteriaBucketDay {
   date: string;
   picks: string[];
   hits: number;
+  total_occurrences: number;
   hit_picks: string[];
+  hit_picks_with_occ: Array<{ lo: string; occ: number }>;
   cost_vnd: number;
   win_vnd: number;
   profit_vnd: number;
@@ -63,7 +65,9 @@ interface CriteriaBucketStats {
   max_models: number;
   total_picks: number;
   total_hits: number;
+  total_occurrences: number;
   hit_rate: number;
+  occ_per_pick: number;
   total_cost_vnd: number;
   total_win_vnd: number;
   total_profit_vnd: number;
@@ -786,16 +790,45 @@ function BucketCard({ bucket }: { bucket: CriteriaBucketStats }) {
         </div>
       </div>
 
+      {/* Highlight summary: "trúng / lần XH / đề xuất" — the headline numbers */}
+      <div className="rounded-lg bg-white/[0.04] border border-slate-600/40 px-3 py-2 mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <div className="text-[0.7rem] text-slate-400 font-semibold uppercase">📈 Cộng dồn</div>
+        <div className="text-sm md:text-base">
+          <b className="font-mono text-emerald-300">{bucket.total_hits}</b>
+          <span className="text-[0.7rem] text-slate-400"> lô trúng</span>
+        </div>
+        <div className="text-slate-600">/</div>
+        <div className="text-sm md:text-base">
+          <b className="font-mono text-amber-300">{bucket.total_occurrences}</b>
+          <span className="text-[0.7rem] text-slate-400"> lần xuất hiện</span>
+        </div>
+        <div className="text-slate-600">/</div>
+        <div className="text-sm md:text-base">
+          <b className="font-mono text-slate-200">{bucket.total_picks}</b>
+          <span className="text-[0.7rem] text-slate-400"> lô đề xuất</span>
+        </div>
+        {bucket.total_picks > 0 && (
+          <div className="ml-auto text-[0.65rem] text-slate-500 italic">
+            TB {bucket.occ_per_pick.toFixed(2)} lần XH / mỗi lô đề xuất
+          </div>
+        )}
+      </div>
+
       {/* KPI grid */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
         <KpiMini label="Tổng cược" value={fmtVnd(bucket.total_cost_vnd)} />
         <KpiMini label="Tổng trúng" value={fmtVnd(bucket.total_win_vnd)} accent="text-emerald-300" />
-        <KpiMini label="Số lô cược" value={bucket.total_picks.toString()} />
         <KpiMini
           label="Hit rate"
           value={`${bucket.hit_rate}%`}
           accent={bucket.hit_rate >= 18 ? "text-emerald-300" : "text-rose-300"}
           hint={`${bucket.total_hits} trúng / ${bucket.total_picks}`}
+        />
+        <KpiMini
+          label="Lần XH/lô"
+          value={bucket.occ_per_pick.toFixed(2)}
+          accent={bucket.occ_per_pick >= 0.3 ? "text-emerald-300" : "text-rose-300"}
+          hint={`Cần ≥ 0.29 để hoà`}
         />
         <KpiMini
           label="Ngày thắng/thua"
@@ -812,10 +845,25 @@ function BucketCard({ bucket }: { bucket: CriteriaBucketStats }) {
             <div className="rounded bg-emerald-500/10 border border-emerald-500/30 p-2">
               <div className="text-[0.65rem] text-emerald-300 font-bold uppercase mb-1">🟢 3 ngày trúng nhất</div>
               {winDays.map((d) => (
-                <div key={d.date} className="flex justify-between text-[0.7rem] font-mono py-0.5">
-                  <span className="text-slate-300">{d.date.slice(5)}</span>
-                  <span className="text-slate-400">{d.hits}/{d.picks.length} hit</span>
-                  <span className="text-emerald-300 font-bold">+{fmtVndShort(d.profit_vnd)}</span>
+                <div key={d.date} className="text-[0.7rem] font-mono py-1 border-t border-emerald-500/10 first:border-t-0">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-slate-300">{d.date.slice(5)}</span>
+                    <span className="text-slate-400">
+                      {d.hits}/{d.picks.length} trúng • {d.total_occurrences} lần XH
+                    </span>
+                    <span className="text-emerald-300 font-bold">+{fmtVndShort(d.profit_vnd)}</span>
+                  </div>
+                  {d.hit_picks_with_occ.length > 0 && (
+                    <div className="text-[0.65rem] text-emerald-200 mt-0.5 flex flex-wrap gap-x-1.5">
+                      {d.hit_picks_with_occ.slice(0, 12).map((h) => (
+                        <span key={h.lo}>
+                          {h.lo}
+                          {h.occ > 1 && <span className="text-emerald-400 font-bold">×{h.occ}</span>}
+                        </span>
+                      ))}
+                      {d.hit_picks_with_occ.length > 12 && <span className="text-slate-500">…</span>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -824,10 +872,25 @@ function BucketCard({ bucket }: { bucket: CriteriaBucketStats }) {
             <div className="rounded bg-rose-500/10 border border-rose-500/30 p-2">
               <div className="text-[0.65rem] text-rose-300 font-bold uppercase mb-1">🔴 3 ngày tệ nhất</div>
               {loseDays.map((d) => (
-                <div key={d.date} className="flex justify-between text-[0.7rem] font-mono py-0.5">
-                  <span className="text-slate-300">{d.date.slice(5)}</span>
-                  <span className="text-slate-400">{d.hits}/{d.picks.length} hit</span>
-                  <span className="text-rose-300 font-bold">{fmtVndShort(d.profit_vnd)}</span>
+                <div key={d.date} className="text-[0.7rem] font-mono py-1 border-t border-rose-500/10 first:border-t-0">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-slate-300">{d.date.slice(5)}</span>
+                    <span className="text-slate-400">
+                      {d.hits}/{d.picks.length} trúng • {d.total_occurrences} lần XH
+                    </span>
+                    <span className="text-rose-300 font-bold">{fmtVndShort(d.profit_vnd)}</span>
+                  </div>
+                  {d.hit_picks_with_occ.length > 0 && (
+                    <div className="text-[0.65rem] text-rose-200 mt-0.5 flex flex-wrap gap-x-1.5">
+                      {d.hit_picks_with_occ.slice(0, 12).map((h) => (
+                        <span key={h.lo}>
+                          {h.lo}
+                          {h.occ > 1 && <span className="text-rose-400 font-bold">×{h.occ}</span>}
+                        </span>
+                      ))}
+                      {d.hit_picks_with_occ.length > 12 && <span className="text-slate-500">…</span>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

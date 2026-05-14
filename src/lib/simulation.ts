@@ -509,8 +509,10 @@ export async function simulateHouse(
 export interface CriteriaBucketDay {
   date: string;
   picks: string[];
-  hits: number;
+  hits: number;                 // distinct lô that hit (≤ picks.length)
+  total_occurrences: number;    // sum of occurrence counts across hit picks
   hit_picks: string[];
+  hit_picks_with_occ: Array<{ lo: string; occ: number }>;
   cost_vnd: number;
   win_vnd: number;
   profit_vnd: number;
@@ -522,15 +524,17 @@ export interface CriteriaBucketStats {
   min_models: number;
   max_models: number;
   total_picks: number;       // sum of #picks across all days
-  total_hits: number;        // sum of #hits
-  hit_rate: number;          // hits / picks
+  total_hits: number;        // sum of distinct lô hits
+  total_occurrences: number; // sum of all hit occurrences (counts multi-hits)
+  hit_rate: number;          // hits / picks (0-100)
+  occ_per_pick: number;      // average occurrences per pick (0-100)
   total_cost_vnd: number;
   total_win_vnd: number;
   total_profit_vnd: number;
   roi_pct: number;
-  win_days: number;          // days with profit > 0
+  win_days: number;
   lose_days: number;
-  skip_days: number;         // days with 0 picks in this bucket
+  skip_days: number;
   days: CriteriaBucketDay[];
 }
 
@@ -573,7 +577,8 @@ export async function simulatePlayerByCriteria(
     stats[b.key] = {
       bucket_key: b.key, label: b.label,
       min_models: b.min, max_models: b.max,
-      total_picks: 0, total_hits: 0, hit_rate: 0,
+      total_picks: 0, total_hits: 0, total_occurrences: 0,
+      hit_rate: 0, occ_per_pick: 0,
       total_cost_vnd: 0, total_win_vnd: 0, total_profit_vnd: 0,
       roi_pct: 0,
       win_days: 0, lose_days: 0, skip_days: 0,
@@ -602,6 +607,7 @@ export async function simulatePlayerByCriteria(
     for (const b of buckets) {
       const bucketPicks: string[] = [];
       const bucketHits: string[] = [];
+      const bucketHitsWithOcc: Array<{ lo: string; occ: number }> = [];
       let occ = 0;
       for (const [lo, n] of Object.entries(appearances)) {
         if (n >= b.min && n <= b.max) {
@@ -609,10 +615,12 @@ export async function simulatePlayerByCriteria(
           const c = actualMap.get(lo) ?? 0;
           if (c > 0) {
             bucketHits.push(lo);
+            bucketHitsWithOcc.push({ lo, occ: c });
             occ += c;
           }
         }
       }
+      bucketHitsWithOcc.sort((a, b2) => b2.occ - a.occ);
       const cost = bucketPicks.length * POINT_VALUE;
       const win = occ * WIN_MULTIPLIER * 1000;
       const profit = win - cost;
@@ -620,6 +628,7 @@ export async function simulatePlayerByCriteria(
       const s = stats[b.key];
       s.total_picks += bucketPicks.length;
       s.total_hits += bucketHits.length;
+      s.total_occurrences += occ;
       s.total_cost_vnd += cost;
       s.total_win_vnd += win;
       s.total_profit_vnd += profit;
@@ -630,7 +639,9 @@ export async function simulatePlayerByCriteria(
         date,
         picks: bucketPicks,
         hits: bucketHits.length,
+        total_occurrences: occ,
         hit_picks: bucketHits,
+        hit_picks_with_occ: bucketHitsWithOcc,
         cost_vnd: cost,
         win_vnd: win,
         profit_vnd: profit,
@@ -642,6 +653,9 @@ export async function simulatePlayerByCriteria(
   for (const b of buckets) {
     const s = stats[b.key];
     s.hit_rate = s.total_picks > 0 ? Math.round((s.total_hits / s.total_picks) * 10000) / 100 : 0;
+    s.occ_per_pick = s.total_picks > 0
+      ? Math.round((s.total_occurrences / s.total_picks) * 10000) / 10000
+      : 0;
     s.roi_pct = s.total_cost_vnd > 0
       ? Math.round((s.total_profit_vnd / s.total_cost_vnd) * 10000) / 100
       : 0;
