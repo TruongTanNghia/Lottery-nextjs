@@ -2,7 +2,7 @@
 
 import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
 
-type ViewKey = "dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim";
+type ViewKey = "dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher";
 
 interface Props {
   current: Region;
@@ -48,12 +48,13 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
       </div>
 
       <div className="flex flex-wrap gap-1 md:gap-1.5 p-1 rounded-full bg-[#111827] border border-[#1f2937]">
-        {(["dashboard", "prediction", "vip", "sim", "today", "accuracy", "history"] as const).map((v) => {
+        {(["dashboard", "prediction", "vip", "sim", "watcher", "today", "accuracy", "history"] as const).map((v) => {
           const labels: Record<ViewKey, string> = {
             dashboard: "📊 Dashboard",
             prediction: "🔮 Dự Đoán",
             vip: "👑 Dự Đoán VIP",
             sim: "🎮 Sim AI",
+            watcher: "🔥 Theo Dõi",
             today: "📡 Hôm Nay",
             accuracy: "🎯 Độ Chính Xác",
             history: "📑 Lịch Sử",
@@ -63,6 +64,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
             prediction: "bg-blue-900 shadow-[0_1px_6px_rgba(59,130,246,0.25)]",
             vip: "bg-yellow-700 shadow-[0_1px_6px_rgba(245,158,11,0.35)]",
             sim: "bg-violet-700 shadow-[0_1px_6px_rgba(139,92,246,0.35)]",
+            watcher: "bg-rose-700 shadow-[0_1px_6px_rgba(244,63,94,0.35)]",
             today: "bg-emerald-700 shadow-[0_1px_6px_rgba(16,185,129,0.25)]",
             accuracy: "bg-purple-700 shadow-[0_1px_6px_rgba(139,92,246,0.25)]",
             history: "bg-indigo-700 shadow-[0_1px_6px_rgba(99,102,241,0.25)]",
