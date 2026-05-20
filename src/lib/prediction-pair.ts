@@ -94,6 +94,60 @@ export interface PairResult {
   pairs: PairItem[];
 }
 
+// ─────────────────────────────────────────────
+// Per-region pair scoring params — each region has different draw structure
+//
+// MT (working well — KEEP AS IS per user):
+//   2-3 provinces rotate BY day-of-week. Pair cooccur reflects real
+//   province pairings → lift is informative.
+//
+// MN (under-performing — needs tighter focus):
+//   21+ provinces/day, each with 18 prizes. Most "cooccur" is just
+//   different provinces drawing same day → low lift signal.
+//   → Rely MORE on individual probability (high w_g), LESS on lift.
+//   → Tighter source pool to focus on strongest picks.
+//
+// MB (under-performing — needs recency focus):
+//   1 province × 27 prizes/day. ALL 27 lo cooccur every day → baseline
+//   cooccurrence is high → distinguishing signal weaker.
+//   → Heavier reliance on RECENT pair patterns (less ancient noise).
+//   → Higher prior to dampen overinflated lifts.
+// ─────────────────────────────────────────────
+interface PairRegionParams {
+  weights: { geoMean: number; cooccurLift: number; recentBoost: number; heatAlignment: number };
+  priorStrength: number;       // Bayesian smoothing strength on lift
+  cooccurLiftCap: number;      // Cap smoothed cooccur lift
+  recentBoostCap: number;      // Cap recent-pair lift
+  recentDays: number;          // How far back "recent" extends
+}
+
+const PAIR_REGION_PARAMS: Record<Region, PairRegionParams> = {
+  xsmn: {
+    // High geoMean weight — trust individual VIP probability more than cooccur
+    weights: { geoMean: 0.55, cooccurLift: 0.18, recentBoost: 0.17, heatAlignment: 0.10 },
+    priorStrength: 1.5,
+    cooccurLiftCap: 2.0,
+    recentBoostCap: 1.8,
+    recentDays: 7,
+  },
+  xsmb: {
+    // Heavier recent weight, high prior, longer recent window
+    weights: { geoMean: 0.45, cooccurLift: 0.18, recentBoost: 0.27, heatAlignment: 0.10 },
+    priorStrength: 1.5,
+    cooccurLiftCap: 2.0,
+    recentBoostCap: 2.0,
+    recentDays: 10,
+  },
+  xsmt: {
+    // CURRENT formula — user said working OK
+    weights: { geoMean: 0.40, cooccurLift: 0.30, recentBoost: 0.20, heatAlignment: 0.10 },
+    priorStrength: 1.0,
+    cooccurLiftCap: 2.5,
+    recentBoostCap: 2.0,
+    recentDays: 7,
+  },
+};
+
 export async function predictPair(
   region: Region,
   windowDays: number = 120,   // Đá needs dense pair-cooccurrence data; bumped 60→120
@@ -114,21 +168,23 @@ export async function predictPair(
     };
   }
 
-  // 2) Restrict to top N lo from VIP
+  // 2) Region-specific tuning
+  const params = PAIR_REGION_PARAMS[region] ?? PAIR_REGION_PARAMS.xsmt;
+
+  // 3) Restrict to top N lo from VIP
   const sourceLos = vip.final.slice(0, topNSource);
   const probMap = new Map<string, number>(
     sourceLos.map((p) => [p.lo_number, p.probability / 100]) // convert % → 0-1
   );
 
-  // 3) Pair co-occurrence from history (data BEFORE endDate when backtesting)
+  // 4) Pair co-occurrence from history (data BEFORE endDate when backtesting)
   const history = await loadHistoryLo(region, windowDays, endDate);
   const totalDays = Object.keys(history).length;
   const cooccur = buildPairCooccurrence(history);
 
-  // Recent (last 7 days) co-occurrence — pairs that came together RECENTLY
-  // are far more predictive than distant history
+  // Recent co-occurrence — region-specific window (MN/MT 7d, MB 10d)
   const sortedDates = Object.keys(history).sort();
-  const recentDates = sortedDates.slice(-7);
+  const recentDates = sortedDates.slice(-params.recentDays);
   const recentHistory: DateMap = {};
   for (const d of recentDates) recentHistory[d] = history[d];
   const recentCooccur = buildPairCooccurrence(recentHistory);
@@ -148,7 +204,7 @@ export async function predictPair(
   }
   const recentDayCount = recentDates.length;
 
-  // 4) Generate pairs from top N source
+  // 5) Generate pairs from top N source
   const candidatePairs: PairItem[] = [];
   for (let i = 0; i < sourceLos.length; i++) {
     for (let j = i + 1; j < sourceLos.length; j++) {
@@ -160,44 +216,38 @@ export async function predictPair(
       const geoMean = Math.sqrt(pA * pB);
 
       const coocDays = cooccur.get(`${loA}|${loB}`) ?? 0;
-      // Expected co-occurrence under independence
       const pADaily = (soloDays.get(loA) ?? 0) / Math.max(1, totalDays);
       const pBDaily = (soloDays.get(loB) ?? 0) / Math.max(1, totalDays);
       const expected = Math.max(0.5, pADaily * pBDaily * totalDays);
 
-      // Bayesian-smoothed lift: blend observed with "1.0" prior
-      // Prevents extreme lift on rare pairs (1 cooccur / 0.1 expected → 10×)
-      const PRIOR_STRENGTH = 1.0;
+      // Bayesian-smoothed lift with region-specific prior strength
       const rawLift = coocDays / expected;
       const smoothedLift =
-        (coocDays + PRIOR_STRENGTH * expected) / (expected + PRIOR_STRENGTH * expected);
-      const cappedLift = Math.min(2.5, smoothedLift);
+        (coocDays + params.priorStrength * expected) /
+        (expected + params.priorStrength * expected);
+      const cappedLift = Math.min(params.cooccurLiftCap, smoothedLift);
 
-      // Recent pair boost — last 7 days carry strong signal
+      // Recent pair boost
       const recentCoocDays = recentCooccur.get(`${loA}|${loB}`) ?? 0;
       const rA = (recentSoloDays.get(loA) ?? 0) / Math.max(1, recentDayCount);
       const rB = (recentSoloDays.get(loB) ?? 0) / Math.max(1, recentDayCount);
       const recentExpected = Math.max(0.3, rA * rB * recentDayCount);
       const recentLift = recentCoocDays / recentExpected;
-      const recentBoost = Math.min(2.0, recentLift); // cap at 2×
+      const recentBoost = Math.min(params.recentBoostCap, recentLift);
 
-      // Heat alignment: bonus if BOTH lô have been active in last 7 days
+      // Heat alignment
       const recentDaysA = recentSoloDays.get(loA) ?? 0;
       const recentDaysB = recentSoloDays.get(loB) ?? 0;
       const heatScore = (recentDaysA + recentDaysB) / (2 * Math.max(1, recentDayCount));
-      // 0 = both cold, 1 = both hot every day
 
-      // New pair score formula:
-      //   base 40% individual prob (geo mean)
-      //   + 30% cooccurrence lift (smoothed, capped)
-      //   + 20% recent pair lift (last 7d signal)
-      //   + 10% heat alignment (both lo active recently)
+      // Region-specific score formula
+      const w = params.weights;
       const pairScore =
         geoMean *
-        (0.40 +
-          0.30 * cappedLift +
-          0.20 * recentBoost +
-          0.10 * heatScore);
+        (w.geoMean +
+          w.cooccurLift * cappedLift +
+          w.recentBoost * recentBoost +
+          w.heatAlignment * heatScore);
 
       candidatePairs.push({
         rank: 0,
