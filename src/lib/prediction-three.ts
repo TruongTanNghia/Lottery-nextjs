@@ -94,7 +94,12 @@ function softmax(scores: Record<string, number>, T: number): Record<string, numb
   return out;
 }
 
-function modelFrequency(history: DateMap): Record<string, number> {
+/**
+ * Frequency model with Laplace smoothing — critical for 3-digit because
+ * many of the 1000 numbers never appear in 60 days (sparse data).
+ * Smoothing prevents 0-prob and dampens noise on rare numbers.
+ */
+function modelFrequency(history: DateMap, alpha: number = 1.5): Record<string, number> {
   const counts = emptyScores();
   const dates = Object.keys(history);
   if (dates.length === 0) return counts;
@@ -103,7 +108,9 @@ function modelFrequency(history: DateMap): Record<string, number> {
       counts[num] = (counts[num] ?? 0) + c;
     }
   }
-  for (const n of ALL_THREE) counts[n] /= dates.length;
+  // Laplace: (count + alpha) / (days + alpha × space_size)
+  const denom = dates.length + alpha;
+  for (const n of ALL_THREE) counts[n] = (counts[n] + alpha / 1000) / denom;
   return counts;
 }
 
@@ -177,6 +184,68 @@ function modelTemperature(history: DateMap): Record<string, number> {
   return out;
 }
 
+/**
+ * Streak model: 3-digit numbers that appeared in last K consecutive days
+ * get a boost. Real-life: "hot streak" effect — extremely rare in 1000-space,
+ * so when it happens it's a strong signal.
+ */
+function modelStreak(history: DateMap, lookback: number = 5): Record<string, number> {
+  const out = emptyScores();
+  const dates = Object.keys(history).sort();
+  if (dates.length === 0) return out;
+  const recent = dates.slice(-lookback);
+  for (const n of ALL_THREE) {
+    let streak = 0;
+    for (let i = recent.length - 1; i >= 0; i--) {
+      if ((history[recent[i]]?.[n] ?? 0) > 0) streak++;
+      else break;
+    }
+    // Boost grows nonlinearly with streak
+    out[n] = streak * streak;
+  }
+  return out;
+}
+
+/**
+ * Bayesian shrinkage toward uniform — caps confidence for sparse 1000-space.
+ */
+function applyShrinkage(scores: Record<string, number>, shrink: number): Record<string, number> {
+  if (shrink <= 0) return scores;
+  const vals = Object.values(scores);
+  const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+  const out: Record<string, number> = {};
+  for (const n of ALL_THREE) out[n] = (1 - shrink) * scores[n] + shrink * avg;
+  return out;
+}
+
+// Per-region tuning — leverages each region's data characteristics
+interface ThreeRegionParams {
+  weights: Record<string, number>;
+  softmaxT: number;
+  recencyHalfLife: number;
+  shrinkage: number;
+}
+const REGION_PARAMS: Record<"xsmn" | "xsmb" | "xsmt", ThreeRegionParams> = {
+  xsmn: {
+    weights: { frequency: 0.30, recency: 0.28, dayOfWeek: 0.15, temperature: 0.12, streak: 0.15 },
+    softmaxT: 0.12, recencyHalfLife: 10, shrinkage: 0,
+  },
+  xsmb: {
+    // 27 prizes/day → more data, frequency more reliable
+    weights: { frequency: 0.38, recency: 0.25, dayOfWeek: 0.05, temperature: 0.12, streak: 0.20 },
+    softmaxT: 0.15, recencyHalfLife: 12, shrinkage: 0.10,
+  },
+  xsmt: {
+    // Province rotation → DoW critical; less data per day
+    weights: { frequency: 0.22, recency: 0.20, dayOfWeek: 0.30, temperature: 0.13, streak: 0.15 },
+    softmaxT: 0.18, recencyHalfLife: 6, shrinkage: 0.18,
+  },
+};
+
+function getThreeParams(region: Region): ThreeRegionParams {
+  return REGION_PARAMS[region] ?? REGION_PARAMS.xsmn;
+}
+
 export interface ThreeDigitItem {
   rank: number;
   number: string;
@@ -194,13 +263,6 @@ export interface ThreeDigitResult {
   predictions: ThreeDigitItem[];
 }
 
-const WEIGHTS: Record<string, number> = {
-  frequency: 0.40,
-  recency: 0.30,
-  dayOfWeek: 0.15,
-  temperature: 0.15,
-};
-
 export async function predictThreeDigit(
   region: Region,
   windowDays: number = 60,
@@ -208,6 +270,7 @@ export async function predictThreeDigit(
 ): Promise<ThreeDigitResult> {
   const history = await loadThreeHistory(region, windowDays, endDate);
   const daysAvailable = Object.keys(history).length;
+  const params = getThreeParams(region);
 
   if (daysAvailable < 5) {
     return {
@@ -215,27 +278,28 @@ export async function predictThreeDigit(
       window_days: windowDays,
       days_available: daysAvailable,
       warning: "Cần ít nhất 5 ngày dữ liệu",
-      weights: WEIGHTS,
+      weights: params.weights,
       predictions: [],
     };
   }
 
   const raw: Record<string, Record<string, number>> = {
     frequency: modelFrequency(history),
-    recency: modelRecency(history),
+    recency: modelRecency(history, params.recencyHalfLife),
     dayOfWeek: modelDayOfWeek(history),
     temperature: modelTemperature(history),
+    streak: modelStreak(history),
   };
   const norm: Record<string, Record<string, number>> = {};
   for (const [k, m] of Object.entries(raw)) norm[k] = normalize(m);
 
   const composite = emptyScores();
   for (const [k, m] of Object.entries(norm)) {
-    const w = WEIGHTS[k] ?? 0;
+    const w = params.weights[k] ?? 0;
     for (const n of ALL_THREE) composite[n] += w * m[n];
   }
-  // Softer softmax — 1000-space is very sparse, need diffuse distribution
-  const probs = softmax(composite, 0.10);
+  const smoothed = applyShrinkage(composite, params.shrinkage);
+  const probs = softmax(smoothed, params.softmaxT);
 
   const items: ThreeDigitItem[] = ALL_THREE.map((num) => ({
     rank: 0,
@@ -253,7 +317,7 @@ export async function predictThreeDigit(
     region,
     window_days: windowDays,
     days_available: daysAvailable,
-    weights: WEIGHTS,
+    weights: params.weights,
     predictions: items,
   };
 }

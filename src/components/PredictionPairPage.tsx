@@ -58,7 +58,7 @@ export default function PredictionPairPage({ region }: { region: Region }) {
   const [loading, setLoading] = useState(true);
   const [backtestLoading, setBacktestLoading] = useState(true);
   const [windowDays, setWindowDays] = useState(60);
-  const [topNSource, setTopNSource] = useState(25);
+  const [topNSource, setTopNSource] = useState(35);
   const [topKReturn] = useState(30);
   const [backtestDays, setBacktestDays] = useState(14);
 
@@ -152,10 +152,12 @@ export default function PredictionPairPage({ region }: { region: Region }) {
               onChange={(e) => setTopNSource(parseInt(e.target.value))}
               className="px-3 py-1.5 rounded text-xs bg-[#1a2332] border border-slate-600 text-slate-100"
             >
-              <option value={15}>Top 15 lô</option>
               <option value={20}>Top 20 lô</option>
               <option value={25}>Top 25 lô</option>
               <option value={30}>Top 30 lô</option>
+              <option value={35}>Top 35 lô</option>
+              <option value={40}>Top 40 lô</option>
+              <option value={50}>Top 50 lô</option>
             </select>
             <button
               onClick={copyTop10}

@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "14"), 3), 30);
     const topK = Math.min(Math.max(parseInt(url.searchParams.get("top_k") ?? "30"), 5), 60);
     const window = Math.min(Math.max(parseInt(url.searchParams.get("window") ?? "60"), 7), 180);
-    const topNSource = Math.min(Math.max(parseInt(url.searchParams.get("top_n") ?? "25"), 10), 40);
+    const topNSource = Math.min(Math.max(parseInt(url.searchParams.get("top_n") ?? "35"), 10), 50);
 
     const result = await backtestPair(region, days, topK, window, topNSource);
     return NextResponse.json({ status: "success", ...result });

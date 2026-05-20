@@ -97,7 +97,7 @@ export interface PairResult {
 export async function predictPair(
   region: Region,
   windowDays: number = 60,
-  topNSource: number = 25,
+  topNSource: number = 35,    // Wider pool — was 25, now 35 → C(35,2)=595 candidates
   topKReturn: number = 30,
   endDate?: string
 ): Promise<PairResult> {
@@ -125,13 +125,28 @@ export async function predictPair(
   const totalDays = Object.keys(history).length;
   const cooccur = buildPairCooccurrence(history);
 
+  // Recent (last 7 days) co-occurrence — pairs that came together RECENTLY
+  // are far more predictive than distant history
+  const sortedDates = Object.keys(history).sort();
+  const recentDates = sortedDates.slice(-7);
+  const recentHistory: DateMap = {};
+  for (const d of recentDates) recentHistory[d] = history[d];
+  const recentCooccur = buildPairCooccurrence(recentHistory);
+
   // Per-lo solo appearance days (for expected co-occurrence calc)
   const soloDays = new Map<string, number>();
+  const recentSoloDays = new Map<string, number>();
   for (const date of Object.keys(history)) {
     for (const lo of Object.keys(history[date])) {
       soloDays.set(lo, (soloDays.get(lo) ?? 0) + 1);
     }
   }
+  for (const date of recentDates) {
+    for (const lo of Object.keys(history[date] ?? {})) {
+      recentSoloDays.set(lo, (recentSoloDays.get(lo) ?? 0) + 1);
+    }
+  }
+  const recentDayCount = recentDates.length;
 
   // 4) Generate pairs from top N source
   const candidatePairs: PairItem[] = [];
@@ -145,17 +160,44 @@ export async function predictPair(
       const geoMean = Math.sqrt(pA * pB);
 
       const coocDays = cooccur.get(`${loA}|${loB}`) ?? 0;
-      // Expected co-occurrence under independence:
-      //   p(A on day) × p(B on day) × totalDays
+      // Expected co-occurrence under independence
       const pADaily = (soloDays.get(loA) ?? 0) / Math.max(1, totalDays);
       const pBDaily = (soloDays.get(loB) ?? 0) / Math.max(1, totalDays);
       const expected = Math.max(0.5, pADaily * pBDaily * totalDays);
-      const lift = coocDays / expected;
 
-      // Pair score: combined probability boosted by cooccurrence lift
-      // Cap lift at 3× to avoid noise on rare pairs
-      const cappedLift = Math.min(3, lift);
-      const pairScore = geoMean * (0.7 + 0.3 * cappedLift);
+      // Bayesian-smoothed lift: blend observed with "1.0" prior
+      // Prevents extreme lift on rare pairs (1 cooccur / 0.1 expected → 10×)
+      const PRIOR_STRENGTH = 1.0;
+      const rawLift = coocDays / expected;
+      const smoothedLift =
+        (coocDays + PRIOR_STRENGTH * expected) / (expected + PRIOR_STRENGTH * expected);
+      const cappedLift = Math.min(2.5, smoothedLift);
+
+      // Recent pair boost — last 7 days carry strong signal
+      const recentCoocDays = recentCooccur.get(`${loA}|${loB}`) ?? 0;
+      const rA = (recentSoloDays.get(loA) ?? 0) / Math.max(1, recentDayCount);
+      const rB = (recentSoloDays.get(loB) ?? 0) / Math.max(1, recentDayCount);
+      const recentExpected = Math.max(0.3, rA * rB * recentDayCount);
+      const recentLift = recentCoocDays / recentExpected;
+      const recentBoost = Math.min(2.0, recentLift); // cap at 2×
+
+      // Heat alignment: bonus if BOTH lô have been active in last 7 days
+      const recentDaysA = recentSoloDays.get(loA) ?? 0;
+      const recentDaysB = recentSoloDays.get(loB) ?? 0;
+      const heatScore = (recentDaysA + recentDaysB) / (2 * Math.max(1, recentDayCount));
+      // 0 = both cold, 1 = both hot every day
+
+      // New pair score formula:
+      //   base 40% individual prob (geo mean)
+      //   + 30% cooccurrence lift (smoothed, capped)
+      //   + 20% recent pair lift (last 7d signal)
+      //   + 10% heat alignment (both lo active recently)
+      const pairScore =
+        geoMean *
+        (0.40 +
+          0.30 * cappedLift +
+          0.20 * recentBoost +
+          0.10 * heatScore);
 
       candidatePairs.push({
         rank: 0,
@@ -165,7 +207,7 @@ export async function predictPair(
         p_a: Math.round(pA * 100 * 10000) / 10000,
         p_b: Math.round(pB * 100 * 10000) / 10000,
         cooccur_days: coocDays,
-        cooccur_lift: Math.round(lift * 100) / 100,
+        cooccur_lift: Math.round(rawLift * 100) / 100,
         pair_score: Math.round(pairScore * 100 * 10000) / 10000,
       });
     }

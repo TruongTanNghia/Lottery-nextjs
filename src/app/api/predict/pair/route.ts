@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const region = validateRegion(url.searchParams.get("region"));
     const window = Math.min(Math.max(parseInt(url.searchParams.get("window") ?? "60"), 7), 180);
-    const topN = Math.min(Math.max(parseInt(url.searchParams.get("top_n") ?? "25"), 10), 40);
+    const topN = Math.min(Math.max(parseInt(url.searchParams.get("top_n") ?? "35"), 10), 50);
     const topK = Math.min(Math.max(parseInt(url.searchParams.get("top_k") ?? "30"), 10), 60);
 
     const result = await predictPair(region, window, topN, topK);
