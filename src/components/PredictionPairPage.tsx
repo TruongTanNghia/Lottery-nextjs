@@ -35,6 +35,9 @@ interface BacktestDay {
   hit_pairs: Array<{ lo_a: string; lo_b: string }>;
   hit_rate_pct: number;
   coverage_pct: number;
+  cost_vnd: number;
+  win_vnd: number;
+  profit_vnd: number;
 }
 
 interface BacktestResponse {
@@ -42,13 +45,32 @@ interface BacktestResponse {
   region: Region;
   days_window: number;
   top_k: number;
+  payout_per_hit_vnd: number;
+  cost_per_pick_vnd: number;
   total_predicted: number;
   total_hits: number;
   total_actual_pairs: number;
   hit_rate_pct: number;
   coverage_pct: number;
   days_with_at_least_one_hit: number;
+  total_cost_vnd: number;
+  total_win_vnd: number;
+  total_profit_vnd: number;
+  roi_pct: number;
+  break_even_hits_per_day: number;
   days: BacktestDay[];
+}
+
+function fmtVnd(n: number): string {
+  return new Intl.NumberFormat("vi-VN").format(Math.round(n)) + "đ";
+}
+
+function fmtVndShort(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000_000) return (n / 1_000_000_000).toFixed(2) + "tỷ";
+  if (abs >= 1_000_000) return (n / 1_000_000).toFixed(2) + "tr";
+  if (abs >= 1_000) return (n / 1_000).toFixed(0) + "k";
+  return Math.round(n).toString();
 }
 
 export default function PredictionPairPage({ region }: { region: Region }) {
@@ -61,6 +83,7 @@ export default function PredictionPairPage({ region }: { region: Region }) {
   const [topNSource, setTopNSource] = useState(35);
   const [topKReturn] = useState(30);
   const [backtestDays, setBacktestDays] = useState(14);
+  const [payout, setPayout] = useState(17);
 
   useEffect(() => {
     setLoading(true);
@@ -76,13 +99,13 @@ export default function PredictionPairPage({ region }: { region: Region }) {
   useEffect(() => {
     setBacktestLoading(true);
     fetch(
-      `/api/predict/pair/backtest?region=${region}&days=${backtestDays}&top_k=${topKReturn}&window=${windowDays}&top_n=${topNSource}`
+      `/api/predict/pair/backtest?region=${region}&days=${backtestDays}&top_k=${topKReturn}&window=${windowDays}&top_n=${topNSource}&payout=${payout}`
     )
       .then((r) => r.json())
       .then((d) => setBacktest(d))
       .catch(() => setBacktest(null))
       .finally(() => setBacktestLoading(false));
-  }, [region, windowDays, topNSource, topKReturn, backtestDays]);
+  }, [region, windowDays, topNSource, topKReturn, backtestDays, payout]);
 
   const top10 = useMemo(() => data?.pairs.slice(0, 10) ?? [], [data]);
 
@@ -235,6 +258,70 @@ export default function PredictionPairPage({ region }: { region: Region }) {
             />
           </div>
 
+          {/* Money/Profit panel */}
+          <div className="border-t border-white/[0.06] p-3 md:p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-3 mb-3">
+              <div>
+                <h4 className="text-sm md:text-base font-bold text-yellow-300">
+                  💰 Lãi/Lỗ giả định (đánh 1 điểm × Top {backtest.top_k} cặp/ngày)
+                </h4>
+                <p className="text-[0.7rem] text-slate-400 mt-0.5">
+                  Cost {fmtVnd(backtest.cost_per_pick_vnd)}/điểm × Top {backtest.top_k} cặp = {fmtVnd(backtest.total_cost_vnd / Math.max(1, backtest.days.length))}/ngày • Thắng {fmtVnd(backtest.payout_per_hit_vnd)}/cặp • Cần ≥ {backtest.break_even_hits_per_day} cặp/ngày để hoà
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[0.7rem] text-slate-400">Tỉ lệ payout:</span>
+                <select
+                  value={payout}
+                  onChange={(e) => setPayout(parseInt(e.target.value))}
+                  className="px-2 py-1 rounded text-xs bg-[#1a2332] border border-slate-600 text-slate-100"
+                >
+                  <option value={15}>15× (dealer chặt)</option>
+                  <option value={17}>17× (trung bình)</option>
+                  <option value={20}>20×</option>
+                  <option value={22}>22× (dealer tốt)</option>
+                  <option value={25}>25×</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <Kpi
+                label="Tổng chi"
+                value={fmtVndShort(backtest.total_cost_vnd)}
+                hint={`${backtest.top_k} cặp × ${backtest.days.length} ngày`}
+                accent="text-slate-200"
+              />
+              <Kpi
+                label="Tổng trúng"
+                value={fmtVndShort(backtest.total_win_vnd)}
+                hint={`${backtest.total_hits} cặp ăn`}
+                accent="text-emerald-300"
+              />
+              <Kpi
+                label="Lãi / Lỗ"
+                value={(backtest.total_profit_vnd >= 0 ? "+" : "") + fmtVndShort(backtest.total_profit_vnd)}
+                accent={backtest.total_profit_vnd >= 0 ? "text-emerald-300" : "text-rose-300"}
+              />
+              <Kpi
+                label="ROI"
+                value={`${backtest.roi_pct >= 0 ? "+" : ""}${backtest.roi_pct}%`}
+                accent={backtest.roi_pct >= 5 ? "text-emerald-300" : backtest.roi_pct >= 0 ? "text-amber-300" : "text-rose-300"}
+                hint={backtest.roi_pct >= 0 ? "✅ Có lời" : "❌ Đang lỗ"}
+              />
+            </div>
+
+            <div className="mt-3 rounded bg-white/[0.03] border-l-2 border-yellow-400/50 px-3 py-2">
+              <p className="text-[0.75rem] md:text-sm text-slate-200">
+                💡 {backtest.roi_pct >= 10
+                  ? `LỜI tốt — ROI ${backtest.roi_pct}%. Đánh top ${backtest.top_k} cặp mỗi ngày là +EV.`
+                  : backtest.roi_pct >= 0
+                  ? `HOÀ vốn / lãi mỏng — ROI ${backtest.roi_pct}%. Thử payout cao hơn hoặc giảm Top K cho an toàn.`
+                  : `LỖ — ROI ${backtest.roi_pct}%. Đá rất khó (cần cả 2 lô về). Giảm Top K xuống 10-15 để chỉ chơi cặp mạnh nhất, hoặc đợi data nhiều hơn.`}
+              </p>
+            </div>
+          </div>
+
           {/* Per-day table */}
           <div className="overflow-x-auto border-t border-white/[0.06]">
             <table className="w-full text-[0.72rem] md:text-xs">
@@ -245,14 +332,20 @@ export default function PredictionPairPage({ region }: { region: Region }) {
                   <th className="px-3 py-2 text-center">Lô về</th>
                   <th className="px-3 py-2 text-center">Cặp thực</th>
                   <th className="px-3 py-2 text-center">Hit rate</th>
+                  <th className="px-3 py-2 text-right">Lãi/Lỗ</th>
                   <th className="px-3 py-2 text-left">Cặp trúng</th>
                 </tr>
               </thead>
               <tbody>
                 {[...backtest.days].reverse().map((d) => {
-                  const rowBg = d.hits >= 2
+                  const profitC = d.profit_vnd > 0
+                    ? "text-emerald-300"
+                    : d.profit_vnd < 0
+                    ? "text-rose-300"
+                    : "text-slate-400";
+                  const rowBg = d.profit_vnd > 0
                     ? "bg-emerald-500/5 border-l-2 border-emerald-500"
-                    : d.hits >= 1
+                    : d.profit_vnd === 0
                     ? "bg-amber-500/5 border-l-2 border-amber-500"
                     : "bg-rose-500/5 border-l-2 border-rose-500";
                   return (
@@ -269,6 +362,9 @@ export default function PredictionPairPage({ region }: { region: Region }) {
                       </td>
                       <td className={`px-3 py-2 text-center font-mono ${d.hits > 0 ? "text-emerald-400" : "text-rose-400"}`}>
                         {d.hit_rate_pct}%
+                      </td>
+                      <td className={`px-3 py-2 text-right font-mono font-bold ${profitC}`}>
+                        {d.profit_vnd >= 0 ? "+" : ""}{fmtVndShort(d.profit_vnd)}
                       </td>
                       <td className="px-3 py-2 font-mono text-emerald-200">
                         {d.hit_pairs.length === 0

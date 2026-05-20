@@ -94,6 +94,25 @@ async function getThreeDigitsOnDate(region: Region, date: string): Promise<Set<s
   return new Set(rows.map((r) => r.number.slice(-3).padStart(3, "0")));
 }
 
+/**
+ * Per-3-digit occurrence counts on a specific date.
+ * Some prizes share last 3 digits → multiplicity matters for money calc
+ * (each appearance pays separately for 3 càng).
+ */
+async function getThreeDigitOccurrencesOnDate(region: Region, date: string): Promise<Map<string, number>> {
+  const rows = await query<{ number: string }>(
+    `SELECT number FROM lottery_results
+     WHERE region = ? AND date = ? AND LENGTH(number) >= 3`,
+    [region, date]
+  );
+  const m = new Map<string, number>();
+  for (const r of rows) {
+    const k = r.number.slice(-3).padStart(3, "0");
+    m.set(k, (m.get(k) ?? 0) + 1);
+  }
+  return m;
+}
+
 function emptyScores(): Record<string, number> {
   const out: Record<string, number> = {};
   for (const n of ALL_THREE) out[n] = 0;
@@ -475,34 +494,52 @@ export interface ThreeBacktestDay {
   date: string;
   predicted_top: string[];
   actual_count: number;       // distinct 3-digit numbers that came that day
-  hits: number;               // # of top_k picks that appeared
+  hits: number;               // # of top_k picks that appeared (distinct)
   hit_picks: string[];
-  hit_rate_pct: number;       // hits / top_k × 100 (accuracy of our picks)
-  coverage_pct: number;       // hits / actual_count × 100 (how much of actual we captured)
+  total_occurrences: number;  // sum of appearance counts on hit picks (multi-hits)
+  hit_rate_pct: number;
+  coverage_pct: number;
+  // Money (if bet 1 điểm per pick)
+  cost_vnd: number;
+  win_vnd: number;
+  profit_vnd: number;
 }
 
 export interface ThreeBacktestResult {
   region: Region;
   days_window: number;
   top_k: number;
-  total_models: number;       // for label
-  baseline_pct: number;       // random expectation: top_k/1000 × 100
-  // Aggregate
-  total_predicted: number;    // sum of top_k across days
+  total_models: number;
+  baseline_pct: number;
+  payout_per_hit_vnd: number;
+  cost_per_pick_vnd: number;
+  // Aggregate hit stats
+  total_predicted: number;
   total_hits: number;
-  total_actual: number;       // sum of actual_count
-  hit_rate_pct: number;       // total_hits / total_predicted × 100
-  coverage_pct: number;       // total_hits / total_actual × 100
-  lift_vs_baseline: number;   // hit_rate / baseline (1.0 = same as random)
+  total_occurrences: number;
+  total_actual: number;
+  hit_rate_pct: number;
+  coverage_pct: number;
+  lift_vs_baseline: number;
+  // Aggregate money
+  total_cost_vnd: number;
+  total_win_vnd: number;
+  total_profit_vnd: number;
+  roi_pct: number;
+  break_even_occurrences_per_day: number;
   // Per-day
   days: ThreeBacktestDay[];
 }
+
+// Cost per điểm bet (matches existing limit-engine constants)
+const POINT_COST_VND_THREE = 23_000;
 
 export async function backtestThreeDigit(
   region: Region,
   days: number = 14,
   topK: number = 30,
-  windowDays: number = 60
+  windowDays: number = 60,
+  payoutVnd: number = 600_000  // VND won per appearance (3 chân ratio)
 ): Promise<ThreeBacktestResult> {
   const dateRows = await query<{ date: string }>(
     `SELECT DISTINCT date FROM lottery_results
@@ -519,11 +556,15 @@ export async function backtestThreeDigit(
     if (r.warning || r.predictions.length === 0) continue;
 
     const topPicks = r.predictions.slice(0, topK).map((p) => p.number);
-    const actual = await getThreeDigitsOnDate(region, date);
-    const hitPicks = topPicks.filter((n) => actual.has(n));
+    const occMap = await getThreeDigitOccurrencesOnDate(region, date);
+    const hitPicks = topPicks.filter((n) => (occMap.get(n) ?? 0) > 0);
+    const totalOcc = hitPicks.reduce((s, n) => s + (occMap.get(n) ?? 0), 0);
 
     const hit = hitPicks.length;
-    const actualCount = actual.size;
+    const actualCount = occMap.size;
+    const cost = topK * POINT_COST_VND_THREE;
+    const win = totalOcc * payoutVnd;
+    const profit = win - cost;
 
     dayResults.push({
       date,
@@ -531,17 +572,28 @@ export async function backtestThreeDigit(
       actual_count: actualCount,
       hits: hit,
       hit_picks: hitPicks,
+      total_occurrences: totalOcc,
       hit_rate_pct: topK > 0 ? Math.round((hit / topK) * 10000) / 100 : 0,
       coverage_pct: actualCount > 0 ? Math.round((hit / actualCount) * 10000) / 100 : 0,
+      cost_vnd: cost,
+      win_vnd: win,
+      profit_vnd: profit,
     });
   }
 
   const totalPredicted = dayResults.length * topK;
   const totalHits = dayResults.reduce((s, d) => s + d.hits, 0);
+  const totalOcc = dayResults.reduce((s, d) => s + d.total_occurrences, 0);
   const totalActual = dayResults.reduce((s, d) => s + d.actual_count, 0);
-  const baseline = (topK / 1000) * 100; // % chance a random pick is in actual
+  const baseline = (topK / 1000) * 100;
   const hitRate = totalPredicted > 0 ? (totalHits / totalPredicted) * 100 : 0;
   const coverage = totalActual > 0 ? (totalHits / totalActual) * 100 : 0;
+
+  const totalCost = dayResults.reduce((s, d) => s + d.cost_vnd, 0);
+  const totalWin = dayResults.reduce((s, d) => s + d.win_vnd, 0);
+  const totalProfit = totalWin - totalCost;
+  const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
+  const breakEvenOcc = payoutVnd > 0 ? (topK * POINT_COST_VND_THREE) / payoutVnd : 0;
 
   return {
     region,
@@ -549,12 +601,20 @@ export async function backtestThreeDigit(
     top_k: topK,
     total_models: 4,
     baseline_pct: Math.round(baseline * 100) / 100,
+    payout_per_hit_vnd: payoutVnd,
+    cost_per_pick_vnd: POINT_COST_VND_THREE,
     total_predicted: totalPredicted,
     total_hits: totalHits,
+    total_occurrences: totalOcc,
     total_actual: totalActual,
     hit_rate_pct: Math.round(hitRate * 100) / 100,
     coverage_pct: Math.round(coverage * 100) / 100,
     lift_vs_baseline: baseline > 0 ? Math.round((hitRate / baseline) * 100) / 100 : 0,
+    total_cost_vnd: totalCost,
+    total_win_vnd: totalWin,
+    total_profit_vnd: totalProfit,
+    roi_pct: Math.round(roi * 100) / 100,
+    break_even_occurrences_per_day: Math.round(breakEvenOcc * 100) / 100,
     days: dayResults,
   };
 }

@@ -28,8 +28,12 @@ interface BacktestDay {
   actual_count: number;
   hits: number;
   hit_picks: string[];
+  total_occurrences: number;
   hit_rate_pct: number;
   coverage_pct: number;
+  cost_vnd: number;
+  win_vnd: number;
+  profit_vnd: number;
 }
 
 interface BacktestResponse {
@@ -38,13 +42,33 @@ interface BacktestResponse {
   days_window: number;
   top_k: number;
   baseline_pct: number;
+  payout_per_hit_vnd: number;
+  cost_per_pick_vnd: number;
   total_predicted: number;
   total_hits: number;
+  total_occurrences: number;
   total_actual: number;
   hit_rate_pct: number;
   coverage_pct: number;
   lift_vs_baseline: number;
+  total_cost_vnd: number;
+  total_win_vnd: number;
+  total_profit_vnd: number;
+  roi_pct: number;
+  break_even_occurrences_per_day: number;
   days: BacktestDay[];
+}
+
+function fmtVnd(n: number): string {
+  return new Intl.NumberFormat("vi-VN").format(Math.round(n)) + "đ";
+}
+
+function fmtVndShort(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000_000) return (n / 1_000_000_000).toFixed(2) + "tỷ";
+  if (abs >= 1_000_000) return (n / 1_000_000).toFixed(2) + "tr";
+  if (abs >= 1_000) return (n / 1_000).toFixed(0) + "k";
+  return Math.round(n).toString();
 }
 
 const MODEL_LABEL: Record<string, string> = {
@@ -63,6 +87,7 @@ export default function PredictionThreePage({ region }: { region: Region }) {
   const [windowDays, setWindowDays] = useState(60);
   const [topK, setTopK] = useState(30);
   const [backtestDays, setBacktestDays] = useState(14);
+  const [payout, setPayout] = useState(600_000);
 
   useEffect(() => {
     setLoading(true);
@@ -75,12 +100,12 @@ export default function PredictionThreePage({ region }: { region: Region }) {
 
   useEffect(() => {
     setBacktestLoading(true);
-    fetch(`/api/predict/three/backtest?region=${region}&days=${backtestDays}&top_k=${topK}&window=${windowDays}`)
+    fetch(`/api/predict/three/backtest?region=${region}&days=${backtestDays}&top_k=${topK}&window=${windowDays}&payout=${payout}`)
       .then((r) => r.json())
       .then((d) => setBacktest(d))
       .catch(() => setBacktest(null))
       .finally(() => setBacktestLoading(false));
-  }, [region, windowDays, topK, backtestDays]);
+  }, [region, windowDays, topK, backtestDays, payout]);
 
   async function copyAll() {
     if (!data || data.predictions.length === 0) return;
@@ -226,6 +251,72 @@ export default function PredictionThreePage({ region }: { region: Region }) {
             />
           </div>
 
+          {/* Money/Profit panel */}
+          <div className="border-t border-white/[0.06] p-3 md:p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-3 mb-3">
+              <div>
+                <h4 className="text-sm md:text-base font-bold text-yellow-300">
+                  💰 Lãi/Lỗ giả định (đánh 1 điểm × Top {backtest.top_k} mỗi ngày)
+                </h4>
+                <p className="text-[0.7rem] text-slate-400 mt-0.5">
+                  Cost {fmtVnd(backtest.cost_per_pick_vnd)}/điểm • Thắng {fmtVnd(backtest.payout_per_hit_vnd)}/lần XH • Cần ≥ {backtest.break_even_occurrences_per_day} lần XH/ngày để hoà
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[0.7rem] text-slate-400">Tỉ lệ payout:</span>
+                <select
+                  value={payout}
+                  onChange={(e) => setPayout(parseInt(e.target.value))}
+                  className="px-2 py-1 rounded text-xs bg-[#1a2332] border border-slate-600 text-slate-100"
+                >
+                  <option value={400_000}>400k (dealer chặt)</option>
+                  <option value={500_000}>500k</option>
+                  <option value={600_000}>600k (trung bình)</option>
+                  <option value={700_000}>700k (dealer tốt)</option>
+                  <option value={800_000}>800k</option>
+                </select>
+              </div>
+            </div>
+
+            {/* 4 money KPI cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <Kpi
+                label="Tổng chi"
+                value={fmtVndShort(backtest.total_cost_vnd)}
+                hint={`${backtest.top_k} × ${backtest.days.length} ngày`}
+                accent="text-slate-200"
+              />
+              <Kpi
+                label="Tổng trúng"
+                value={fmtVndShort(backtest.total_win_vnd)}
+                hint={`${backtest.total_occurrences} lần XH`}
+                accent="text-emerald-300"
+              />
+              <Kpi
+                label="Lãi / Lỗ"
+                value={(backtest.total_profit_vnd >= 0 ? "+" : "") + fmtVndShort(backtest.total_profit_vnd)}
+                accent={backtest.total_profit_vnd >= 0 ? "text-emerald-300" : "text-rose-300"}
+              />
+              <Kpi
+                label="ROI"
+                value={`${backtest.roi_pct >= 0 ? "+" : ""}${backtest.roi_pct}%`}
+                accent={backtest.roi_pct >= 5 ? "text-emerald-300" : backtest.roi_pct >= 0 ? "text-amber-300" : "text-rose-300"}
+                hint={backtest.roi_pct >= 0 ? "✅ Có lời" : "❌ Đang lỗ"}
+              />
+            </div>
+
+            {/* AI conclusion */}
+            <div className="mt-3 rounded bg-white/[0.03] border-l-2 border-yellow-400/50 px-3 py-2">
+              <p className="text-[0.75rem] md:text-sm text-slate-200">
+                💡 {backtest.roi_pct >= 10
+                  ? `LỜI tốt — ROI ${backtest.roi_pct}% qua ${backtest.days.length} ngày. Nếu data ổn định, đánh top ${backtest.top_k} mỗi ngày SẼ LỜI.`
+                  : backtest.roi_pct >= 0
+                  ? `HOÀ vốn / lãi mỏng — ROI ${backtest.roi_pct}%. Tăng payout dealer hoặc thử Top khác để xem có cải thiện không.`
+                  : `LỖ — ROI ${backtest.roi_pct}%. Hit rate ${backtest.hit_rate_pct}% chưa đủ vượt break-even. Cần dealer payout cao hơn hoặc model chính xác hơn.`}
+              </p>
+            </div>
+          </div>
+
           {/* Per-day table */}
           <div className="overflow-x-auto border-t border-white/[0.06]">
             <table className="w-full text-[0.72rem] md:text-xs">
@@ -234,16 +325,22 @@ export default function PredictionThreePage({ region }: { region: Region }) {
                   <th className="px-3 py-2 text-left">Ngày</th>
                   <th className="px-3 py-2 text-center">Trúng/Top {backtest.top_k}</th>
                   <th className="px-3 py-2 text-center">Trúng/Đã ra</th>
+                  <th className="px-3 py-2 text-center">Lần XH</th>
                   <th className="px-3 py-2 text-center">Hit rate</th>
-                  <th className="px-3 py-2 text-center">Coverage</th>
+                  <th className="px-3 py-2 text-right">Lãi/Lỗ</th>
                   <th className="px-3 py-2 text-left">Số trúng</th>
                 </tr>
               </thead>
               <tbody>
                 {[...backtest.days].reverse().map((d) => {
-                  const rowBg = d.hits >= 3
+                  const profitC = d.profit_vnd > 0
+                    ? "text-emerald-300"
+                    : d.profit_vnd < 0
+                    ? "text-rose-300"
+                    : "text-slate-400";
+                  const rowBg = d.profit_vnd > 0
                     ? "bg-emerald-500/5 border-l-2 border-emerald-500"
-                    : d.hits >= 1
+                    : d.profit_vnd === 0
                     ? "bg-amber-500/5 border-l-2 border-amber-500"
                     : "bg-rose-500/5 border-l-2 border-rose-500";
                   return (
@@ -255,11 +352,14 @@ export default function PredictionThreePage({ region }: { region: Region }) {
                       <td className="px-3 py-2 text-center font-mono text-slate-300">
                         {d.hits}/{d.actual_count}
                       </td>
+                      <td className="px-3 py-2 text-center font-mono text-amber-300">
+                        {d.total_occurrences}
+                      </td>
                       <td className={`px-3 py-2 text-center font-mono ${d.hit_rate_pct >= backtest.baseline_pct ? "text-emerald-400" : "text-rose-400"}`}>
                         {d.hit_rate_pct}%
                       </td>
-                      <td className="px-3 py-2 text-center font-mono text-cyan-300">
-                        {d.coverage_pct}%
+                      <td className={`px-3 py-2 text-right font-mono font-bold ${profitC}`}>
+                        {d.profit_vnd >= 0 ? "+" : ""}{fmtVndShort(d.profit_vnd)}
                       </td>
                       <td className="px-3 py-2 font-mono text-emerald-200">
                         {d.hit_picks.length === 0 ? <span className="text-slate-600">—</span> : d.hit_picks.slice(0, 10).join(" ")}

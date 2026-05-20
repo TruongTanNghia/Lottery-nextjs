@@ -233,35 +233,49 @@ export async function predictPair(
 export interface PairBacktestDay {
   date: string;
   predicted_pairs: Array<{ lo_a: string; lo_b: string }>;
-  actual_lo_count: number;        // # distinct lo that came that day
-  actual_total_pairs: number;     // C(actual_lo_count, 2)
-  hits: number;                   // # predicted pairs where BOTH lo came
+  actual_lo_count: number;
+  actual_total_pairs: number;
+  hits: number;
   hit_pairs: Array<{ lo_a: string; lo_b: string }>;
-  hit_rate_pct: number;           // hits / top_k × 100
-  coverage_pct: number;           // hits / actual_total_pairs × 100
+  hit_rate_pct: number;
+  coverage_pct: number;
+  cost_vnd: number;
+  win_vnd: number;
+  profit_vnd: number;
 }
 
 export interface PairBacktestResult {
   region: Region;
   days_window: number;
   top_k: number;
-  // Aggregate
+  payout_per_hit_vnd: number;
+  cost_per_pick_vnd: number;
+  // Hit stats
   total_predicted: number;
   total_hits: number;
   total_actual_pairs: number;
-  hit_rate_pct: number;           // total_hits / total_predicted × 100
-  coverage_pct: number;           // total_hits / total_actual_pairs × 100
+  hit_rate_pct: number;
+  coverage_pct: number;
   days_with_at_least_one_hit: number;
+  // Money
+  total_cost_vnd: number;
+  total_win_vnd: number;
+  total_profit_vnd: number;
+  roi_pct: number;
+  break_even_hits_per_day: number;
   // Per-day
   days: PairBacktestDay[];
 }
+
+const POINT_COST_VND_PAIR = 23_000;
 
 export async function backtestPair(
   region: Region,
   days: number = 14,
   topK: number = 30,
   windowDays: number = 60,
-  topNSource: number = 25
+  topNSource: number = 35,
+  payoutMultiplier: number = 17  // win = multiplier × cost when pair hits
 ): Promise<PairBacktestResult> {
   const { query } = await import("./db");
   const dateRows = await query<{ date: string }>(
@@ -270,6 +284,7 @@ export async function backtestPair(
   );
   const dates = dateRows.map((r) => r.date).reverse();
 
+  const winPerHit = POINT_COST_VND_PAIR * payoutMultiplier;
   const dayResults: PairBacktestDay[] = [];
 
   for (const date of dates) {
@@ -285,6 +300,10 @@ export async function backtestPair(
       (p) => actualLo.has(p.lo_a) && actualLo.has(p.lo_b)
     );
 
+    const cost = topK * POINT_COST_VND_PAIR;
+    const win = hitPairs.length * winPerHit;
+    const profit = win - cost;
+
     dayResults.push({
       date,
       predicted_pairs: predicted,
@@ -296,6 +315,9 @@ export async function backtestPair(
       coverage_pct: actualTotalPairs > 0
         ? Math.round((hitPairs.length / actualTotalPairs) * 10000) / 100
         : 0,
+      cost_vnd: cost,
+      win_vnd: win,
+      profit_vnd: profit,
     });
   }
 
@@ -306,16 +328,29 @@ export async function backtestPair(
   const hitRate = totalPredicted > 0 ? (totalHits / totalPredicted) * 100 : 0;
   const coverage = totalActual > 0 ? (totalHits / totalActual) * 100 : 0;
 
+  const totalCost = dayResults.reduce((s, d) => s + d.cost_vnd, 0);
+  const totalWin = dayResults.reduce((s, d) => s + d.win_vnd, 0);
+  const totalProfit = totalWin - totalCost;
+  const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
+  const breakEvenHits = payoutMultiplier > 0 ? topK / payoutMultiplier : 0;
+
   return {
     region,
     days_window: days,
     top_k: topK,
+    payout_per_hit_vnd: winPerHit,
+    cost_per_pick_vnd: POINT_COST_VND_PAIR,
     total_predicted: totalPredicted,
     total_hits: totalHits,
     total_actual_pairs: totalActual,
     hit_rate_pct: Math.round(hitRate * 100) / 100,
     coverage_pct: Math.round(coverage * 100) / 100,
     days_with_at_least_one_hit: daysWithHit,
+    total_cost_vnd: totalCost,
+    total_win_vnd: totalWin,
+    total_profit_vnd: totalProfit,
+    roi_pct: Math.round(roi * 100) / 100,
+    break_even_hits_per_day: Math.round(breakEvenHits * 100) / 100,
     days: dayResults,
   };
 }

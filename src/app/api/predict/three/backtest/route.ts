@@ -20,8 +20,9 @@ export async function GET(req: Request) {
     const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "14"), 3), 30);
     const topK = Math.min(Math.max(parseInt(url.searchParams.get("top_k") ?? "30"), 5), 100);
     const window = Math.min(Math.max(parseInt(url.searchParams.get("window") ?? "60"), 7), 180);
+    const payout = Math.min(Math.max(parseInt(url.searchParams.get("payout") ?? "600000"), 100_000), 2_000_000);
 
-    const result = await backtestThreeDigit(region, days, topK, window);
+    const result = await backtestThreeDigit(region, days, topK, window, payout);
     return NextResponse.json({ status: "success", ...result });
   } catch (err) {
     return jsonError(err);
