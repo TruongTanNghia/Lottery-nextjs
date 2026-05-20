@@ -26,13 +26,41 @@ interface PairResponse {
   pairs: PairItem[];
 }
 
+interface BacktestDay {
+  date: string;
+  predicted_pairs: Array<{ lo_a: string; lo_b: string }>;
+  actual_lo_count: number;
+  actual_total_pairs: number;
+  hits: number;
+  hit_pairs: Array<{ lo_a: string; lo_b: string }>;
+  hit_rate_pct: number;
+  coverage_pct: number;
+}
+
+interface BacktestResponse {
+  status: string;
+  region: Region;
+  days_window: number;
+  top_k: number;
+  total_predicted: number;
+  total_hits: number;
+  total_actual_pairs: number;
+  hit_rate_pct: number;
+  coverage_pct: number;
+  days_with_at_least_one_hit: number;
+  days: BacktestDay[];
+}
+
 export default function PredictionPairPage({ region }: { region: Region }) {
   const toast = useToast();
   const [data, setData] = useState<PairResponse | null>(null);
+  const [backtest, setBacktest] = useState<BacktestResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [backtestLoading, setBacktestLoading] = useState(true);
   const [windowDays, setWindowDays] = useState(60);
   const [topNSource, setTopNSource] = useState(25);
   const [topKReturn] = useState(30);
+  const [backtestDays, setBacktestDays] = useState(14);
 
   useEffect(() => {
     setLoading(true);
@@ -44,6 +72,17 @@ export default function PredictionPairPage({ region }: { region: Region }) {
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [region, windowDays, topNSource, topKReturn]);
+
+  useEffect(() => {
+    setBacktestLoading(true);
+    fetch(
+      `/api/predict/pair/backtest?region=${region}&days=${backtestDays}&top_k=${topKReturn}&window=${windowDays}&top_n=${topNSource}`
+    )
+      .then((r) => r.json())
+      .then((d) => setBacktest(d))
+      .catch(() => setBacktest(null))
+      .finally(() => setBacktestLoading(false));
+  }, [region, windowDays, topNSource, topKReturn, backtestDays]);
 
   const top10 = useMemo(() => data?.pairs.slice(0, 10) ?? [], [data]);
 
@@ -133,6 +172,116 @@ export default function PredictionPairPage({ region }: { region: Region }) {
           </div>
         </div>
       </section>
+
+      {/* Backtest panel — pair accuracy */}
+      {backtestLoading ? (
+        <div className="mb-4 md:mb-6 rounded-2xl border border-slate-600/40 p-4 text-center text-slate-500 text-sm">
+          ⏳ Đang backtest {backtestDays} ngày cặp...
+        </div>
+      ) : backtest && backtest.days.length > 0 ? (
+        <section className="mb-4 md:mb-6 rounded-2xl bg-[#0f1722] border border-orange-500/30 overflow-hidden">
+          <div className="px-4 md:px-6 py-3 md:py-4 border-b border-white/[0.06] flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm md:text-base font-bold flex items-center gap-2">
+                📊 Độ chính xác Đá (backtest {backtest.days.length} ngày)
+              </h3>
+              <p className="text-[0.7rem] text-slate-400 mt-0.5">
+                "Trúng" = CẢ 2 lô trong cặp đều về cùng ngày đó. Replay từng ngày dùng data trước.
+              </p>
+            </div>
+            <select
+              value={backtestDays}
+              onChange={(e) => setBacktestDays(parseInt(e.target.value))}
+              className="px-2 py-1 rounded text-xs bg-[#1a2332] border border-slate-600 text-slate-100"
+            >
+              <option value={7}>7 ngày</option>
+              <option value={14}>14 ngày</option>
+              <option value={21}>21 ngày</option>
+              <option value={30}>30 ngày</option>
+            </select>
+          </div>
+
+          {/* Aggregate KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 p-3 md:p-4">
+            <Kpi
+              label="Tổng cặp trúng / dự đoán"
+              value={`${backtest.total_hits}/${backtest.total_predicted}`}
+              hint={`Top ${backtest.top_k} × ${backtest.days.length} ngày`}
+            />
+            <Kpi
+              label="Tổng cặp / tổng cặp thực"
+              value={`${backtest.total_hits}/${backtest.total_actual_pairs}`}
+              hint="cặp có thể tạo"
+            />
+            <Kpi
+              label="Hit rate"
+              value={`${backtest.hit_rate_pct}%`}
+              accent={backtest.hit_rate_pct >= 5 ? "text-emerald-300" : backtest.hit_rate_pct >= 1 ? "text-amber-300" : "text-rose-300"}
+              hint="% cặp đoán đúng"
+            />
+            <Kpi
+              label="Coverage"
+              value={`${backtest.coverage_pct}%`}
+              accent="text-cyan-300"
+              hint="% cặp thực bắt được"
+            />
+            <Kpi
+              label="Ngày có ≥1 cặp"
+              value={`${backtest.days_with_at_least_one_hit}/${backtest.days.length}`}
+              accent={backtest.days_with_at_least_one_hit >= backtest.days.length * 0.5 ? "text-emerald-300" : "text-rose-300"}
+              hint="ngày trúng ít nhất 1"
+            />
+          </div>
+
+          {/* Per-day table */}
+          <div className="overflow-x-auto border-t border-white/[0.06]">
+            <table className="w-full text-[0.72rem] md:text-xs">
+              <thead className="bg-white/[0.03] text-slate-400 uppercase">
+                <tr>
+                  <th className="px-3 py-2 text-left">Ngày</th>
+                  <th className="px-3 py-2 text-center">Cặp trúng/Top {backtest.top_k}</th>
+                  <th className="px-3 py-2 text-center">Lô về</th>
+                  <th className="px-3 py-2 text-center">Cặp thực</th>
+                  <th className="px-3 py-2 text-center">Hit rate</th>
+                  <th className="px-3 py-2 text-left">Cặp trúng</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...backtest.days].reverse().map((d) => {
+                  const rowBg = d.hits >= 2
+                    ? "bg-emerald-500/5 border-l-2 border-emerald-500"
+                    : d.hits >= 1
+                    ? "bg-amber-500/5 border-l-2 border-amber-500"
+                    : "bg-rose-500/5 border-l-2 border-rose-500";
+                  return (
+                    <tr key={d.date} className={`${rowBg} border-t border-white/[0.04]`}>
+                      <td className="px-3 py-2 font-mono text-slate-300 whitespace-nowrap">{d.date.slice(5)}</td>
+                      <td className="px-3 py-2 text-center font-mono font-bold text-slate-100">
+                        {d.hits}/{backtest.top_k}
+                      </td>
+                      <td className="px-3 py-2 text-center font-mono text-slate-400">
+                        {d.actual_lo_count}
+                      </td>
+                      <td className="px-3 py-2 text-center font-mono text-slate-400">
+                        {d.actual_total_pairs}
+                      </td>
+                      <td className={`px-3 py-2 text-center font-mono ${d.hits > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        {d.hit_rate_pct}%
+                      </td>
+                      <td className="px-3 py-2 font-mono text-emerald-200">
+                        {d.hit_pairs.length === 0
+                          ? <span className="text-slate-600">—</span>
+                          : d.hit_pairs.slice(0, 6).map((p) => `${p.lo_a}-${p.lo_b}`).join(", ")}
+                        {d.hit_pairs.length > 6 && <span className="text-slate-500"> …</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       {/* Top 10 highlight */}
       <section className="mb-4 md:mb-6 rounded-2xl bg-[#0f1722] border border-orange-500/30 overflow-hidden">
@@ -247,6 +396,28 @@ function PairTile({ pair, highlight }: { pair: PairItem; highlight?: boolean }) 
       <div className="text-[0.55rem] text-slate-500 mt-0.5">
         {pair.cooccur_days}d cùng • lift {pair.cooccur_lift}×
       </div>
+    </div>
+  );
+}
+
+function Kpi({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: string;
+}) {
+  return (
+    <div className="rounded-lg bg-white/[0.04] border border-slate-700/40 p-2.5">
+      <div className="text-[0.6rem] text-slate-400 uppercase font-semibold">{label}</div>
+      <div className={`font-mono font-extrabold text-base md:text-lg mt-0.5 ${accent ?? "text-slate-100"}`}>
+        {value}
+      </div>
+      {hint && <div className="text-[0.6rem] text-slate-500 mt-0.5">{hint}</div>}
     </div>
   );
 }

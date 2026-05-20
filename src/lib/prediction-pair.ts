@@ -16,22 +16,44 @@ import { predictVip } from "./prediction";
 
 type DateMap = Record<string, Record<string, number>>;
 
-async function loadHistoryLo(region: Region, days: number): Promise<DateMap> {
+async function loadHistoryLo(region: Region, days: number, endDate?: string): Promise<DateMap> {
   const { query } = await import("./db");
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const rows = await query<{ date: string; lo_number: string; count: number }>(
-    `SELECT date, lo_number, count FROM lo_daily
-     WHERE region = ? AND date >= ? ORDER BY date ASC`,
-    [region, cutoffStr]
-  );
+  let rows: { date: string; lo_number: string; count: number }[];
+  if (endDate) {
+    const [ey, em, ed] = endDate.split("-").map(Number);
+    const endMs = Date.UTC(ey, em - 1, ed);
+    const startStr = new Date(endMs - days * 86_400_000).toISOString().slice(0, 10);
+    rows = await query<{ date: string; lo_number: string; count: number }>(
+      `SELECT date, lo_number, count FROM lo_daily
+       WHERE region = ? AND date >= ? AND date < ? ORDER BY date ASC`,
+      [region, startStr, endDate]
+    );
+  } else {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    rows = await query<{ date: string; lo_number: string; count: number }>(
+      `SELECT date, lo_number, count FROM lo_daily
+       WHERE region = ? AND date >= ? ORDER BY date ASC`,
+      [region, cutoffStr]
+    );
+  }
   const out: DateMap = {};
   for (const r of rows) {
     if (!out[r.date]) out[r.date] = {};
     out[r.date][r.lo_number] = r.count;
   }
   return out;
+}
+
+/** Get distinct lô that appeared on a specific date (for pair-hit checking). */
+async function getLoOnDate(region: Region, date: string): Promise<Set<string>> {
+  const { query } = await import("./db");
+  const rows = await query<{ lo_number: string }>(
+    `SELECT DISTINCT lo_number FROM lo_daily WHERE region = ? AND date = ?`,
+    [region, date]
+  );
+  return new Set(rows.map((r) => r.lo_number));
 }
 
 function buildPairCooccurrence(history: DateMap): Map<string, number> {
@@ -76,10 +98,11 @@ export async function predictPair(
   region: Region,
   windowDays: number = 60,
   topNSource: number = 25,
-  topKReturn: number = 30
+  topKReturn: number = 30,
+  endDate?: string
 ): Promise<PairResult> {
-  // 1) VIP probabilities
-  const vip = await predictVip(region, windowDays);
+  // 1) VIP probabilities (pass endDate for backtest mode)
+  const vip = await predictVip(region, windowDays, endDate);
   if (vip.warning || vip.final.length === 0) {
     return {
       region,
@@ -97,8 +120,8 @@ export async function predictPair(
     sourceLos.map((p) => [p.lo_number, p.probability / 100]) // convert % → 0-1
   );
 
-  // 3) Pair co-occurrence from history
-  const history = await loadHistoryLo(region, windowDays);
+  // 3) Pair co-occurrence from history (data BEFORE endDate when backtesting)
+  const history = await loadHistoryLo(region, windowDays, endDate);
   const totalDays = Object.keys(history).length;
   const cooccur = buildPairCooccurrence(history);
 
@@ -158,5 +181,99 @@ export async function predictPair(
     days_available: vip.days_available,
     top_n_source: topNSource,
     pairs: topPairs,
+  };
+}
+
+// ─────────────────────────────────────────────
+// BACKTEST: replay pair predictions across last N days
+// ─────────────────────────────────────────────
+
+export interface PairBacktestDay {
+  date: string;
+  predicted_pairs: Array<{ lo_a: string; lo_b: string }>;
+  actual_lo_count: number;        // # distinct lo that came that day
+  actual_total_pairs: number;     // C(actual_lo_count, 2)
+  hits: number;                   // # predicted pairs where BOTH lo came
+  hit_pairs: Array<{ lo_a: string; lo_b: string }>;
+  hit_rate_pct: number;           // hits / top_k × 100
+  coverage_pct: number;           // hits / actual_total_pairs × 100
+}
+
+export interface PairBacktestResult {
+  region: Region;
+  days_window: number;
+  top_k: number;
+  // Aggregate
+  total_predicted: number;
+  total_hits: number;
+  total_actual_pairs: number;
+  hit_rate_pct: number;           // total_hits / total_predicted × 100
+  coverage_pct: number;           // total_hits / total_actual_pairs × 100
+  days_with_at_least_one_hit: number;
+  // Per-day
+  days: PairBacktestDay[];
+}
+
+export async function backtestPair(
+  region: Region,
+  days: number = 14,
+  topK: number = 30,
+  windowDays: number = 60,
+  topNSource: number = 25
+): Promise<PairBacktestResult> {
+  const { query } = await import("./db");
+  const dateRows = await query<{ date: string }>(
+    `SELECT DISTINCT date FROM lo_daily WHERE region = ? ORDER BY date DESC LIMIT ?`,
+    [region, days]
+  );
+  const dates = dateRows.map((r) => r.date).reverse();
+
+  const dayResults: PairBacktestDay[] = [];
+
+  for (const date of dates) {
+    const r = await predictPair(region, windowDays, topNSource, topK, date);
+    if (r.warning || r.pairs.length === 0) continue;
+
+    const actualLo = await getLoOnDate(region, date);
+    const actualCount = actualLo.size;
+    const actualTotalPairs = (actualCount * (actualCount - 1)) / 2;
+
+    const predicted = r.pairs.map((p) => ({ lo_a: p.lo_a, lo_b: p.lo_b }));
+    const hitPairs = predicted.filter(
+      (p) => actualLo.has(p.lo_a) && actualLo.has(p.lo_b)
+    );
+
+    dayResults.push({
+      date,
+      predicted_pairs: predicted,
+      actual_lo_count: actualCount,
+      actual_total_pairs: actualTotalPairs,
+      hits: hitPairs.length,
+      hit_pairs: hitPairs,
+      hit_rate_pct: topK > 0 ? Math.round((hitPairs.length / topK) * 10000) / 100 : 0,
+      coverage_pct: actualTotalPairs > 0
+        ? Math.round((hitPairs.length / actualTotalPairs) * 10000) / 100
+        : 0,
+    });
+  }
+
+  const totalPredicted = dayResults.length * topK;
+  const totalHits = dayResults.reduce((s, d) => s + d.hits, 0);
+  const totalActual = dayResults.reduce((s, d) => s + d.actual_total_pairs, 0);
+  const daysWithHit = dayResults.filter((d) => d.hits > 0).length;
+  const hitRate = totalPredicted > 0 ? (totalHits / totalPredicted) * 100 : 0;
+  const coverage = totalActual > 0 ? (totalHits / totalActual) * 100 : 0;
+
+  return {
+    region,
+    days_window: days,
+    top_k: topK,
+    total_predicted: totalPredicted,
+    total_hits: totalHits,
+    total_actual_pairs: totalActual,
+    hit_rate_pct: Math.round(hitRate * 100) / 100,
+    coverage_pct: Math.round(coverage * 100) / 100,
+    days_with_at_least_one_hit: daysWithHit,
+    days: dayResults,
   };
 }

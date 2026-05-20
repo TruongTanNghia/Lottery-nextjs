@@ -22,6 +22,31 @@ interface ThreeResponse {
   predictions: ThreeItem[];
 }
 
+interface BacktestDay {
+  date: string;
+  predicted_top: string[];
+  actual_count: number;
+  hits: number;
+  hit_picks: string[];
+  hit_rate_pct: number;
+  coverage_pct: number;
+}
+
+interface BacktestResponse {
+  status: string;
+  region: Region;
+  days_window: number;
+  top_k: number;
+  baseline_pct: number;
+  total_predicted: number;
+  total_hits: number;
+  total_actual: number;
+  hit_rate_pct: number;
+  coverage_pct: number;
+  lift_vs_baseline: number;
+  days: BacktestDay[];
+}
+
 const MODEL_LABEL: Record<string, string> = {
   frequency: "Tần suất",
   recency: "Gần đây (EWMA)",
@@ -32,9 +57,12 @@ const MODEL_LABEL: Record<string, string> = {
 export default function PredictionThreePage({ region }: { region: Region }) {
   const toast = useToast();
   const [data, setData] = useState<ThreeResponse | null>(null);
+  const [backtest, setBacktest] = useState<BacktestResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [backtestLoading, setBacktestLoading] = useState(true);
   const [windowDays, setWindowDays] = useState(60);
   const [topK, setTopK] = useState(30);
+  const [backtestDays, setBacktestDays] = useState(14);
 
   useEffect(() => {
     setLoading(true);
@@ -44,6 +72,15 @@ export default function PredictionThreePage({ region }: { region: Region }) {
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [region, windowDays]);
+
+  useEffect(() => {
+    setBacktestLoading(true);
+    fetch(`/api/predict/three/backtest?region=${region}&days=${backtestDays}&top_k=${topK}&window=${windowDays}`)
+      .then((r) => r.json())
+      .then((d) => setBacktest(d))
+      .catch(() => setBacktest(null))
+      .finally(() => setBacktestLoading(false));
+  }, [region, windowDays, topK, backtestDays]);
 
   async function copyAll() {
     if (!data || data.predictions.length === 0) return;
@@ -129,6 +166,114 @@ export default function PredictionThreePage({ region }: { region: Region }) {
         </div>
       </section>
 
+      {/* Backtest panel — accuracy stats */}
+      {backtestLoading ? (
+        <div className="mb-4 md:mb-6 rounded-2xl border border-slate-600/40 p-4 text-center text-slate-500 text-sm">
+          ⏳ Đang backtest {backtestDays} ngày...
+        </div>
+      ) : backtest && backtest.days.length > 0 ? (
+        <section className="mb-4 md:mb-6 rounded-2xl bg-[#0f1722] border border-pink-500/30 overflow-hidden">
+          <div className="px-4 md:px-6 py-3 md:py-4 border-b border-white/[0.06] flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm md:text-base font-bold flex items-center gap-2">
+                📊 Độ chính xác (backtest {backtest.days.length} ngày)
+              </h3>
+              <p className="text-[0.7rem] text-slate-400 mt-0.5">
+                Mỗi ngày replay prediction với data trước ngày đó → so với 3 chân thực
+              </p>
+            </div>
+            <select
+              value={backtestDays}
+              onChange={(e) => setBacktestDays(parseInt(e.target.value))}
+              className="px-2 py-1 rounded text-xs bg-[#1a2332] border border-slate-600 text-slate-100"
+            >
+              <option value={7}>7 ngày</option>
+              <option value={14}>14 ngày</option>
+              <option value={21}>21 ngày</option>
+              <option value={30}>30 ngày</option>
+            </select>
+          </div>
+
+          {/* Aggregate KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 p-3 md:p-4">
+            <Kpi
+              label="Tổng trúng / dự đoán"
+              value={`${backtest.total_hits}/${backtest.total_predicted}`}
+              hint={`Top ${backtest.top_k} × ${backtest.days.length} ngày`}
+            />
+            <Kpi
+              label="Tổng trúng / đã ra"
+              value={`${backtest.total_hits}/${backtest.total_actual}`}
+              hint="3-chân khác nhau"
+            />
+            <Kpi
+              label="Hit rate (chính xác)"
+              value={`${backtest.hit_rate_pct}%`}
+              accent={backtest.hit_rate_pct >= backtest.baseline_pct * 1.5 ? "text-emerald-300" : backtest.hit_rate_pct >= backtest.baseline_pct ? "text-amber-300" : "text-rose-300"}
+              hint={`Baseline ${backtest.baseline_pct}%`}
+            />
+            <Kpi
+              label="Coverage"
+              value={`${backtest.coverage_pct}%`}
+              accent="text-cyan-300"
+              hint="% bắt được số đã ra"
+            />
+            <Kpi
+              label="Lift vs random"
+              value={`${backtest.lift_vs_baseline}×`}
+              accent={backtest.lift_vs_baseline >= 1.5 ? "text-emerald-300" : backtest.lift_vs_baseline >= 1 ? "text-amber-300" : "text-rose-300"}
+              hint="1.0 = bằng random"
+            />
+          </div>
+
+          {/* Per-day table */}
+          <div className="overflow-x-auto border-t border-white/[0.06]">
+            <table className="w-full text-[0.72rem] md:text-xs">
+              <thead className="bg-white/[0.03] text-slate-400 uppercase">
+                <tr>
+                  <th className="px-3 py-2 text-left">Ngày</th>
+                  <th className="px-3 py-2 text-center">Trúng/Top {backtest.top_k}</th>
+                  <th className="px-3 py-2 text-center">Trúng/Đã ra</th>
+                  <th className="px-3 py-2 text-center">Hit rate</th>
+                  <th className="px-3 py-2 text-center">Coverage</th>
+                  <th className="px-3 py-2 text-left">Số trúng</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...backtest.days].reverse().map((d) => {
+                  const rowBg = d.hits >= 3
+                    ? "bg-emerald-500/5 border-l-2 border-emerald-500"
+                    : d.hits >= 1
+                    ? "bg-amber-500/5 border-l-2 border-amber-500"
+                    : "bg-rose-500/5 border-l-2 border-rose-500";
+                  return (
+                    <tr key={d.date} className={`${rowBg} border-t border-white/[0.04]`}>
+                      <td className="px-3 py-2 font-mono text-slate-300 whitespace-nowrap">{d.date.slice(5)}</td>
+                      <td className="px-3 py-2 text-center font-mono font-bold text-slate-100">
+                        {d.hits}/{backtest.top_k}
+                      </td>
+                      <td className="px-3 py-2 text-center font-mono text-slate-300">
+                        {d.hits}/{d.actual_count}
+                      </td>
+                      <td className={`px-3 py-2 text-center font-mono ${d.hit_rate_pct >= backtest.baseline_pct ? "text-emerald-400" : "text-rose-400"}`}>
+                        {d.hit_rate_pct}%
+                      </td>
+                      <td className="px-3 py-2 text-center font-mono text-cyan-300">
+                        {d.coverage_pct}%
+                      </td>
+                      <td className="px-3 py-2 font-mono text-emerald-200">
+                        {d.hit_picks.length === 0 ? <span className="text-slate-600">—</span> : d.hit_picks.slice(0, 10).join(" ")}
+                        {d.hit_picks.length > 10 && <span className="text-slate-500"> …</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
       {/* Top picks grid */}
       <section className="rounded-2xl bg-[#0f1722] border border-slate-700/50 overflow-hidden">
         <div className="px-4 md:px-6 py-3 border-b border-white/[0.06]">
@@ -177,5 +322,27 @@ export default function PredictionThreePage({ region }: { region: Region }) {
         </div>
       </section>
     </>
+  );
+}
+
+function Kpi({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: string;
+}) {
+  return (
+    <div className="rounded-lg bg-white/[0.04] border border-slate-700/40 p-2.5">
+      <div className="text-[0.6rem] text-slate-400 uppercase font-semibold">{label}</div>
+      <div className={`font-mono font-extrabold text-base md:text-lg mt-0.5 ${accent ?? "text-slate-100"}`}>
+        {value}
+      </div>
+      {hint && <div className="text-[0.6rem] text-slate-500 mt-0.5">{hint}</div>}
+    </div>
   );
 }

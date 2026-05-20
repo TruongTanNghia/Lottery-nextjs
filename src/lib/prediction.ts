@@ -760,14 +760,15 @@ export interface VipPredictionResult {
 
 export async function predictVip(
   region: Region,
-  windowDays: number = 90   // VIP uses MAX window for max signal
+  windowDays: number = 90,  // VIP uses MAX window for max signal
+  endDate?: string          // If set, use only data strictly BEFORE this date (for backtest)
 ): Promise<VipPredictionResult> {
-  const history = await loadHistory(region, windowDays);
+  const history = await loadHistory(region, windowDays, endDate);
   const daysAvailable = Object.keys(history).length;
   const params = regionParams(region);
   // Province history loaded only for MT (other regions don't use provinceOfDay)
   const provinceHistory = region === "xsmt"
-    ? await loadProvinceHistory(region, windowDays)
+    ? await loadProvinceHistory(region, windowDays, endDate)
     : {};
 
   if (daysAvailable < 5) {

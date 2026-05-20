@@ -16,15 +16,31 @@ type DateMap = Record<string, Record<string, number>>;
 
 const ALL_THREE = Array.from({ length: 1000 }, (_, i) => String(i).padStart(3, "0"));
 
-async function loadThreeHistory(region: Region, days: number): Promise<DateMap> {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const rows = await query<{ date: string; number: string }>(
-    `SELECT date, number FROM lottery_results
-     WHERE region = ? AND date >= ? AND LENGTH(number) >= 3`,
-    [region, cutoffStr]
-  );
+async function loadThreeHistory(
+  region: Region,
+  days: number,
+  endDate?: string
+): Promise<DateMap> {
+  let rows: { date: string; number: string }[];
+  if (endDate) {
+    const [ey, em, ed] = endDate.split("-").map(Number);
+    const endMs = Date.UTC(ey, em - 1, ed);
+    const startStr = new Date(endMs - days * 86_400_000).toISOString().slice(0, 10);
+    rows = await query<{ date: string; number: string }>(
+      `SELECT date, number FROM lottery_results
+       WHERE region = ? AND date >= ? AND date < ? AND LENGTH(number) >= 3`,
+      [region, startStr, endDate]
+    );
+  } else {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    rows = await query<{ date: string; number: string }>(
+      `SELECT date, number FROM lottery_results
+       WHERE region = ? AND date >= ? AND LENGTH(number) >= 3`,
+      [region, cutoffStr]
+    );
+  }
   const out: DateMap = {};
   for (const r of rows) {
     const three = r.number.slice(-3).padStart(3, "0");
@@ -32,6 +48,16 @@ async function loadThreeHistory(region: Region, days: number): Promise<DateMap> 
     out[r.date][three] = (out[r.date][three] ?? 0) + 1;
   }
   return out;
+}
+
+/** Distinct 3-digit numbers that appeared on a specific date. */
+async function getThreeDigitsOnDate(region: Region, date: string): Promise<Set<string>> {
+  const rows = await query<{ number: string }>(
+    `SELECT DISTINCT number FROM lottery_results
+     WHERE region = ? AND date = ? AND LENGTH(number) >= 3`,
+    [region, date]
+  );
+  return new Set(rows.map((r) => r.number.slice(-3).padStart(3, "0")));
 }
 
 function emptyScores(): Record<string, number> {
@@ -177,9 +203,10 @@ const WEIGHTS: Record<string, number> = {
 
 export async function predictThreeDigit(
   region: Region,
-  windowDays: number = 60
+  windowDays: number = 60,
+  endDate?: string  // For backtest: use only data strictly BEFORE this date
 ): Promise<ThreeDigitResult> {
-  const history = await loadThreeHistory(region, windowDays);
+  const history = await loadThreeHistory(region, windowDays, endDate);
   const daysAvailable = Object.keys(history).length;
 
   if (daysAvailable < 5) {
@@ -228,5 +255,97 @@ export async function predictThreeDigit(
     days_available: daysAvailable,
     weights: WEIGHTS,
     predictions: items,
+  };
+}
+
+// ─────────────────────────────────────────────
+// BACKTEST: replay top-K 3-digit predictions across last N days
+// ─────────────────────────────────────────────
+
+export interface ThreeBacktestDay {
+  date: string;
+  predicted_top: string[];
+  actual_count: number;       // distinct 3-digit numbers that came that day
+  hits: number;               // # of top_k picks that appeared
+  hit_picks: string[];
+  hit_rate_pct: number;       // hits / top_k × 100 (accuracy of our picks)
+  coverage_pct: number;       // hits / actual_count × 100 (how much of actual we captured)
+}
+
+export interface ThreeBacktestResult {
+  region: Region;
+  days_window: number;
+  top_k: number;
+  total_models: number;       // for label
+  baseline_pct: number;       // random expectation: top_k/1000 × 100
+  // Aggregate
+  total_predicted: number;    // sum of top_k across days
+  total_hits: number;
+  total_actual: number;       // sum of actual_count
+  hit_rate_pct: number;       // total_hits / total_predicted × 100
+  coverage_pct: number;       // total_hits / total_actual × 100
+  lift_vs_baseline: number;   // hit_rate / baseline (1.0 = same as random)
+  // Per-day
+  days: ThreeBacktestDay[];
+}
+
+export async function backtestThreeDigit(
+  region: Region,
+  days: number = 14,
+  topK: number = 30,
+  windowDays: number = 60
+): Promise<ThreeBacktestResult> {
+  const dateRows = await query<{ date: string }>(
+    `SELECT DISTINCT date FROM lottery_results
+     WHERE region = ? AND LENGTH(number) >= 3
+     ORDER BY date DESC LIMIT ?`,
+    [region, days]
+  );
+  const dates = dateRows.map((r) => r.date).reverse();
+
+  const dayResults: ThreeBacktestDay[] = [];
+
+  for (const date of dates) {
+    const r = await predictThreeDigit(region, windowDays, date);
+    if (r.warning || r.predictions.length === 0) continue;
+
+    const topPicks = r.predictions.slice(0, topK).map((p) => p.number);
+    const actual = await getThreeDigitsOnDate(region, date);
+    const hitPicks = topPicks.filter((n) => actual.has(n));
+
+    const hit = hitPicks.length;
+    const actualCount = actual.size;
+
+    dayResults.push({
+      date,
+      predicted_top: topPicks,
+      actual_count: actualCount,
+      hits: hit,
+      hit_picks: hitPicks,
+      hit_rate_pct: topK > 0 ? Math.round((hit / topK) * 10000) / 100 : 0,
+      coverage_pct: actualCount > 0 ? Math.round((hit / actualCount) * 10000) / 100 : 0,
+    });
+  }
+
+  const totalPredicted = dayResults.length * topK;
+  const totalHits = dayResults.reduce((s, d) => s + d.hits, 0);
+  const totalActual = dayResults.reduce((s, d) => s + d.actual_count, 0);
+  const baseline = (topK / 1000) * 100; // % chance a random pick is in actual
+  const hitRate = totalPredicted > 0 ? (totalHits / totalPredicted) * 100 : 0;
+  const coverage = totalActual > 0 ? (totalHits / totalActual) * 100 : 0;
+
+  return {
+    region,
+    days_window: days,
+    top_k: topK,
+    total_models: 4,
+    baseline_pct: Math.round(baseline * 100) / 100,
+    total_predicted: totalPredicted,
+    total_hits: totalHits,
+    total_actual: totalActual,
+    hit_rate_pct: Math.round(hitRate * 100) / 100,
+    coverage_pct: Math.round(coverage * 100) / 100,
+    lift_vs_baseline: baseline > 0 ? Math.round((hitRate / baseline) * 100) / 100 : 0,
+    days: dayResults,
   };
 }
