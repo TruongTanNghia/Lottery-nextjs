@@ -175,7 +175,7 @@ export default function PredictionVipPage({
   const [adaptiveLoading, setAdaptiveLoading] = useState(true);
   const [scorecardLoading, setScorecardLoading] = useState(true);
   const [backfilling, setBackfilling] = useState(false);
-  const [windowDays, setWindowDays] = useState(90);
+  const [windowDays, setWindowDays] = useState(30);
   const [scorecardDays, setScorecardDays] = useState(14);
   const [scorecardTopN, setScorecardTopN] = useState(10);
 
@@ -296,10 +296,10 @@ export default function PredictionVipPage({
             onChange={(e) => setWindowDays(parseInt(e.target.value))}
             className="px-3 py-1.5 rounded text-xs bg-[#1a2332] border border-slate-600 text-slate-100"
           >
-            <option value={30}>30 ngày</option>
+            <option value={30}>30 ngày (default)</option>
             <option value={45}>45 ngày</option>
             <option value={60}>60 ngày</option>
-            <option value={90}>90 ngày (max)</option>
+            <option value={90}>90 ngày</option>
             <option value={180}>180 ngày</option>
           </select>
         </div>

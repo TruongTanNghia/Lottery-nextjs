@@ -760,7 +760,7 @@ export interface VipPredictionResult {
 
 export async function predictVip(
   region: Region,
-  windowDays: number = 90,  // VIP uses MAX window for max signal
+  windowDays: number = 30,  // 30 ngày gần nhất theo yêu cầu user
   endDate?: string          // If set, use only data strictly BEFORE this date (for backtest)
 ): Promise<VipPredictionResult> {
   const history = await loadHistory(region, windowDays, endDate);
