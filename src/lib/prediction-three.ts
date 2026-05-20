@@ -448,6 +448,26 @@ export interface ThreeDigitItem {
   breakdown: Record<string, number>;
 }
 
+export interface ThreeModelTopPick {
+  rank: number;
+  number: string;
+  norm_score: number;
+}
+
+export interface ThreeModelBreakdown {
+  key: string;
+  label: string;
+  question: string;
+  weight: number;
+  top_picks: ThreeModelTopPick[];   // top N picks for this model
+}
+
+export interface ThreeConsensusItem {
+  number: string;
+  appearances_in_top: number;
+  models: string[];
+}
+
 export interface ThreeDigitResult {
   region: Region;
   window_days: number;
@@ -455,7 +475,30 @@ export interface ThreeDigitResult {
   warning?: string;
   weights: Record<string, number>;
   predictions: ThreeDigitItem[];
+  total_models: number;
+  consensus_threshold: number;
+  models: ThreeModelBreakdown[];
+  consensus: ThreeConsensusItem[];      // ≥ threshold model agree
+  controversial: ThreeConsensusItem[];  // exactly 2-4 model agree
 }
+
+const MODEL_META: Record<string, { label: string; question: string }> = {
+  frequency: { label: "Tần suất", question: "Số nào về NHIỀU NHẤT?" },
+  recency: { label: "Gần đây (EWMA)", question: "Số nào về nhiều GẦN ĐÂY?" },
+  dayOfWeek: { label: "Cùng thứ", question: "Số nào hay về vào THỨ này?" },
+  temperature: { label: "Hot vs base", question: "Số nào ĐANG HOT hơn trung bình?" },
+  streak: { label: "Liên tiếp", question: "Số đang về LIÊN TIẾP có nên đánh tiếp?" },
+  digitFreq: { label: "Vị trí chữ số", question: "Mỗi vị trí (trăm/chục/đơn vị) hay là số nào?" },
+  loBorrow: { label: "Mượn lô 2 chữ", question: "Lô 2 chữ số đuôi (BC) đang hot?" },
+  pairFreq: { label: "Cặp 2 chữ số", question: "Cặp đầu (AB) + cặp đuôi (BC) có tần suất cao?" },
+};
+
+// Per-region consensus threshold (similar tier structure as VIP)
+const CONSENSUS_THRESHOLD: Record<Region, number> = {
+  xsmn: 5,  // 5/8 model agree → consensus
+  xsmb: 4,  // 4/8
+  xsmt: 3,  // 3/8 (matches MT being structurally harder)
+};
 
 export async function predictThreeDigit(
   region: Region,
@@ -474,6 +517,11 @@ export async function predictThreeDigit(
       warning: "Cần ít nhất 5 ngày dữ liệu",
       weights: params.weights,
       predictions: [],
+      total_models: 8,
+      consensus_threshold: CONSENSUS_THRESHOLD[region],
+      models: [],
+      consensus: [],
+      controversial: [],
     };
   }
 
@@ -513,12 +561,56 @@ export async function predictThreeDigit(
   items.sort((a, b) => b.probability - a.probability);
   items.forEach((p, i) => { p.rank = i + 1; });
 
+  // Per-model top 10 breakdown (mirror of VIP's per-model cards)
+  const TOP_PER_MODEL = 10;
+  const models: ThreeModelBreakdown[] = Object.entries(norm).map(([key, scores]) => {
+    const ranked = ALL_THREE
+      .map((n) => ({ number: n, norm_score: scores[n] }))
+      .sort((a, b) => b.norm_score - a.norm_score)
+      .slice(0, TOP_PER_MODEL)
+      .map((p, idx) => ({ rank: idx + 1, ...p, norm_score: Math.round(p.norm_score * 10000) / 10000 }));
+    return {
+      key,
+      label: MODEL_META[key]?.label ?? key,
+      question: MODEL_META[key]?.question ?? "",
+      weight: params.weights[key] ?? 0,
+      top_picks: ranked,
+    };
+  });
+
+  // Consensus: which numbers appear in ≥ threshold models' top 10
+  const topSetsByModel: Record<string, Set<string>> = {};
+  for (const m of models) {
+    topSetsByModel[m.key] = new Set(m.top_picks.map((p) => p.number));
+  }
+  const appearancesPerNum: Record<string, string[]> = {};
+  for (const n of ALL_THREE) {
+    appearancesPerNum[n] = [];
+    for (const [k, set] of Object.entries(topSetsByModel)) {
+      if (set.has(n)) appearancesPerNum[n].push(k);
+    }
+  }
+  const allRanked = Object.entries(appearancesPerNum)
+    .map(([n, ms]) => ({ number: n, appearances_in_top: ms.length, models: ms }))
+    .filter((x) => x.appearances_in_top > 0)
+    .sort((a, b) => b.appearances_in_top - a.appearances_in_top);
+
+  const threshold = CONSENSUS_THRESHOLD[region];
+  const consensus = allRanked.filter((x) => x.appearances_in_top >= threshold);
+  // Controversial buckets always 2-4 model agree (overlap with consensus is OK)
+  const controversial = allRanked.filter((x) => x.appearances_in_top >= 2 && x.appearances_in_top <= 4);
+
   return {
     region,
     window_days: windowDays,
     days_available: daysAvailable,
     weights: params.weights,
     predictions: items,
+    total_models: 8,
+    consensus_threshold: threshold,
+    models,
+    consensus,
+    controversial,
   };
 }
 

@@ -12,6 +12,26 @@ interface ThreeItem {
   breakdown: Record<string, number>;
 }
 
+interface ThreeModelTopPick {
+  rank: number;
+  number: string;
+  norm_score: number;
+}
+
+interface ThreeModelBreakdown {
+  key: string;
+  label: string;
+  question: string;
+  weight: number;
+  top_picks: ThreeModelTopPick[];
+}
+
+interface ThreeConsensusItem {
+  number: string;
+  appearances_in_top: number;
+  models: string[];
+}
+
 interface ThreeResponse {
   status: string;
   region: Region;
@@ -20,7 +40,23 @@ interface ThreeResponse {
   warning?: string;
   weights: Record<string, number>;
   predictions: ThreeItem[];
+  total_models: number;
+  consensus_threshold: number;
+  models: ThreeModelBreakdown[];
+  consensus: ThreeConsensusItem[];
+  controversial: ThreeConsensusItem[];
 }
+
+const MODEL_COLOR: Record<string, { border: string; bg: string; text: string }> = {
+  frequency: { border: "border-blue-500/40", bg: "bg-blue-500/10", text: "text-blue-300" },
+  recency: { border: "border-cyan-500/40", bg: "bg-cyan-500/10", text: "text-cyan-300" },
+  dayOfWeek: { border: "border-teal-500/40", bg: "bg-teal-500/10", text: "text-teal-300" },
+  temperature: { border: "border-orange-500/40", bg: "bg-orange-500/10", text: "text-orange-300" },
+  streak: { border: "border-rose-500/40", bg: "bg-rose-500/10", text: "text-rose-300" },
+  digitFreq: { border: "border-fuchsia-500/40", bg: "bg-fuchsia-500/10", text: "text-fuchsia-300" },
+  loBorrow: { border: "border-emerald-500/40", bg: "bg-emerald-500/10", text: "text-emerald-300" },
+  pairFreq: { border: "border-purple-500/40", bg: "bg-purple-500/10", text: "text-purple-300" },
+};
 
 interface BacktestDay {
   date: string;
@@ -113,6 +149,16 @@ export default function PredictionThreePage({ region }: { region: Region }) {
     try {
       await navigator.clipboard.writeText(nums.join(" "));
       toast.show("success", `Copy top ${nums.length} số`);
+    } catch {
+      toast.show("error", "Trình duyệt chặn copy");
+    }
+  }
+
+  async function copy(nums: string[], label: string) {
+    if (nums.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(nums.join(" "));
+      toast.show("success", `Copy ${label}: ${nums.length} số`);
     } catch {
       toast.show("error", "Trình duyệt chặn copy");
     }
@@ -422,6 +468,189 @@ export default function PredictionThreePage({ region }: { region: Region }) {
           })}
         </div>
       </section>
+
+      {/* Consensus + Partial agreement grid */}
+      {data.models.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mt-4 md:mt-6">
+          {/* Consensus */}
+          <section className="rounded-2xl bg-emerald-900/15 border border-emerald-500/30 overflow-hidden">
+            <div className="px-4 md:px-5 py-3 border-b border-white/[0.06] flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-bold text-emerald-300">
+                  🤝 Consensus (≥ {data.consensus_threshold}/{data.total_models} model)
+                </h3>
+                <p className="text-[0.7rem] text-slate-400 mt-0.5">
+                  Số được nhiều model agree → tin cậy CAO
+                </p>
+              </div>
+              <button
+                onClick={() => copy(data.consensus.map((c) => c.number), "consensus 3-chân")}
+                disabled={data.consensus.length === 0}
+                className="px-2.5 py-1 text-[0.7rem] rounded bg-emerald-500 hover:bg-emerald-400 text-white font-bold disabled:opacity-50"
+              >
+                📋 Copy {data.consensus.length} số
+              </button>
+            </div>
+            <div className="p-3 md:p-4 max-h-72 overflow-y-auto">
+              {data.consensus.length === 0 ? (
+                <p className="text-center text-slate-500 text-sm py-4">Không có consensus</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {data.consensus.map((c) => (
+                    <span
+                      key={c.number}
+                      title={`${c.appearances_in_top}/${data.total_models} model: ${c.models.join(", ")}`}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 font-mono font-bold text-sm"
+                    >
+                      {c.number}
+                      <span className="text-[0.6rem] opacity-70">×{c.appearances_in_top}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Partial agreement grouped 4/3/2 */}
+          <section className="rounded-2xl bg-amber-900/15 border border-amber-500/30 overflow-hidden">
+            <div className="px-4 md:px-5 py-3 border-b border-white/[0.06]">
+              <h3 className="text-sm font-bold text-amber-300">
+                ⚠️ Một phần đồng thuận (2-4/{data.total_models} model)
+              </h3>
+              <p className="text-[0.7rem] text-slate-400 mt-0.5">
+                Số có ít model agree → chia nhóm theo số tiêu chí. Nhóm 4 + 3 có thể trùng Consensus.
+              </p>
+            </div>
+            <div className="p-3 md:p-4 max-h-72 overflow-y-auto space-y-3">
+              {(() => {
+                const buckets = [4, 3, 2];
+                const groups = buckets.map((n) => ({
+                  count: n,
+                  items: data.controversial.filter((c) => c.appearances_in_top === n),
+                }));
+                if (groups.every((g) => g.items.length === 0)) {
+                  return <p className="text-center text-slate-500 text-sm py-4">Không có nhóm nào</p>;
+                }
+                const bucketStyle: Record<number, { wrap: string; chip: string; btn: string; label: string }> = {
+                  4: {
+                    wrap: "border-emerald-500/40 bg-emerald-500/5",
+                    chip: "bg-emerald-500/20 border-emerald-400/50 text-emerald-100",
+                    btn: "bg-emerald-500 hover:bg-emerald-400",
+                    label: "Mạnh — gần consensus",
+                  },
+                  3: {
+                    wrap: "border-amber-500/40 bg-amber-500/5",
+                    chip: "bg-amber-500/20 border-amber-400/50 text-amber-100",
+                    btn: "bg-amber-500 hover:bg-amber-400",
+                    label: "Khá đồng thuận",
+                  },
+                  2: {
+                    wrap: "border-orange-500/30 bg-orange-500/[0.04]",
+                    chip: "bg-orange-500/15 border-orange-400/40 text-orange-200",
+                    btn: "bg-orange-500 hover:bg-orange-400",
+                    label: "Yếu — vài model",
+                  },
+                };
+                return groups.map((g) => {
+                  const style = bucketStyle[g.count];
+                  const nums = g.items.map((i) => i.number);
+                  return (
+                    <div key={g.count} className={`rounded-xl border ${style.wrap} p-2.5`}>
+                      <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
+                        <div className="text-[0.7rem] font-bold text-slate-200">
+                          🎯 {g.count}/{data.total_models} model agree
+                          <span className="ml-1.5 text-[0.65rem] font-normal text-slate-400">
+                            • {style.label} • {g.items.length} số
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => copy(nums, `${g.count}/${data.total_models} model`)}
+                          disabled={g.items.length === 0}
+                          className={`px-2.5 py-1 text-[0.65rem] rounded ${style.btn} text-white font-bold disabled:opacity-50`}
+                        >
+                          📋 Copy {g.items.length}
+                        </button>
+                      </div>
+                      {g.items.length === 0 ? (
+                        <p className="text-[0.7rem] text-slate-500 italic">Không có số nào</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {g.items.map((c) => (
+                            <span
+                              key={c.number}
+                              title={`${c.appearances_in_top}/${data.total_models} model: ${c.models.join(", ")}`}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border font-mono font-semibold text-xs ${style.chip}`}
+                            >
+                              {c.number}
+                              <span className="text-[0.6rem] opacity-70">×{c.appearances_in_top}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* Per-model Top 10 cards */}
+      {data.models.length > 0 && (
+        <>
+          <h3 className="text-sm md:text-base font-bold mt-4 md:mt-6 mb-3">
+            🧪 Top 10 mỗi mô hình ({data.total_models} model)
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            {data.models.map((m, idx) => {
+              const c = MODEL_COLOR[m.key] ?? MODEL_COLOR.frequency;
+              const nums = m.top_picks.map((p) => p.number);
+              return (
+                <section
+                  key={m.key}
+                  className={`rounded-2xl bg-[#111827] border ${c.border} overflow-hidden flex flex-col`}
+                >
+                  <div className={`px-3 py-2.5 border-b border-white/[0.06] ${c.bg}`}>
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className={`text-[0.65rem] font-mono font-bold ${c.text}`}>#{idx + 1}</span>
+                      <h4 className="text-xs font-bold truncate">{m.label}</h4>
+                      <span className="text-[0.6rem] px-1.5 py-0.5 rounded bg-white/[0.08] text-slate-300 font-mono">
+                        {(m.weight * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <p className={`text-[0.6rem] italic ${c.text}`}>"{m.question}"</p>
+                  </div>
+                  <div className="p-2.5 flex-1">
+                    <div className="grid grid-cols-5 gap-1">
+                      {m.top_picks.map((p) => (
+                        <div
+                          key={p.number}
+                          title={`Rank #${p.rank} • score ${p.norm_score}`}
+                          className={`rounded border ${c.border} ${c.bg} p-1 text-center`}
+                        >
+                          <div className="text-[0.5rem] font-mono text-slate-500">#{p.rank}</div>
+                          <div className={`font-mono text-[0.7rem] font-extrabold ${c.text}`}>
+                            {p.number}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="px-2.5 py-1.5 border-t border-white/[0.06] flex justify-end">
+                    <button
+                      onClick={() => copy(nums, m.label)}
+                      className={`px-2 py-0.5 text-[0.6rem] rounded bg-white/[0.05] hover:bg-white/[0.1] ${c.text} font-semibold`}
+                    >
+                      📋 Copy 10
+                    </button>
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </>
+      )}
     </>
   );
 }

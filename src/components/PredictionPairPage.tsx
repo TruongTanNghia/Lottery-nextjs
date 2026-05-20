@@ -13,7 +13,31 @@ interface PairItem {
   p_b: number;
   cooccur_days: number;
   cooccur_lift: number;
+  recent_boost: number;
+  heat_score: number;
   pair_score: number;
+}
+
+interface PairComponentTopPick {
+  rank: number;
+  lo_a: string;
+  lo_b: string;
+  value: number;
+}
+
+interface PairComponentBreakdown {
+  key: string;
+  label: string;
+  question: string;
+  weight: number;
+  top_picks: PairComponentTopPick[];
+}
+
+interface PairConsensusItem {
+  lo_a: string;
+  lo_b: string;
+  appearances_in_top: number;
+  components: string[];
 }
 
 interface PairResponse {
@@ -24,7 +48,19 @@ interface PairResponse {
   warning?: string;
   top_n_source: number;
   pairs: PairItem[];
+  total_components: number;
+  consensus_threshold: number;
+  components: PairComponentBreakdown[];
+  consensus: PairConsensusItem[];
+  controversial: PairConsensusItem[];
 }
+
+const COMPONENT_COLOR: Record<string, { border: string; bg: string; text: string }> = {
+  combined: { border: "border-blue-500/40", bg: "bg-blue-500/10", text: "text-blue-300" },
+  cooccur: { border: "border-emerald-500/40", bg: "bg-emerald-500/10", text: "text-emerald-300" },
+  recent: { border: "border-orange-500/40", bg: "bg-orange-500/10", text: "text-orange-300" },
+  heat: { border: "border-rose-500/40", bg: "bg-rose-500/10", text: "text-rose-300" },
+};
 
 interface BacktestDay {
   date: string;
@@ -126,6 +162,16 @@ export default function PredictionPairPage({ region }: { region: Region }) {
     try {
       await navigator.clipboard.writeText(txt);
       toast.show("success", `Copy top 10 cặp`);
+    } catch {
+      toast.show("error", "Trình duyệt chặn copy");
+    }
+  }
+
+  async function copy(items: string[], label: string) {
+    if (items.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(items.join(", "));
+      toast.show("success", `Copy ${label}: ${items.length}`);
     } catch {
       toast.show("error", "Trình duyệt chặn copy");
     }
@@ -459,6 +505,144 @@ export default function PredictionPairPage({ region }: { region: Region }) {
           </table>
         </div>
       </section>
+
+      {/* Consensus + Controversial */}
+      {data.components.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mt-4 md:mt-6">
+          <section className="rounded-2xl bg-emerald-900/15 border border-emerald-500/30 overflow-hidden">
+            <div className="px-4 md:px-5 py-3 border-b border-white/[0.06] flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-bold text-emerald-300">
+                  🤝 Consensus (≥ {data.consensus_threshold}/{data.total_components} tiêu chí)
+                </h3>
+                <p className="text-[0.7rem] text-slate-400 mt-0.5">
+                  Cặp được nhiều tiêu chí cùng chọn → tin cậy CAO
+                </p>
+              </div>
+              <button
+                onClick={() => copy(data.consensus.map((c) => `${c.lo_a}-${c.lo_b}`), "consensus pair")}
+                disabled={data.consensus.length === 0}
+                className="px-2.5 py-1 text-[0.7rem] rounded bg-emerald-500 hover:bg-emerald-400 text-white font-bold disabled:opacity-50"
+              >
+                📋 Copy {data.consensus.length} cặp
+              </button>
+            </div>
+            <div className="p-3 md:p-4 max-h-72 overflow-y-auto">
+              {data.consensus.length === 0 ? (
+                <p className="text-center text-slate-500 text-sm py-4">Không có consensus</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {data.consensus.map((c) => (
+                    <span
+                      key={`${c.lo_a}-${c.lo_b}`}
+                      title={`${c.appearances_in_top}/${data.total_components} tiêu chí: ${c.components.join(", ")}`}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 font-mono font-bold text-sm"
+                    >
+                      {c.lo_a}-{c.lo_b}
+                      <span className="text-[0.6rem] opacity-70">×{c.appearances_in_top}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-2xl bg-amber-900/15 border border-amber-500/30 overflow-hidden">
+            <div className="px-4 md:px-5 py-3 border-b border-white/[0.06]">
+              <h3 className="text-sm font-bold text-amber-300">
+                ⚠️ Yếu / Controversial
+              </h3>
+              <p className="text-[0.7rem] text-slate-400 mt-0.5">
+                Cặp chỉ vài tiêu chí chọn → ít tin cậy hơn, có thể "ngon" theo 1 góc nhìn
+              </p>
+            </div>
+            <div className="p-3 md:p-4 max-h-72 overflow-y-auto">
+              {data.controversial.length === 0 ? (
+                <p className="text-center text-slate-500 text-sm py-4">Không có</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {data.controversial.slice(0, 30).map((c) => (
+                    <span
+                      key={`${c.lo_a}-${c.lo_b}`}
+                      title={`${c.appearances_in_top}/${data.total_components} tiêu chí: ${c.components.join(", ")}`}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 border border-amber-400/30 text-amber-200 font-mono font-semibold text-xs"
+                    >
+                      {c.lo_a}-{c.lo_b}
+                      <span className="text-[0.55rem] opacity-70">×{c.appearances_in_top}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* Per-component Top 10 */}
+      {data.components.length > 0 && (
+        <>
+          <h3 className="text-sm md:text-base font-bold mt-4 md:mt-6 mb-3">
+            🧪 Top 10 cặp mỗi tiêu chí ({data.total_components} tiêu chí)
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            {data.components.map((comp, idx) => {
+              const c = COMPONENT_COLOR[comp.key] ?? COMPONENT_COLOR.combined;
+              const pairs = comp.top_picks.map((p) => `${p.lo_a}-${p.lo_b}`);
+              return (
+                <section
+                  key={comp.key}
+                  className={`rounded-2xl bg-[#111827] border ${c.border} overflow-hidden flex flex-col`}
+                >
+                  <div className={`px-3 py-2.5 border-b border-white/[0.06] ${c.bg}`}>
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className={`text-[0.65rem] font-mono font-bold ${c.text}`}>#{idx + 1}</span>
+                      <h4 className="text-xs font-bold truncate">{comp.label}</h4>
+                      <span className="text-[0.6rem] px-1.5 py-0.5 rounded bg-white/[0.08] text-slate-300 font-mono">
+                        {(comp.weight * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <p className={`text-[0.6rem] italic ${c.text}`}>"{comp.question}"</p>
+                  </div>
+                  <div className="p-2.5 flex-1">
+                    <div className="space-y-1">
+                      {comp.top_picks.map((p) => (
+                        <div
+                          key={`${p.lo_a}-${p.lo_b}`}
+                          className={`flex items-center justify-between px-2 py-1 rounded border ${c.border} ${c.bg}`}
+                          title={`Rank #${p.rank} • value ${p.value}`}
+                        >
+                          <span className="text-[0.55rem] font-mono text-slate-500 w-5">#{p.rank}</span>
+                          <span className={`font-mono text-sm font-extrabold ${c.text}`}>
+                            {p.lo_a}-{p.lo_b}
+                          </span>
+                          <span className="text-[0.6rem] font-mono text-slate-400">
+                            {typeof p.value === "number" ? p.value.toFixed(2) : p.value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="px-2.5 py-1.5 border-t border-white/[0.06] flex justify-end">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(pairs.join(", "));
+                          toast.show("success", `Copy ${comp.label}: 10 cặp`);
+                        } catch {
+                          toast.show("error", "Trình duyệt chặn copy");
+                        }
+                      }}
+                      className={`px-2 py-0.5 text-[0.6rem] rounded bg-white/[0.05] hover:bg-white/[0.1] ${c.text} font-semibold`}
+                    >
+                      📋 Copy 10
+                    </button>
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {/* Explanation */}
       <p className="mt-3 text-[0.7rem] text-slate-500 italic">

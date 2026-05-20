@@ -82,7 +82,24 @@ export interface PairItem {
   p_b: number;
   cooccur_days: number;        // # days both came together
   cooccur_lift: number;        // observed / expected (1.0 = independence)
+  recent_boost: number;        // recent-pair lift (capped)
+  heat_score: number;          // both-lo activity in recent window (0-1)
   pair_score: number;
+}
+
+export interface PairComponentBreakdown {
+  key: string;                 // "combined" | "cooccur" | "recent" | "heat"
+  label: string;
+  question: string;
+  weight: number;              // weight in final score formula
+  top_picks: Array<{ rank: number; lo_a: string; lo_b: string; value: number }>;
+}
+
+export interface PairConsensusItem {
+  lo_a: string;
+  lo_b: string;
+  appearances_in_top: number;  // # of components where this pair is in top 10
+  components: string[];        // which components agreed
 }
 
 export interface PairResult {
@@ -92,7 +109,27 @@ export interface PairResult {
   warning?: string;
   top_n_source: number;
   pairs: PairItem[];
+  total_components: number;             // 4 (combined/cooccur/recent/heat)
+  consensus_threshold: number;          // ≥ this many components agree → consensus
+  components: PairComponentBreakdown[];
+  consensus: PairConsensusItem[];
+  controversial: PairConsensusItem[];
 }
+
+// Component labels for the UI
+const COMPONENT_META: Record<string, { label: string; question: string }> = {
+  combined: { label: "Xác suất cá nhân", question: "Cặp nào có 2 lô cá nhân mạnh nhất?" },
+  cooccur: { label: "Đồng xuất hiện", question: "Cặp nào hay về CÙNG NGÀY trong lịch sử?" },
+  recent: { label: "Gần đây", question: "Cặp nào đang HOT trong 7-10 ngày gần?" },
+  heat: { label: "Đều nóng", question: "Cặp nào cả 2 lô đều ĐANG NÓNG?" },
+};
+
+// Per-region consensus threshold (out of 4 components)
+const PAIR_CONSENSUS_THRESHOLD: Record<Region, number> = {
+  xsmn: 3,  // 3/4 components agree
+  xsmb: 2,  // 2/4 (looser since MB struggles)
+  xsmt: 3,  // 3/4 (MT works well, keep strict)
+};
 
 // ─────────────────────────────────────────────
 // Per-region pair scoring params — each region has different draw structure
@@ -165,6 +202,11 @@ export async function predictPair(
       warning: vip.warning ?? "Không có VIP prediction",
       top_n_source: topNSource,
       pairs: [],
+      total_components: 4,
+      consensus_threshold: PAIR_CONSENSUS_THRESHOLD[region],
+      components: [],
+      consensus: [],
+      controversial: [],
     };
   }
 
@@ -258,6 +300,8 @@ export async function predictPair(
         p_b: Math.round(pB * 100 * 10000) / 10000,
         cooccur_days: coocDays,
         cooccur_lift: Math.round(rawLift * 100) / 100,
+        recent_boost: Math.round(recentBoost * 100) / 100,
+        heat_score: Math.round(heatScore * 1000) / 1000,
         pair_score: Math.round(pairScore * 100 * 10000) / 10000,
       });
     }
@@ -267,12 +311,81 @@ export async function predictPair(
   const topPairs = candidatePairs.slice(0, topKReturn);
   topPairs.forEach((p, i) => { p.rank = i + 1; });
 
+  // Per-component top 10 — rank candidates by EACH score component separately
+  const COMP_TOP = 10;
+  const sortAndTake = (key: "combined" | "cooccur" | "recent" | "heat") => {
+    const accessor = (p: PairItem) => {
+      if (key === "combined") return p.combined_prob;
+      if (key === "cooccur") return p.cooccur_lift;
+      if (key === "recent") return p.recent_boost;
+      return p.heat_score;
+    };
+    return [...candidatePairs]
+      .sort((a, b) => accessor(b) - accessor(a))
+      .slice(0, COMP_TOP)
+      .map((p, idx) => ({
+        rank: idx + 1,
+        lo_a: p.lo_a,
+        lo_b: p.lo_b,
+        value: accessor(p),
+      }));
+  };
+
+  const compWeights: Record<string, number> = {
+    combined: params.weights.geoMean,
+    cooccur: params.weights.cooccurLift,
+    recent: params.weights.recentBoost,
+    heat: params.weights.heatAlignment,
+  };
+
+  const components: PairComponentBreakdown[] = (["combined", "cooccur", "recent", "heat"] as const).map(
+    (key) => ({
+      key,
+      label: COMPONENT_META[key].label,
+      question: COMPONENT_META[key].question,
+      weight: compWeights[key],
+      top_picks: sortAndTake(key),
+    })
+  );
+
+  // Consensus: pairs in top-10 of ≥ N components
+  const pairKey = (p: { lo_a: string; lo_b: string }) => `${p.lo_a}|${p.lo_b}`;
+  const appearancesPerPair = new Map<string, { lo_a: string; lo_b: string; comps: string[] }>();
+  for (const c of components) {
+    for (const p of c.top_picks) {
+      const key = pairKey(p);
+      const entry = appearancesPerPair.get(key);
+      if (entry) entry.comps.push(c.key);
+      else appearancesPerPair.set(key, { lo_a: p.lo_a, lo_b: p.lo_b, comps: [c.key] });
+    }
+  }
+  const allRanked = Array.from(appearancesPerPair.values())
+    .map((e) => ({
+      lo_a: e.lo_a,
+      lo_b: e.lo_b,
+      appearances_in_top: e.comps.length,
+      components: e.comps,
+    }))
+    .sort((a, b) => b.appearances_in_top - a.appearances_in_top);
+
+  const threshold = PAIR_CONSENSUS_THRESHOLD[region];
+  const consensus = allRanked.filter((x) => x.appearances_in_top >= threshold);
+  // Controversial = pairs in exactly 2 components (interesting overlap but not consensus)
+  const controversial = allRanked.filter(
+    (x) => x.appearances_in_top === (threshold === 3 ? 2 : 1)
+  );
+
   return {
     region,
     window_days: windowDays,
     days_available: vip.days_available,
     top_n_source: topNSource,
     pairs: topPairs,
+    total_components: 4,
+    consensus_threshold: threshold,
+    components,
+    consensus,
+    controversial,
   };
 }
 
