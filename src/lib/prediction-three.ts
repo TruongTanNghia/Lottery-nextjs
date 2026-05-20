@@ -84,16 +84,6 @@ async function loadLoHistory(
   return out;
 }
 
-/** Distinct 3-digit numbers that appeared on a specific date. */
-async function getThreeDigitsOnDate(region: Region, date: string): Promise<Set<string>> {
-  const rows = await query<{ number: string }>(
-    `SELECT DISTINCT number FROM lottery_results
-     WHERE region = ? AND date = ? AND LENGTH(number) >= 3`,
-    [region, date]
-  );
-  return new Set(rows.map((r) => r.number.slice(-3).padStart(3, "0")));
-}
-
 /**
  * Per-3-digit occurrence counts on a specific date.
  * Some prizes share last 3 digits → multiplicity matters for money calc
@@ -339,6 +329,45 @@ function modelLoBorrow(
 }
 
 /**
+ * Pair-Decomposition: score "ABC" by frequency of (first-2 "AB") × (last-2 "BC").
+ * Captures pairwise digit CORRELATIONS that the independence-based
+ * modelDigitFrequency misses. Both pair-frequencies are dense (100-space
+ * vs 1000-space) → much smoother signal.
+ *
+ * Why "first-2" is new info:
+ *   - last-2 frequency overlaps with modelLoBorrow (both reflect lô patterns)
+ *   - first-2 frequency = how often a 3-digit prize starts with this prefix
+ *     (e.g., is "12_" a common prefix? Independent of digitFreq[0]×digitFreq[1])
+ */
+function modelPairFreq(history: DateMap): Record<string, number> {
+  const firstTwoCount: Record<string, number> = {};
+  const lastTwoCount: Record<string, number> = {};
+
+  for (const date of Object.keys(history)) {
+    for (const [num, c] of Object.entries(history[date])) {
+      const firstTwo = num.slice(0, 2);
+      const lastTwo = num.slice(1, 3);
+      firstTwoCount[firstTwo] = (firstTwoCount[firstTwo] ?? 0) + c;
+      lastTwoCount[lastTwo] = (lastTwoCount[lastTwo] ?? 0) + c;
+    }
+  }
+
+  // Laplace smoothing on each pair-position (alpha=1 per 100 cells)
+  const sumFirst = Object.values(firstTwoCount).reduce((s, v) => s + v, 0) + 100;
+  const sumLast = Object.values(lastTwoCount).reduce((s, v) => s + v, 0) + 100;
+
+  const out = emptyScores();
+  for (const n of ALL_THREE) {
+    const firstTwo = n.slice(0, 2);
+    const lastTwo = n.slice(1, 3);
+    const f = ((firstTwoCount[firstTwo] ?? 0) + 1) / sumFirst;
+    const l = ((lastTwoCount[lastTwo] ?? 0) + 1) / sumLast;
+    out[n] = f * l;
+  }
+  return out;
+}
+
+/**
  * Bayesian shrinkage toward uniform — caps confidence for sparse 1000-space.
  */
 function applyShrinkage(scores: Record<string, number>, shrink: number): Record<string, number> {
@@ -360,44 +389,50 @@ interface ThreeRegionParams {
 // Per-region weights — now includes digitFreq (position-decomposition, dense)
 // and loBorrow (borrows from denser 2-digit lo signal). These two carry the
 // bulk of the new accuracy uplift.
+// Per-region weights now include pairFreq (pairwise digit decomposition).
+// Softer softmax T + slightly more shrinkage → broader top-K coverage
+// in the sparse 1000-space (trade peak confidence for better hit count).
 const REGION_PARAMS: Record<"xsmn" | "xsmb" | "xsmt", ThreeRegionParams> = {
   xsmn: {
     weights: {
-      frequency: 0.12,        // direct count — sparse, less weight
-      recency: 0.15,
-      dayOfWeek: 0.08,
-      temperature: 0.08,
-      streak: 0.07,
-      digitFreq: 0.25,        // NEW: position-frequency (dense, smooth)
-      loBorrow: 0.25,         // NEW: 2-digit lô borrowing (dense source)
+      frequency: 0.08,        // direct count is sparse — minimal weight
+      recency: 0.12,
+      dayOfWeek: 0.07,
+      temperature: 0.06,
+      streak: 0.05,
+      digitFreq: 0.20,        // per-position digit (independence)
+      loBorrow: 0.22,         // 2-digit lô borrowing (denser space)
+      pairFreq: 0.20,         // NEW: pairwise digit correlations
     },
-    softmaxT: 0.12, recencyHalfLife: 10, shrinkage: 0,
+    softmaxT: 0.16, recencyHalfLife: 10, shrinkage: 0.08,
   },
   xsmb: {
-    // 27 prizes/day → frequency relatively more reliable; DoW useless (1 đài)
+    // 27 prizes/day → more data per draw; DoW useless (1 đài)
     weights: {
-      frequency: 0.15,
-      recency: 0.15,
+      frequency: 0.10,
+      recency: 0.12,
       dayOfWeek: 0.02,
-      temperature: 0.08,
-      streak: 0.10,
-      digitFreq: 0.25,
-      loBorrow: 0.25,
+      temperature: 0.06,
+      streak: 0.08,
+      digitFreq: 0.20,
+      loBorrow: 0.22,
+      pairFreq: 0.20,
     },
-    softmaxT: 0.15, recencyHalfLife: 12, shrinkage: 0.10,
+    softmaxT: 0.18, recencyHalfLife: 12, shrinkage: 0.15,
   },
   xsmt: {
     // Province rotation → DoW critical; less data per day
     weights: {
-      frequency: 0.08,
-      recency: 0.10,
-      dayOfWeek: 0.22,        // still important for MT
-      temperature: 0.05,
-      streak: 0.05,
-      digitFreq: 0.25,
-      loBorrow: 0.25,
+      frequency: 0.06,
+      recency: 0.08,
+      dayOfWeek: 0.20,        // still important for MT
+      temperature: 0.04,
+      streak: 0.04,
+      digitFreq: 0.20,
+      loBorrow: 0.22,
+      pairFreq: 0.16,
     },
-    softmaxT: 0.18, recencyHalfLife: 6, shrinkage: 0.18,
+    softmaxT: 0.22, recencyHalfLife: 6, shrinkage: 0.22,
   },
 };
 
@@ -453,6 +488,7 @@ export async function predictThreeDigit(
     streak: modelStreak(history),
     digitFreq: modelDigitFrequency(history),
     loBorrow: modelLoBorrow(loHistory, params.recencyHalfLife),
+    pairFreq: modelPairFreq(history),
   };
   const norm: Record<string, Record<string, number>> = {};
   for (const [k, m] of Object.entries(raw)) norm[k] = normalize(m);
