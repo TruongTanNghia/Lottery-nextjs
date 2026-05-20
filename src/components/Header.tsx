@@ -12,6 +12,8 @@ interface Props {
   isScraping: boolean;
   onDedupe?: () => void;
   isDedupeRunning?: boolean;
+  onBackfill?: () => void;
+  backfillProgress?: { current: number; total: number; status: string } | null;
 }
 
 function getCookie(name: string): string | null {
@@ -29,6 +31,8 @@ export default function Header({
   isScraping,
   onDedupe,
   isDedupeRunning,
+  onBackfill,
+  backfillProgress,
 }: Props) {
   const router = useRouter();
 
@@ -92,6 +96,21 @@ export default function Header({
           <span className={isScraping ? "animate-spin" : ""}>🔄</span>
           <span className="hidden sm:inline">{isScraping ? "Đang cập nhật..." : "Cập nhật"}</span>
         </button>
+        {onBackfill && (
+          <button
+            onClick={onBackfill}
+            disabled={!!backfillProgress}
+            title="Auto scrape 180 ngày — chia 6 chunk × 30 ngày, tránh Vercel timeout"
+            className="inline-flex items-center gap-1.5 px-2.5 md:px-3 py-2 md:py-2.5 rounded-md bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 text-purple-300 font-semibold text-xs disabled:opacity-50 transition-colors"
+          >
+            <span className={backfillProgress ? "inline-block animate-spin" : ""}>📦</span>
+            <span className="hidden md:inline">
+              {backfillProgress
+                ? `Chunk ${backfillProgress.current}/${backfillProgress.total}`
+                : "Backfill 180d"}
+            </span>
+          </button>
+        )}
         {onDedupe && (
           <button
             onClick={onDedupe}

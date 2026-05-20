@@ -70,6 +70,7 @@ function Dashboard() {
   const [scrapeStatusText, setScrapeStatusText] = useState("");
   const [regionStatus, setRegionStatus] = useState({ xsmn: "⏳", xsmb: "⏳", xsmt: "⏳" });
   const [isDedupeRunning, setIsDedupeRunning] = useState(false);
+  const [backfillProgress, setBackfillProgress] = useState<{ current: number; total: number; status: string } | null>(null);
 
   const loadAll = useCallback(async () => {
     setStatus("loading");
@@ -120,6 +121,56 @@ function Dashboard() {
     const t = setInterval(loadAll, REFRESH_MS);
     return () => clearInterval(t);
   }, [loadAll]);
+
+  async function handleBackfill() {
+    if (backfillProgress) return;
+    if (!confirm(
+      "📦 Backfill 180 ngày — sẽ chạy 6 chunk × 30 ngày (~3-5 phút).\n" +
+      "Ngày đã có sẽ skip. Recalc + cleanup chạy sau khi xong hết.\n\nTiếp tục?"
+    )) return;
+
+    const CHUNKS = [
+      { days: 30, offset: 0 },
+      { days: 30, offset: 30 },
+      { days: 30, offset: 60 },
+      { days: 30, offset: 90 },
+      { days: 30, offset: 120 },
+      { days: 30, offset: 150 },
+    ];
+
+    setBackfillProgress({ current: 0, total: CHUNKS.length, status: "Bắt đầu..." });
+    let totalScraped = 0;
+
+    try {
+      for (let i = 0; i < CHUNKS.length; i++) {
+        const c = CHUNKS[i];
+        setBackfillProgress({
+          current: i + 1,
+          total: CHUNKS.length,
+          status: `Chunk ${i + 1}: ngày ${c.offset + 1}-${c.offset + c.days} trước...`,
+        });
+        const res = await fetch(`/api/scrape/all?days=${c.days}&offset=${c.offset}`, { method: "POST" });
+        if (!res.ok) {
+          toast.show("error", `Chunk ${i + 1} fail (HTTP ${res.status}) — dừng backfill`);
+          break;
+        }
+        const j = await res.json();
+        const chunkCount = Object.values(j.counts ?? {}).reduce((s: number, n) => s + (n as number), 0);
+        totalScraped += chunkCount;
+      }
+
+      // Final recalc to update lo_status for all the new data
+      setBackfillProgress({ current: CHUNKS.length, total: CHUNKS.length, status: "Đang recalc lo_status..." });
+      await fetch("/api/recalculate", { method: "POST" });
+
+      toast.show("success", `Backfill xong — scrape ${totalScraped} ngày mới across 3 miền`);
+      await loadAll();
+    } catch (err) {
+      toast.show("error", `Lỗi backfill: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBackfillProgress(null);
+    }
+  }
 
   async function handleScrape() {
     const daysInput = window.prompt(
@@ -233,6 +284,8 @@ function Dashboard() {
         isScraping={isScraping}
         onDedupe={handleDedupe}
         isDedupeRunning={isDedupeRunning}
+        onBackfill={handleBackfill}
+        backfillProgress={backfillProgress}
       />
       <RegionTabs
         current={region}

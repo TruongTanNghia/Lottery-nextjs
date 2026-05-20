@@ -18,17 +18,20 @@ export async function POST(req: Request) {
     await ensureDb();
     const url = new URL(req.url);
     const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "5"), 1), 30);
+    const offset = Math.min(Math.max(parseInt(url.searchParams.get("offset") ?? "0"), 0), 365);
 
-    const counts = await scrapeAllRegionsRange(days, 600);
+    const counts = await scrapeAllRegionsRange(days, 600, offset);
 
-    // Maintain rolling 180-day window
-    const deleted = await cleanupOldData(180);
+    // Maintain rolling 180-day window (skip when backfilling old data)
+    const skipCleanup = url.searchParams.get("skip_cleanup") === "1" || offset > 0;
+    const deleted = skipCleanup ? 0 : await cleanupOldData(180);
 
     return NextResponse.json({
       status: "success",
-      message: `Scraped ${days} days for all 3 regions. Now POST /api/recalculate to update limits.`,
+      message: `Scraped ${days} days (offset ${offset}) for all 3 regions.`,
       counts,
       cleanup_deleted: deleted,
+      offset,
     });
   } catch (err) {
     return jsonError(err);

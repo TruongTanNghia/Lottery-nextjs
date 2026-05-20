@@ -415,9 +415,16 @@ export async function scrapeRange(
   return count;
 }
 
-export async function scrapeLastNDays(n: number, region: Region, delayMs: number = 600): Promise<number> {
+export async function scrapeLastNDays(
+  n: number,
+  region: Region,
+  delayMs: number = 600,
+  offsetDays: number = 0
+): Promise<number> {
+  // offsetDays = 0 → scrape ending yesterday
+  // offsetDays = 30 → scrape ending 30 days before yesterday (for backfill chunks)
   const end = new Date();
-  end.setDate(end.getDate() - 1);
+  end.setDate(end.getDate() - 1 - offsetDays);
   const start = new Date(end);
   start.setDate(start.getDate() - (n - 1));
   return scrapeRange(start, end, region, delayMs);
@@ -429,13 +436,14 @@ export async function scrapeToday(region: Region): Promise<unknown> {
 
 export async function scrapeAllRegionsRange(
   n: number = 5,
-  delayMs: number = 600
+  delayMs: number = 600,
+  offsetDays: number = 0
 ): Promise<Record<Region, number>> {
   // Run all 3 regions in parallel (different domains so no rate-limit conflict)
   const results = await Promise.all(
     VALID_REGIONS.map(async (region) => {
-      console.log(`=== Scraping ${region.toUpperCase()} (${n} days) ===`);
-      return scrapeLastNDays(n, region, delayMs);
+      console.log(`=== Scraping ${region.toUpperCase()} (${n} days, offset ${offsetDays}) ===`);
+      return scrapeLastNDays(n, region, delayMs, offsetDays);
     })
   );
   return Object.fromEntries(VALID_REGIONS.map((r, i) => [r, results[i]])) as Record<Region, number>;
