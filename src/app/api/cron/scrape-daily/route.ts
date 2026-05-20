@@ -50,9 +50,10 @@ export async function GET(req: Request) {
     const recalcMs = Date.now() - t1;
     console.log(`[Cron] Recalc done in ${recalcMs}ms`);
 
-    // Trim to rolling 60-day window (extended from 30 to give MT enough
-    // day-of-week samples for Province-of-Day prediction)
-    const deleted = await cleanupOldData(60);
+    // Rolling 180-day window — Đá + 3 Chân need a lot more data to be
+    // accurate (sparse spaces). VIP only uses up to 90 days so the extra
+    // data doesn't disturb it.
+    const deleted = await cleanupOldData(180);
     console.log(`[Cron] Cleanup deleted ${deleted} stale rows`);
 
     // Compute model performance for the latest scraped date per region

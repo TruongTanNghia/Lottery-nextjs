@@ -424,7 +424,7 @@ export interface ThreeDigitResult {
 
 export async function predictThreeDigit(
   region: Region,
-  windowDays: number = 60,
+  windowDays: number = 120,   // 3 Chân needs dense data (1000-space); bumped 60→120
   endDate?: string  // For backtest: use only data strictly BEFORE this date
 ): Promise<ThreeDigitResult> {
   const history = await loadThreeHistory(region, windowDays, endDate);

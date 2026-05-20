@@ -21,8 +21,8 @@ export async function POST(req: Request) {
 
     const counts = await scrapeAllRegionsRange(days, 600);
 
-    // Maintain rolling 60-day window: trim anything older than 60 days
-    const deleted = await cleanupOldData(60);
+    // Maintain rolling 180-day window
+    const deleted = await cleanupOldData(180);
 
     return NextResponse.json({
       status: "success",

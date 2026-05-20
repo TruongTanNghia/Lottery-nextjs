@@ -96,7 +96,7 @@ export interface PairResult {
 
 export async function predictPair(
   region: Region,
-  windowDays: number = 60,
+  windowDays: number = 120,   // Đá needs dense pair-cooccurrence data; bumped 60→120
   topNSource: number = 35,    // Wider pool — was 25, now 35 → C(35,2)=595 candidates
   topKReturn: number = 30,
   endDate?: string

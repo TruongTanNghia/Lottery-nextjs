@@ -79,7 +79,7 @@ export default function PredictionPairPage({ region }: { region: Region }) {
   const [backtest, setBacktest] = useState<BacktestResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [backtestLoading, setBacktestLoading] = useState(true);
-  const [windowDays, setWindowDays] = useState(60);
+  const [windowDays, setWindowDays] = useState(120);
   const [topNSource, setTopNSource] = useState(35);
   const [topKReturn] = useState(30);
   const [backtestDays, setBacktestDays] = useState(14);
@@ -168,7 +168,8 @@ export default function PredictionPairPage({ region }: { region: Region }) {
               <option value={30}>30 ngày</option>
               <option value={60}>60 ngày</option>
               <option value={90}>90 ngày</option>
-              <option value={180}>180 ngày</option>
+              <option value={120}>120 ngày</option>
+              <option value={180}>180 ngày (max)</option>
             </select>
             <select
               value={topNSource}

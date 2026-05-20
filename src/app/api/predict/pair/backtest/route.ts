@@ -19,7 +19,7 @@ export async function GET(req: Request) {
     const region = validateRegion(url.searchParams.get("region"));
     const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "14"), 3), 30);
     const topK = Math.min(Math.max(parseInt(url.searchParams.get("top_k") ?? "30"), 5), 60);
-    const window = Math.min(Math.max(parseInt(url.searchParams.get("window") ?? "60"), 7), 180);
+    const window = Math.min(Math.max(parseInt(url.searchParams.get("window") ?? "120"), 7), 180);
     const topNSource = Math.min(Math.max(parseInt(url.searchParams.get("top_n") ?? "35"), 10), 50);
     const payout = Math.min(Math.max(parseInt(url.searchParams.get("payout") ?? "17"), 5), 50);
 
