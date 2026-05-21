@@ -117,7 +117,7 @@ export default function PredictionPairPage({ region }: { region: Region }) {
   const [backtestLoading, setBacktestLoading] = useState(true);
   const [windowDays, setWindowDays] = useState(120);
   const [topNSource, setTopNSource] = useState(35);
-  const [topKReturn] = useState(30);
+  const [topKReturn, setTopKReturn] = useState(30);
   const [backtestDays, setBacktestDays] = useState(14);
   const [payout, setPayout] = useState(17);
 
@@ -220,14 +220,27 @@ export default function PredictionPairPage({ region }: { region: Region }) {
             <select
               value={topNSource}
               onChange={(e) => setTopNSource(parseInt(e.target.value))}
+              title="Số lô nguồn từ VIP để ghép cặp (C(N,2) cặp)"
               className="px-3 py-1.5 rounded text-xs bg-[#1a2332] border border-slate-600 text-slate-100"
             >
-              <option value={20}>Top 20 lô</option>
-              <option value={25}>Top 25 lô</option>
-              <option value={30}>Top 30 lô</option>
-              <option value={35}>Top 35 lô</option>
-              <option value={40}>Top 40 lô</option>
-              <option value={50}>Top 50 lô</option>
+              <option value={20}>Top 20 lô nguồn</option>
+              <option value={25}>Top 25 lô nguồn</option>
+              <option value={30}>Top 30 lô nguồn</option>
+              <option value={35}>Top 35 lô nguồn</option>
+              <option value={40}>Top 40 lô nguồn</option>
+              <option value={50}>Top 50 lô nguồn</option>
+            </select>
+            <select
+              value={topKReturn}
+              onChange={(e) => setTopKReturn(parseInt(e.target.value))}
+              title="Số cặp trả về cao nhất"
+              className="px-3 py-1.5 rounded text-xs bg-[#1a2332] border border-slate-600 text-slate-100"
+            >
+              <option value={10}>Top 10 cặp</option>
+              <option value={20}>Top 20 cặp</option>
+              <option value={30}>Top 30 cặp</option>
+              <option value={40}>Top 40 cặp</option>
+              <option value={50}>Top 50 cặp</option>
             </select>
             <button
               onClick={copyTop10}
