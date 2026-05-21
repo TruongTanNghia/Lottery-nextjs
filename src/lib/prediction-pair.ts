@@ -407,6 +407,20 @@ export interface PairBacktestDay {
   profit_vnd: number;
 }
 
+export interface PairTierStat {
+  range_start: number;
+  range_end: number;
+  label: string;
+  picks_per_day: number;
+  total_predicted: number;
+  total_hits: number;
+  hit_rate_pct: number;
+  cost_vnd: number;
+  win_vnd: number;
+  profit_vnd: number;
+  roi_pct: number;
+}
+
 export interface PairBacktestResult {
   region: Region;
   days_window: number;
@@ -426,8 +440,19 @@ export interface PairBacktestResult {
   total_profit_vnd: number;
   roi_pct: number;
   break_even_hits_per_day: number;
+  // Per-tier
+  tiers: PairTierStat[];
   // Per-day
   days: PairBacktestDay[];
+}
+
+function buildPairTiers(topK: number): Array<{ start: number; end: number; label: string }> {
+  const out: Array<{ start: number; end: number; label: string }> = [];
+  for (let start = 1; start <= topK; start += 10) {
+    const end = Math.min(start + 9, topK);
+    out.push({ start, end, label: `Top ${start}-${end}` });
+  }
+  return out;
 }
 
 const POINT_COST_VND_PAIR = 23_000;
@@ -450,6 +475,11 @@ export async function backtestPair(
   const winPerHit = POINT_COST_VND_PAIR * payoutMultiplier;
   const dayResults: PairBacktestDay[] = [];
 
+  // Tier accumulators (chunks of 10 within topK)
+  const tierDefs = buildPairTiers(topK);
+  const tierAcc: Map<number, { hits: number; daysCounted: number }> = new Map();
+  for (const t of tierDefs) tierAcc.set(t.start, { hits: 0, daysCounted: 0 });
+
   for (const date of dates) {
     const r = await predictPair(region, windowDays, topNSource, topK, date);
     if (r.warning || r.pairs.length === 0) continue;
@@ -467,6 +497,18 @@ export async function backtestPair(
     const win = hitPairs.length * winPerHit;
     const profit = win - cost;
 
+    // Per-tier accumulation
+    for (const t of tierDefs) {
+      const tierPairs = predicted.slice(t.start - 1, t.end);
+      let tHits = 0;
+      for (const p of tierPairs) {
+        if (actualLo.has(p.lo_a) && actualLo.has(p.lo_b)) tHits++;
+      }
+      const acc = tierAcc.get(t.start)!;
+      acc.hits += tHits;
+      acc.daysCounted++;
+    }
+
     dayResults.push({
       date,
       predicted_pairs: predicted,
@@ -483,6 +525,29 @@ export async function backtestPair(
       profit_vnd: profit,
     });
   }
+
+  // Finalize tier stats
+  const tiers: PairTierStat[] = tierDefs.map((t) => {
+    const acc = tierAcc.get(t.start)!;
+    const picksPerDay = t.end - t.start + 1;
+    const totalPred = picksPerDay * acc.daysCounted;
+    const tCost = totalPred * POINT_COST_VND_PAIR;
+    const tWin = acc.hits * winPerHit;
+    const tProfit = tWin - tCost;
+    return {
+      range_start: t.start,
+      range_end: t.end,
+      label: t.label,
+      picks_per_day: picksPerDay,
+      total_predicted: totalPred,
+      total_hits: acc.hits,
+      hit_rate_pct: totalPred > 0 ? Math.round((acc.hits / totalPred) * 10000) / 100 : 0,
+      cost_vnd: tCost,
+      win_vnd: tWin,
+      profit_vnd: tProfit,
+      roi_pct: tCost > 0 ? Math.round((tProfit / tCost) * 10000) / 100 : 0,
+    };
+  });
 
   const totalPredicted = dayResults.length * topK;
   const totalHits = dayResults.reduce((s, d) => s + d.hits, 0);
@@ -514,6 +579,7 @@ export async function backtestPair(
     total_profit_vnd: totalProfit,
     roi_pct: Math.round(roi * 100) / 100,
     break_even_hits_per_day: Math.round(breakEvenHits * 100) / 100,
+    tiers,
     days: dayResults,
   };
 }
