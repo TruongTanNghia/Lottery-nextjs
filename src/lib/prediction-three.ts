@@ -634,11 +634,11 @@ export interface ThreeBacktestDay {
 }
 
 export interface ThreeTierStat {
-  range_start: number;       // 1
-  range_end: number;         // 10
-  label: string;             // "Top 1-10"
+  range_start: number;
+  range_end: number;
+  label: string;
   picks_per_day: number;
-  total_predicted: number;   // picks_per_day × days
+  total_predicted: number;
   total_hits: number;
   total_occurrences: number;
   hit_rate_pct: number;
@@ -646,6 +646,8 @@ export interface ThreeTierStat {
   win_vnd: number;
   profit_vnd: number;
   roi_pct: number;
+  // Unique 3-digit numbers that hit at least once in this tier across the backtest
+  hit_numbers: Array<{ number: string; days_hit: number; total_occ: number }>;
 }
 
 export interface ThreeBacktestResult {
@@ -707,8 +709,13 @@ export async function backtestThreeDigit(
 
   // Tier accumulators (chunks of 10 within topK)
   const tierDefs = buildTiers(topK);
-  const tierAcc: Map<number, { hits: number; occ: number; daysCounted: number }> = new Map();
-  for (const t of tierDefs) tierAcc.set(t.start, { hits: 0, occ: 0, daysCounted: 0 });
+  const tierAcc: Map<number, {
+    hits: number;
+    occ: number;
+    daysCounted: number;
+    hitMap: Map<string, { days: number; occ: number }>;  // number → days_hit + total_occ
+  }> = new Map();
+  for (const t of tierDefs) tierAcc.set(t.start, { hits: 0, occ: 0, daysCounted: 0, hitMap: new Map() });
 
   for (const date of dates) {
     const r = await predictThreeDigit(region, windowDays, date);
@@ -725,19 +732,26 @@ export async function backtestThreeDigit(
     const win = totalOcc * payoutVnd;
     const profit = win - cost;
 
-    // Per-tier accumulation
+    // Per-tier accumulation (also track which numbers hit + how often)
     for (const t of tierDefs) {
       const tierPicks = topPicks.slice(t.start - 1, t.end);
       let tHits = 0;
       let tOcc = 0;
+      const acc = tierAcc.get(t.start)!;
       for (const n of tierPicks) {
         const c = occMap.get(n) ?? 0;
         if (c > 0) {
           tHits++;
           tOcc += c;
+          const prev = acc.hitMap.get(n);
+          if (prev) {
+            prev.days++;
+            prev.occ += c;
+          } else {
+            acc.hitMap.set(n, { days: 1, occ: c });
+          }
         }
       }
-      const acc = tierAcc.get(t.start)!;
       acc.hits += tHits;
       acc.occ += tOcc;
       acc.daysCounted++;
@@ -766,6 +780,9 @@ export async function backtestThreeDigit(
     const tCost = totalPred * POINT_COST_VND_THREE;
     const tWin = acc.occ * payoutVnd;
     const tProfit = tWin - tCost;
+    const hitNumbers = Array.from(acc.hitMap.entries())
+      .map(([n, v]) => ({ number: n, days_hit: v.days, total_occ: v.occ }))
+      .sort((a, b) => b.total_occ - a.total_occ || b.days_hit - a.days_hit);
     return {
       range_start: t.start,
       range_end: t.end,
@@ -779,6 +796,7 @@ export async function backtestThreeDigit(
       win_vnd: tWin,
       profit_vnd: tProfit,
       roi_pct: tCost > 0 ? Math.round((tProfit / tCost) * 10000) / 100 : 0,
+      hit_numbers: hitNumbers,
     };
   });
 

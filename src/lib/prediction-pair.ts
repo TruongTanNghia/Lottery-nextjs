@@ -419,6 +419,8 @@ export interface PairTierStat {
   win_vnd: number;
   profit_vnd: number;
   roi_pct: number;
+  // Unique pairs that hit at least once in this tier
+  hit_pairs: Array<{ lo_a: string; lo_b: string; days_hit: number }>;
 }
 
 export interface PairBacktestResult {
@@ -477,8 +479,12 @@ export async function backtestPair(
 
   // Tier accumulators (chunks of 10 within topK)
   const tierDefs = buildPairTiers(topK);
-  const tierAcc: Map<number, { hits: number; daysCounted: number }> = new Map();
-  for (const t of tierDefs) tierAcc.set(t.start, { hits: 0, daysCounted: 0 });
+  const tierAcc: Map<number, {
+    hits: number;
+    daysCounted: number;
+    hitMap: Map<string, { lo_a: string; lo_b: string; days: number }>;  // "loA|loB" → days hit
+  }> = new Map();
+  for (const t of tierDefs) tierAcc.set(t.start, { hits: 0, daysCounted: 0, hitMap: new Map() });
 
   for (const date of dates) {
     const r = await predictPair(region, windowDays, topNSource, topK, date);
@@ -497,14 +503,20 @@ export async function backtestPair(
     const win = hitPairs.length * winPerHit;
     const profit = win - cost;
 
-    // Per-tier accumulation
+    // Per-tier accumulation (track which pairs hit + how many days)
     for (const t of tierDefs) {
       const tierPairs = predicted.slice(t.start - 1, t.end);
       let tHits = 0;
-      for (const p of tierPairs) {
-        if (actualLo.has(p.lo_a) && actualLo.has(p.lo_b)) tHits++;
-      }
       const acc = tierAcc.get(t.start)!;
+      for (const p of tierPairs) {
+        if (actualLo.has(p.lo_a) && actualLo.has(p.lo_b)) {
+          tHits++;
+          const key = `${p.lo_a}|${p.lo_b}`;
+          const prev = acc.hitMap.get(key);
+          if (prev) prev.days++;
+          else acc.hitMap.set(key, { lo_a: p.lo_a, lo_b: p.lo_b, days: 1 });
+        }
+      }
       acc.hits += tHits;
       acc.daysCounted++;
     }
@@ -534,6 +546,9 @@ export async function backtestPair(
     const tCost = totalPred * POINT_COST_VND_PAIR;
     const tWin = acc.hits * winPerHit;
     const tProfit = tWin - tCost;
+    const hitPairsList = Array.from(acc.hitMap.values())
+      .map((v) => ({ lo_a: v.lo_a, lo_b: v.lo_b, days_hit: v.days }))
+      .sort((a, b) => b.days_hit - a.days_hit);
     return {
       range_start: t.start,
       range_end: t.end,
@@ -546,6 +561,7 @@ export async function backtestPair(
       win_vnd: tWin,
       profit_vnd: tProfit,
       roi_pct: tCost > 0 ? Math.round((tProfit / tCost) * 10000) / 100 : 0,
+      hit_pairs: hitPairsList,
     };
   });
 

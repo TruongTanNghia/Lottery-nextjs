@@ -88,6 +88,7 @@ interface TierStat {
   win_vnd: number;
   profit_vnd: number;
   roi_pct: number;
+  hit_pairs: Array<{ lo_a: string; lo_b: string; days_hit: number }>;
 }
 
 interface BacktestResponse {
@@ -400,61 +401,71 @@ export default function PredictionPairPage({ region }: { region: Region }) {
           {/* Tier breakdown — chia cặp theo Top 1-10, 11-20, 21-30, ... */}
           {backtest.tiers && backtest.tiers.length > 0 && (
             <div className="border-t border-white/[0.06] p-3 md:p-4">
-              <div className="flex items-baseline justify-between mb-2 flex-wrap gap-2">
-                <div>
-                  <h4 className="text-sm md:text-base font-bold text-orange-300">
-                    📊 Tỉ lệ trúng cặp theo khoảng Top
-                  </h4>
-                  <p className="text-[0.7rem] text-slate-400 mt-0.5">
-                    Chia Top {backtest.top_k} cặp thành các khúc 10 → xem ROI mỗi khúc → chọn khúc đáng đánh
-                  </p>
-                </div>
+              <div className="mb-3">
+                <h4 className="text-sm md:text-base font-bold text-orange-300">
+                  📊 Tỉ lệ trúng cặp theo khoảng Top
+                </h4>
+                <p className="text-[0.7rem] text-slate-400 mt-0.5">
+                  Chia Top {backtest.top_k} cặp thành các khúc 10 → xem cặp nào trúng ở mỗi khúc
+                </p>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-[0.72rem] md:text-xs">
-                  <thead className="bg-white/[0.03] text-slate-400 uppercase">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Khúc</th>
-                      <th className="px-3 py-2 text-center">Picks</th>
-                      <th className="px-3 py-2 text-center">Trúng</th>
-                      <th className="px-3 py-2 text-center">Hit rate</th>
-                      <th className="px-3 py-2 text-right">Chi</th>
-                      <th className="px-3 py-2 text-right">Trúng</th>
-                      <th className="px-3 py-2 text-right">Lãi/Lỗ</th>
-                      <th className="px-3 py-2 text-right">ROI</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {backtest.tiers.map((t) => {
-                      const rowBg = t.roi_pct >= 10
-                        ? "bg-emerald-500/8 border-l-2 border-emerald-500"
-                        : t.roi_pct >= 0
-                        ? "bg-amber-500/5 border-l-2 border-amber-500"
-                        : "bg-rose-500/8 border-l-2 border-rose-500";
-                      return (
-                        <tr key={t.range_start} className={`${rowBg} border-t border-white/[0.04]`}>
-                          <td className="px-3 py-2 font-mono font-bold text-slate-200">{t.label}</td>
-                          <td className="px-3 py-2 text-center font-mono text-slate-300">{t.total_predicted}</td>
-                          <td className="px-3 py-2 text-center font-mono font-bold text-slate-100">{t.total_hits}</td>
-                          <td className={`px-3 py-2 text-center font-mono font-bold ${t.hit_rate_pct >= 5 ? "text-emerald-300" : t.hit_rate_pct >= 1 ? "text-amber-300" : "text-rose-300"}`}>
-                            {t.hit_rate_pct}%
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono text-slate-400">{fmtVndShort(t.cost_vnd)}</td>
-                          <td className="px-3 py-2 text-right font-mono text-emerald-400">{fmtVndShort(t.win_vnd)}</td>
-                          <td className={`px-3 py-2 text-right font-mono font-bold ${t.profit_vnd >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
-                            {t.profit_vnd >= 0 ? "+" : ""}{fmtVndShort(t.profit_vnd)}
-                          </td>
-                          <td className={`px-3 py-2 text-right font-mono font-bold ${t.roi_pct >= 10 ? "text-emerald-300" : t.roi_pct >= 0 ? "text-amber-300" : "text-rose-300"}`}>
-                            {t.roi_pct >= 0 ? "+" : ""}{t.roi_pct}%
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="space-y-2.5">
+                {backtest.tiers.map((t) => {
+                  const wrap = t.hit_rate_pct >= 5
+                    ? "border-emerald-500/40 bg-emerald-500/5"
+                    : t.hit_rate_pct >= 1
+                    ? "border-amber-500/40 bg-amber-500/5"
+                    : "border-rose-500/40 bg-rose-500/5";
+                  const hitColor = t.hit_rate_pct >= 5
+                    ? "text-emerald-300"
+                    : t.hit_rate_pct >= 1
+                    ? "text-amber-300"
+                    : "text-rose-300";
+                  return (
+                    <div key={t.range_start} className={`rounded-xl border ${wrap} p-3`}>
+                      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+                        <div className="flex items-baseline gap-3 flex-wrap">
+                          <span className="font-mono font-bold text-sm md:text-base text-slate-100">
+                            {t.label}
+                          </span>
+                          <span className="text-[0.7rem] text-slate-400">
+                            <b className="text-slate-100">{t.total_hits}</b>/{t.total_predicted} cặp trúng
+                            <span className="mx-1">•</span>
+                            Hit rate <b className={hitColor}>{t.hit_rate_pct}%</b>
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => copy(t.hit_pairs.map((h) => `${h.lo_a}-${h.lo_b}`), t.label)}
+                          disabled={t.hit_pairs.length === 0}
+                          className="px-2.5 py-1 text-[0.65rem] rounded bg-orange-500 hover:bg-orange-400 text-white font-bold disabled:opacity-40"
+                        >
+                          📋 Copy {t.hit_pairs.length}
+                        </button>
+                      </div>
+                      {t.hit_pairs.length === 0 ? (
+                        <p className="text-[0.7rem] text-slate-500 italic">Không có cặp nào trúng trong khúc này</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {t.hit_pairs.map((h) => (
+                            <span
+                              key={`${h.lo_a}-${h.lo_b}`}
+                              title={`${h.lo_a}-${h.lo_b}: trúng ${h.days_hit} ngày`}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-400/40 text-emerald-100 font-mono font-bold text-xs"
+                            >
+                              {h.lo_a}-{h.lo_b}
+                              {h.days_hit > 1 && (
+                                <span className="text-[0.6rem] text-emerald-300 font-normal">×{h.days_hit}d</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <p className="text-[0.7rem] text-slate-400 italic mt-2">
-                💡 <b>Cách đọc:</b> Khúc nào ROI cao = đáng đánh nhất. Top 1-10 thường có hit rate cao nhất vì rank model tin cậy nhất ở đầu.
+                💡 <b>Cách đọc:</b> Khúc Top 1-10 thường hit rate cao nhất. Chip có ×Nd = cặp đó trúng N ngày trong period.
               </p>
             </div>
           )}
