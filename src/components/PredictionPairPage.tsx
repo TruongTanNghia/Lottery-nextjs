@@ -434,13 +434,9 @@ export default function PredictionPairPage({ region }: { region: Region }) {
                             Hit rate <b className={hitColor}>{t.hit_rate_pct}%</b>
                           </span>
                         </div>
-                        <button
-                          onClick={() => copy(t.hit_pairs.map((h) => `${h.lo_a}-${h.lo_b}`), t.label)}
-                          disabled={t.hit_pairs.length === 0}
-                          className="px-2.5 py-1 text-[0.65rem] rounded bg-orange-500 hover:bg-orange-400 text-white font-bold disabled:opacity-40"
-                        >
-                          📋 Copy {t.hit_pairs.length}
-                        </button>
+                        <span className="text-[0.6rem] text-slate-500 italic">
+                          (cặp đã ra trong period — xem thôi)
+                        </span>
                       </div>
                       {t.hit_pairs.length === 0 ? (
                         <p className="text-[0.7rem] text-slate-500 italic">Không có cặp nào trúng trong khúc này</p>
@@ -465,8 +461,59 @@ export default function PredictionPairPage({ region }: { region: Region }) {
                 })}
               </div>
               <p className="text-[0.7rem] text-slate-400 italic mt-2">
-                💡 <b>Cách đọc:</b> Khúc Top 1-10 thường hit rate cao nhất. Chip có ×Nd = cặp đó trúng N ngày trong period.
+                💡 Khúc nào trúng nhiều = khúc đó AI đoán giỏi. Khúc xanh = hit rate cao, đỏ = thấp.
               </p>
+
+              {/* DỰ ĐOÁN ĐÁNH — chia theo khúc, copy được */}
+              <div className="mt-4 pt-4 border-t border-white/[0.06]">
+                <div className="mb-2">
+                  <h5 className="text-sm font-bold text-yellow-300">
+                    🎯 Dự đoán đánh — chia theo khúc Top
+                  </h5>
+                  <p className="text-[0.7rem] text-slate-400 mt-0.5">
+                    Top {data.pairs.length} cặp dự đoán cho ngày tới, chia khúc 10. <b className="text-yellow-300">Bấm Copy để đánh.</b>
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {backtest.tiers.map((t) => {
+                    const tierPairs = data.pairs
+                      .slice(t.range_start - 1, t.range_end)
+                      .map((p) => `${p.lo_a}-${p.lo_b}`);
+                    return (
+                      <div
+                        key={`pred-${t.range_start}`}
+                        className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-2.5"
+                      >
+                        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
+                          <span className="font-mono font-bold text-sm text-yellow-200">
+                            {t.label} dự đoán
+                            <span className="ml-1.5 text-[0.65rem] text-slate-400 font-normal">
+                              ({tierPairs.length} cặp)
+                            </span>
+                          </span>
+                          <button
+                            onClick={() => copy(tierPairs, `Dự đoán ${t.label}`)}
+                            disabled={tierPairs.length === 0}
+                            className="px-2.5 py-1 text-[0.65rem] rounded bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-bold disabled:opacity-40"
+                          >
+                            📋 Copy {tierPairs.length}
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 font-mono text-sm">
+                          {tierPairs.map((pair) => (
+                            <span
+                              key={pair}
+                              className="inline-block px-2 py-0.5 rounded bg-yellow-500/15 border border-yellow-400/40 text-yellow-100 font-bold"
+                            >
+                              {pair}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
 
