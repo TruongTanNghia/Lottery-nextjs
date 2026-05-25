@@ -17,14 +17,15 @@ export async function GET(req: Request) {
     await ensureDb();
     const url = new URL(req.url);
     const region = validateRegion(url.searchParams.get("region"));
+    const mode = url.searchParams.get("mode") === "cold" ? "cold" : "hot";
     const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "14"), 3), 30);
     const topK = Math.min(Math.max(parseInt(url.searchParams.get("top_k") ?? "30"), 5), 60);
-    const window = Math.min(Math.max(parseInt(url.searchParams.get("window") ?? "120"), 7), 180);
-    const topNSource = Math.min(Math.max(parseInt(url.searchParams.get("top_n") ?? "35"), 10), 50);
+    const window = Math.min(Math.max(parseInt(url.searchParams.get("window") ?? (mode === "cold" ? "30" : "120")), 7), 180);
+    const topNSource = Math.min(Math.max(parseInt(url.searchParams.get("top_n") ?? (mode === "cold" ? "30" : "35")), 10), 50);
     const payout = Math.min(Math.max(parseInt(url.searchParams.get("payout") ?? "17"), 5), 50);
 
-    const result = await backtestPair(region, days, topK, window, topNSource, payout);
-    return NextResponse.json({ status: "success", ...result });
+    const result = await backtestPair(region, days, topK, window, topNSource, payout, mode);
+    return NextResponse.json({ status: "success", mode, ...result });
   } catch (err) {
     return jsonError(err);
   }

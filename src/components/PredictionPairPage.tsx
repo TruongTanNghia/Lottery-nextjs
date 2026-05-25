@@ -56,10 +56,16 @@ interface PairResponse {
 }
 
 const COMPONENT_COLOR: Record<string, { border: string; bg: string; text: string }> = {
+  // Hot mode
   combined: { border: "border-blue-500/40", bg: "bg-blue-500/10", text: "text-blue-300" },
   cooccur: { border: "border-emerald-500/40", bg: "bg-emerald-500/10", text: "text-emerald-300" },
   recent: { border: "border-orange-500/40", bg: "bg-orange-500/10", text: "text-orange-300" },
   heat: { border: "border-rose-500/40", bg: "bg-rose-500/10", text: "text-rose-300" },
+  // Cold mode
+  solo_cold: { border: "border-cyan-500/40", bg: "bg-cyan-500/10", text: "text-cyan-300" },
+  pair_overdue: { border: "border-sky-500/40", bg: "bg-sky-500/10", text: "text-sky-300" },
+  balanced: { border: "border-indigo-500/40", bg: "bg-indigo-500/10", text: "text-indigo-300" },
+  underseen: { border: "border-violet-500/40", bg: "bg-violet-500/10", text: "text-violet-300" },
 };
 
 interface BacktestDay {
@@ -125,39 +131,56 @@ function fmtVndShort(n: number): string {
   return Math.round(n).toString();
 }
 
+type PairMode = "hot" | "cold";
+
 export default function PredictionPairPage({ region }: { region: Region }) {
   const toast = useToast();
   const [data, setData] = useState<PairResponse | null>(null);
   const [backtest, setBacktest] = useState<BacktestResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [backtestLoading, setBacktestLoading] = useState(true);
+  const [mode, setMode] = useState<PairMode>("hot");
   const [windowDays, setWindowDays] = useState(120);
   const [topNSource, setTopNSource] = useState(35);
   const [topKReturn, setTopKReturn] = useState(30);
   const [backtestDays, setBacktestDays] = useState(14);
   const [payout, setPayout] = useState(17);
 
+  // When user switches mode, snap params to mode-appropriate defaults
+  // (Hot uses long window + wide source pool; Cold uses 30-day window + 30 coldest lô.)
+  function switchMode(next: PairMode) {
+    if (next === mode) return;
+    setMode(next);
+    if (next === "cold") {
+      setWindowDays(30);
+      setTopNSource(30);
+    } else {
+      setWindowDays(120);
+      setTopNSource(35);
+    }
+  }
+
   useEffect(() => {
     setLoading(true);
     fetch(
-      `/api/predict/pair?region=${region}&window=${windowDays}&top_n=${topNSource}&top_k=${topKReturn}`
+      `/api/predict/pair?region=${region}&mode=${mode}&window=${windowDays}&top_n=${topNSource}&top_k=${topKReturn}`
     )
       .then((r) => r.json())
       .then((d) => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [region, windowDays, topNSource, topKReturn]);
+  }, [region, mode, windowDays, topNSource, topKReturn]);
 
   useEffect(() => {
     setBacktestLoading(true);
     fetch(
-      `/api/predict/pair/backtest?region=${region}&days=${backtestDays}&top_k=${topKReturn}&window=${windowDays}&top_n=${topNSource}&payout=${payout}`
+      `/api/predict/pair/backtest?region=${region}&mode=${mode}&days=${backtestDays}&top_k=${topKReturn}&window=${windowDays}&top_n=${topNSource}&payout=${payout}`
     )
       .then((r) => r.json())
       .then((d) => setBacktest(d))
       .catch(() => setBacktest(null))
       .finally(() => setBacktestLoading(false));
-  }, [region, windowDays, topNSource, topKReturn, backtestDays, payout]);
+  }, [region, mode, windowDays, topNSource, topKReturn, backtestDays, payout]);
 
   const top10 = useMemo(() => data?.pairs.slice(0, 10) ?? [], [data]);
 
@@ -208,20 +231,56 @@ export default function PredictionPairPage({ region }: { region: Region }) {
   return (
     <>
       {/* Header */}
-      <section className="mb-4 md:mb-6 rounded-2xl bg-gradient-to-br from-orange-900/30 via-red-900/20 to-rose-900/20 border border-orange-500/40 p-4 md:p-6">
+      <section className={`mb-4 md:mb-6 rounded-2xl border p-4 md:p-6 ${
+        mode === "cold"
+          ? "bg-gradient-to-br from-cyan-900/30 via-sky-900/20 to-indigo-900/20 border-cyan-500/40"
+          : "bg-gradient-to-br from-orange-900/30 via-red-900/20 to-rose-900/20 border-orange-500/40"
+      }`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-base md:text-lg font-bold flex items-center gap-2">
-              🎯 Dự Đoán Đá — {REGION_LABELS[region]}
+              {mode === "cold" ? "❄️" : "🔥"} Dự Đoán Đá — {REGION_LABELS[region]}
+              <span className={`ml-1 px-2 py-0.5 text-[0.65rem] rounded-full font-mono uppercase ${
+                mode === "cold" ? "bg-cyan-500/20 text-cyan-200 border border-cyan-400/40" : "bg-orange-500/20 text-orange-200 border border-orange-400/40"
+              }`}>
+                {mode === "cold" ? "Bám lạnh" : "Bám hot"}
+              </span>
             </h2>
             <p className="text-xs md:text-sm text-slate-300 mt-1">
-              Cặp 2 lô — cả 2 phải về cùng 1 buổi mới ăn • Top {topNSource} VIP × pair co-occurrence boost
+              {mode === "cold"
+                ? `Cặp 2 lô — chọn ${topNSource} lô LẠNH nhất (lâu chưa về) → C(${topNSource},2)=${(topNSource * (topNSource - 1)) / 2} cặp ứng viên → top ${topKReturn} cặp "thiếu nợ" nhất`
+                : `Cặp 2 lô — cả 2 phải về cùng 1 buổi mới ăn • Top ${topNSource} VIP × pair co-occurrence boost`}
             </p>
             <p className="text-[0.7rem] md:text-xs text-slate-400 mt-1">
               {data.days_available} ngày data • {data.pairs.length} cặp đề xuất
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {/* Hot/Cold toggle */}
+            <div className="flex rounded-lg overflow-hidden border border-slate-600">
+              <button
+                onClick={() => switchMode("hot")}
+                className={`px-3 py-1.5 text-xs font-bold transition ${
+                  mode === "hot"
+                    ? "bg-orange-500 text-white"
+                    : "bg-[#1a2332] text-slate-400 hover:bg-[#243044]"
+                }`}
+                title="Bám lô HOT — top N lô xác suất cao từ VIP"
+              >
+                🔥 Hot
+              </button>
+              <button
+                onClick={() => switchMode("cold")}
+                className={`px-3 py-1.5 text-xs font-bold transition ${
+                  mode === "cold"
+                    ? "bg-cyan-500 text-white"
+                    : "bg-[#1a2332] text-slate-400 hover:bg-[#243044]"
+                }`}
+                title="Bám lô LẠNH — 30 lô lâu chưa về, ghép cặp 'thiếu nợ'"
+              >
+                ❄️ Lạnh
+              </button>
+            </div>
             <select
               value={windowDays}
               onChange={(e) => setWindowDays(parseInt(e.target.value))}
@@ -577,18 +636,22 @@ export default function PredictionPairPage({ region }: { region: Region }) {
       ) : null}
 
       {/* Top 10 highlight */}
-      <section className="mb-4 md:mb-6 rounded-2xl bg-[#0f1722] border border-orange-500/30 overflow-hidden">
+      <section className={`mb-4 md:mb-6 rounded-2xl bg-[#0f1722] border overflow-hidden ${
+        mode === "cold" ? "border-cyan-500/30" : "border-orange-500/30"
+      }`}>
         <div className="px-4 md:px-6 py-3 border-b border-white/[0.06]">
           <h3 className="text-sm md:text-base font-bold flex items-center gap-2">
-            🏆 TOP 10 CẶP MẠNH NHẤT
+            🏆 TOP 10 CẶP {mode === "cold" ? "LẠNH NHẤT" : "MẠNH NHẤT"}
           </h3>
           <p className="text-[0.65rem] text-slate-400 mt-0.5">
-            Sắp xếp theo pair score = √(p_A × p_B) × cooccur boost (cap 3×)
+            {mode === "cold"
+              ? "Score = 0.35·solo_cold + 0.30·pair_overdue + 0.20·balance + 0.15·underseen"
+              : "Sắp xếp theo pair score = √(p_A × p_B) × cooccur boost (cap 3×)"}
           </p>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 p-3 md:p-4">
           {top10.map((p) => (
-            <PairTile key={`${p.lo_a}-${p.lo_b}`} pair={p} highlight />
+            <PairTile key={`${p.lo_a}-${p.lo_b}`} pair={p} highlight mode={mode} />
           ))}
         </div>
       </section>
@@ -605,15 +668,59 @@ export default function PredictionPairPage({ region }: { region: Region }) {
                 <th className="px-3 py-2 text-left">#</th>
                 <th className="px-3 py-2 text-left">Cặp</th>
                 <th className="px-3 py-2 text-right">Score</th>
-                <th className="px-3 py-2 text-right">P(A)</th>
-                <th className="px-3 py-2 text-right">P(B)</th>
-                <th className="px-3 py-2 text-right">Combined</th>
-                <th className="px-3 py-2 text-center">Cooccur</th>
-                <th className="px-3 py-2 text-center">Lift</th>
+                {mode === "cold" ? (
+                  <>
+                    <th className="px-3 py-2 text-right" title="Số ngày A chưa về">Lạnh A</th>
+                    <th className="px-3 py-2 text-right" title="Số ngày B chưa về">Lạnh B</th>
+                    <th className="px-3 py-2 text-right" title="Solo coldness metric">Solo</th>
+                    <th className="px-3 py-2 text-center" title="Số ngày cả 2 lô cùng về trong window">Cùng về</th>
+                    <th className="px-3 py-2 text-center" title="Số ngày kể từ lần cuối cặp về cùng buổi">Cặp lạnh</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="px-3 py-2 text-right">P(A)</th>
+                    <th className="px-3 py-2 text-right">P(B)</th>
+                    <th className="px-3 py-2 text-right">Combined</th>
+                    <th className="px-3 py-2 text-center">Cooccur</th>
+                    <th className="px-3 py-2 text-center">Lift</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
               {data.pairs.map((p) => {
+                const scoreColor = mode === "cold" ? "text-cyan-300" : "text-orange-300";
+                if (mode === "cold") {
+                  return (
+                    <tr
+                      key={`${p.lo_a}-${p.lo_b}`}
+                      className="border-t border-white/[0.04] hover:bg-white/[0.02]"
+                    >
+                      <td className="px-3 py-2 font-mono font-bold text-slate-400">{p.rank}</td>
+                      <td className="px-3 py-2 font-mono text-base font-extrabold text-white">
+                        {p.lo_a} <span className="text-slate-500">-</span> {p.lo_b}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-mono font-bold ${scoreColor}`}>
+                        {p.pair_score.toFixed(2)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-cyan-200">
+                        {p.p_a}d
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-cyan-200">
+                        {p.p_b}d
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-200">
+                        {p.combined_prob.toFixed(1)}
+                      </td>
+                      <td className="px-3 py-2 text-center font-mono text-slate-300">
+                        {p.cooccur_days}d
+                      </td>
+                      <td className="px-3 py-2 text-center font-mono text-cyan-300 font-bold">
+                        {p.cooccur_lift}d
+                      </td>
+                    </tr>
+                  );
+                }
                 const liftColor = p.cooccur_lift >= 1.5
                   ? "text-emerald-300 font-bold"
                   : p.cooccur_lift >= 1
@@ -628,7 +735,7 @@ export default function PredictionPairPage({ region }: { region: Region }) {
                     <td className="px-3 py-2 font-mono text-base font-extrabold text-white">
                       {p.lo_a} <span className="text-slate-500">-</span> {p.lo_b}
                     </td>
-                    <td className="px-3 py-2 text-right font-mono font-bold text-orange-300">
+                    <td className={`px-3 py-2 text-right font-mono font-bold ${scoreColor}`}>
                       {p.pair_score.toFixed(2)}
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-slate-400">
@@ -794,38 +901,53 @@ export default function PredictionPairPage({ region }: { region: Region }) {
 
       {/* Explanation */}
       <p className="mt-3 text-[0.7rem] text-slate-500 italic">
-        💡 <b>Cách đọc:</b> Score càng cao = cặp càng đáng đánh. Lift &gt; 1 = cặp này thực tế về CÙNG NHAU nhiều hơn nếu 2 lô độc lập. Cooccur = số ngày trong lịch sử cả 2 lô đều về cùng buổi.
+        {mode === "cold" ? (
+          <>
+            💡 <b>Cách đọc (Bám lạnh):</b> Score cao = cặp đang "thiếu nợ" nhiều nhất. <b>Lạnh A/B</b> = số ngày lô chưa về. <b>Cùng về</b> = số ngày cặp đã về cùng buổi trong window (càng thấp càng đáng đánh). <b>Cặp lạnh</b> = số ngày kể từ lần cuối cặp về cùng buổi.
+          </>
+        ) : (
+          <>
+            💡 <b>Cách đọc (Bám hot):</b> Score càng cao = cặp càng đáng đánh. Lift &gt; 1 = cặp này thực tế về CÙNG NHAU nhiều hơn nếu 2 lô độc lập. Cooccur = số ngày trong lịch sử cả 2 lô đều về cùng buổi.
+          </>
+        )}
       </p>
     </>
   );
 }
 
-function PairTile({ pair, highlight }: { pair: PairItem; highlight?: boolean }) {
+function PairTile({ pair, highlight, mode = "hot" }: { pair: PairItem; highlight?: boolean; mode?: PairMode }) {
+  const isCold = mode === "cold";
   const rankClass =
     pair.rank === 1
       ? "border-amber-400/70 bg-amber-500/15"
       : pair.rank === 2
       ? "border-slate-300/40 bg-slate-300/5"
       : pair.rank === 3
-      ? "border-orange-400/50 bg-orange-500/15"
+      ? (isCold ? "border-cyan-400/50 bg-cyan-500/15" : "border-orange-400/50 bg-orange-500/15")
       : highlight
-      ? "border-orange-500/40 bg-orange-500/5"
+      ? (isCold ? "border-cyan-500/40 bg-cyan-500/5" : "border-orange-500/40 bg-orange-500/5")
       : "border-slate-700 bg-white/[0.02]";
+
+  const tooltip = isCold
+    ? `#${pair.rank} • Score ${pair.pair_score} • Lạnh A ${pair.p_a}d • Lạnh B ${pair.p_b}d • Cùng về ${pair.cooccur_days}d • Cặp lạnh ${pair.cooccur_lift}d`
+    : `#${pair.rank} • Score ${pair.pair_score} • P(A) ${pair.p_a}% • P(B) ${pair.p_b}% • Cooccur ${pair.cooccur_days}d • Lift ${pair.cooccur_lift}×`;
 
   return (
     <div
       className={`rounded-lg border-2 ${rankClass} p-2.5 text-center`}
-      title={`#${pair.rank} • Score ${pair.pair_score} • P(A) ${pair.p_a}% • P(B) ${pair.p_b}% • Cooccur ${pair.cooccur_days}d • Lift ${pair.cooccur_lift}×`}
+      title={tooltip}
     >
       <div className="text-[0.55rem] font-mono font-bold text-slate-500">#{pair.rank}</div>
       <div className="font-mono text-lg md:text-2xl font-extrabold text-white leading-none my-1">
         {pair.lo_a} <span className="text-slate-500">-</span> {pair.lo_b}
       </div>
-      <div className="font-mono text-[0.65rem] font-bold text-orange-300">
+      <div className={`font-mono text-[0.65rem] font-bold ${isCold ? "text-cyan-300" : "text-orange-300"}`}>
         Score {pair.pair_score.toFixed(2)}
       </div>
       <div className="text-[0.55rem] text-slate-500 mt-0.5">
-        {pair.cooccur_days}d cùng • lift {pair.cooccur_lift}×
+        {isCold
+          ? `lạnh ${pair.p_a}d/${pair.p_b}d • cặp ${pair.cooccur_lift}d`
+          : `${pair.cooccur_days}d cùng • lift ${pair.cooccur_lift}×`}
       </div>
     </div>
   );

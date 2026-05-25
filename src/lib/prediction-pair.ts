@@ -390,6 +390,249 @@ export async function predictPair(
 }
 
 // ─────────────────────────────────────────────
+// COLD pair prediction ("gambler's overdue" — anti-hot strategy)
+//
+// Hot strategy picks pairs from VIP-ranked top N (frequent/streaking lô).
+// Cold flips it: pick the N coldest lô (longest since last appearance),
+// then score C(N,2) pairs by how "overdue" they collectively are.
+//
+// User rationale (XSMB):
+//   • ~25 lô/day × ~30 days = ~10,500 pair-events / month
+//   • Unique pairs in 100 numbers: C(100,2) = 4,950
+//   • Average: each pair returns ~2.1× / month → cold pairs are "due"
+// ─────────────────────────────────────────────
+
+const COLD_COMPONENT_META: Record<string, { label: string; question: string }> = {
+  solo_cold: { label: "Cả 2 đều nguội", question: "Cặp nào cả 2 lô lâu chưa về nhất?" },
+  pair_overdue: { label: "Cặp lâu chưa cùng về", question: "Cặp nào lâu chưa về CÙNG buổi nhất?" },
+  balanced: { label: "Cân bằng nguội", question: "Cặp nào không bị 1 con quá nóng kéo lại?" },
+  underseen: { label: "Thiếu nợ kỳ vọng", question: "Cặp nào về ÍT hơn kỳ vọng thống kê?" },
+};
+
+// Per-region weights for cold scoring (4 components sum to ~1)
+const COLD_REGION_PARAMS: Record<Region, {
+  weights: { solo: number; pairOverdue: number; balance: number; underseen: number };
+}> = {
+  xsmn: { weights: { solo: 0.35, pairOverdue: 0.30, balance: 0.20, underseen: 0.15 } },
+  xsmb: { weights: { solo: 0.30, pairOverdue: 0.35, balance: 0.20, underseen: 0.15 } }, // MB tilts to pair-level overdue
+  xsmt: { weights: { solo: 0.35, pairOverdue: 0.30, balance: 0.20, underseen: 0.15 } },
+};
+
+// Same consensus threshold as hot version
+const COLD_CONSENSUS_THRESHOLD: Record<Region, number> = {
+  xsmn: 3,
+  xsmb: 2,
+  xsmt: 3,
+};
+
+export async function predictPairCold(
+  region: Region,
+  windowDays: number = 30,
+  topNSource: number = 30,      // pick 30 coldest lô → C(30,2) = 435 candidate pairs
+  topKReturn: number = 30,
+  endDate?: string
+): Promise<PairResult> {
+  const params = COLD_REGION_PARAMS[region];
+
+  // 1) Load history within window
+  const history = await loadHistoryLo(region, windowDays, endDate);
+  const sortedDates = Object.keys(history).sort();
+  const totalDays = sortedDates.length;
+
+  if (totalDays < 7) {
+    return {
+      region,
+      window_days: windowDays,
+      days_available: totalDays,
+      warning: `Cần ít nhất 7 ngày data, hiện có ${totalDays}`,
+      top_n_source: topNSource,
+      pairs: [],
+      total_components: 4,
+      consensus_threshold: COLD_CONSENSUS_THRESHOLD[region],
+      components: [],
+      consensus: [],
+      controversial: [],
+    };
+  }
+
+  // 2) Per-lo stats: last_seen_index, solo_days, appearances
+  const lastSeenIdx = new Map<string, number>(); // index in sortedDates (higher = more recent)
+  const soloDays = new Map<string, number>();
+  for (let i = 0; i < sortedDates.length; i++) {
+    const date = sortedDates[i];
+    for (const lo of Object.keys(history[date])) {
+      lastSeenIdx.set(lo, i);
+      soloDays.set(lo, (soloDays.get(lo) ?? 0) + 1);
+    }
+  }
+
+  // days_since_last for each of the 100 lô (relative to end of window)
+  // If lo never appeared in window: days = totalDays (max coldness)
+  const allLos = Array.from({ length: 100 }, (_, i) => String(i).padStart(2, "0"));
+  const coldness = new Map<string, number>();
+  for (const lo of allLos) {
+    const idx = lastSeenIdx.get(lo);
+    if (idx === undefined) coldness.set(lo, totalDays);
+    else coldness.set(lo, totalDays - 1 - idx);
+  }
+
+  // 3) Pick top N coldest lô
+  const sourceLos = allLos
+    .slice()
+    .sort((a, b) => (coldness.get(b)! - coldness.get(a)!) || a.localeCompare(b))
+    .slice(0, topNSource);
+
+  // 4) Build pair-level co-occurrence within window
+  const cooccur = buildPairCooccurrence(history);
+  // Pair last-seen index (most recent day they appeared together)
+  const pairLastSeen = new Map<string, number>();
+  for (let i = 0; i < sortedDates.length; i++) {
+    const date = sortedDates[i];
+    const losToday = Object.keys(history[date]).sort();
+    for (let a = 0; a < losToday.length; a++) {
+      for (let b = a + 1; b < losToday.length; b++) {
+        pairLastSeen.set(`${losToday[a]}|${losToday[b]}`, i);
+      }
+    }
+  }
+
+  // 5) Generate candidate pairs from cold source pool
+  const candidatePairs: PairItem[] = [];
+  for (let i = 0; i < sourceLos.length; i++) {
+    for (let j = i + 1; j < sourceLos.length; j++) {
+      const [loA, loB] = [sourceLos[i], sourceLos[j]].sort();
+      const dA = coldness.get(loA)!;
+      const dB = coldness.get(loB)!;
+
+      // Component 1: solo coldness — geometric mean of days since last, normalized
+      // Use sqrt to dampen extreme values (e.g. lo unseen all window)
+      const soloCold = Math.sqrt(dA * dB) / Math.max(1, totalDays); // 0-1
+
+      // Component 2: pair-level overdue — days since this pair last co-occurred
+      const pairIdx = pairLastSeen.get(`${loA}|${loB}`);
+      const pairDaysSince = pairIdx === undefined ? totalDays : totalDays - 1 - pairIdx;
+      const pairOverdue = pairDaysSince / Math.max(1, totalDays); // 0-1
+
+      // Component 3: balance — penalize if one lo is much "hotter" than the other
+      // ratio = min/max, then we want HIGH ratio (similar coldness)
+      const balance = Math.min(dA, dB) / Math.max(1, Math.max(dA, dB)); // 0-1
+
+      // Component 4: underseen — gambler's fallacy "due to come"
+      // Each pair's expected co-occurrence in window = ~totalDays × (avg lo per day / 100)^2
+      // Simpler: use solo appearance rates
+      const pA = (soloDays.get(loA) ?? 0) / Math.max(1, totalDays);
+      const pB = (soloDays.get(loB) ?? 0) / Math.max(1, totalDays);
+      const expected = pA * pB * totalDays;
+      const actual = cooccur.get(`${loA}|${loB}`) ?? 0;
+      const deficit = Math.max(0, expected - actual);
+      const underseen = expected > 0.5 ? Math.min(1, deficit / expected) : 0; // 0-1
+
+      // For UI compatibility, fill in PairItem fields (treating cold metrics as if they were the hot ones)
+      // Keep types same — but values mean different things in cold mode
+      const w = params.weights;
+      const coldScore =
+        w.solo * soloCold +
+        w.pairOverdue * pairOverdue +
+        w.balance * balance +
+        w.underseen * underseen;
+
+      candidatePairs.push({
+        rank: 0,
+        lo_a: loA,
+        lo_b: loB,
+        // Reuse fields with different semantics for cold mode:
+        combined_prob: Math.round(soloCold * 100 * 100) / 100,  // % "solo coldness"
+        p_a: dA,    // days since A last seen
+        p_b: dB,    // days since B last seen
+        cooccur_days: actual,            // # days pair appeared (lower = more overdue)
+        cooccur_lift: Math.round(pairDaysSince * 10) / 10, // days since pair last cooccurred
+        recent_boost: Math.round(balance * 100) / 100,    // balance metric
+        heat_score: Math.round(underseen * 1000) / 1000,  // underseen ratio
+        pair_score: Math.round(coldScore * 100 * 100) / 100, // 0-100 score
+      });
+    }
+  }
+
+  candidatePairs.sort((a, b) => b.pair_score - a.pair_score);
+  const topPairs = candidatePairs.slice(0, topKReturn);
+  topPairs.forEach((p, i) => { p.rank = i + 1; });
+
+  // Per-component top 10
+  const COMP_TOP = 10;
+  const sortAndTake = (key: "solo_cold" | "pair_overdue" | "balanced" | "underseen") => {
+    const accessor = (p: PairItem) => {
+      if (key === "solo_cold") return p.combined_prob;   // soloCold metric
+      if (key === "pair_overdue") return p.cooccur_lift; // pairDaysSince
+      if (key === "balanced") return p.recent_boost;     // balance
+      return p.heat_score;                                // underseen
+    };
+    return [...candidatePairs]
+      .sort((a, b) => accessor(b) - accessor(a))
+      .slice(0, COMP_TOP)
+      .map((p, idx) => ({
+        rank: idx + 1,
+        lo_a: p.lo_a,
+        lo_b: p.lo_b,
+        value: accessor(p),
+      }));
+  };
+
+  const compWeights: Record<string, number> = {
+    solo_cold: params.weights.solo,
+    pair_overdue: params.weights.pairOverdue,
+    balanced: params.weights.balance,
+    underseen: params.weights.underseen,
+  };
+
+  const components: PairComponentBreakdown[] = (["solo_cold", "pair_overdue", "balanced", "underseen"] as const).map((key) => ({
+    key,
+    label: COLD_COMPONENT_META[key].label,
+    question: COLD_COMPONENT_META[key].question,
+    weight: compWeights[key],
+    top_picks: sortAndTake(key),
+  }));
+
+  // Consensus across components
+  const pairKey = (p: { lo_a: string; lo_b: string }) => `${p.lo_a}|${p.lo_b}`;
+  const appearancesPerPair = new Map<string, { lo_a: string; lo_b: string; comps: string[] }>();
+  for (const c of components) {
+    for (const p of c.top_picks) {
+      const key = pairKey(p);
+      const entry = appearancesPerPair.get(key);
+      if (entry) entry.comps.push(c.key);
+      else appearancesPerPair.set(key, { lo_a: p.lo_a, lo_b: p.lo_b, comps: [c.key] });
+    }
+  }
+  const allRanked = Array.from(appearancesPerPair.values())
+    .map((e) => ({
+      lo_a: e.lo_a,
+      lo_b: e.lo_b,
+      appearances_in_top: e.comps.length,
+      components: e.comps,
+    }))
+    .sort((a, b) => b.appearances_in_top - a.appearances_in_top);
+
+  const threshold = COLD_CONSENSUS_THRESHOLD[region];
+  const consensus = allRanked.filter((x) => x.appearances_in_top >= threshold);
+  const controversial = allRanked.filter(
+    (x) => x.appearances_in_top === (threshold === 3 ? 2 : 1)
+  );
+
+  return {
+    region,
+    window_days: windowDays,
+    days_available: totalDays,
+    top_n_source: topNSource,
+    pairs: topPairs,
+    total_components: 4,
+    consensus_threshold: threshold,
+    components,
+    consensus,
+    controversial,
+  };
+}
+
+// ─────────────────────────────────────────────
 // BACKTEST: replay pair predictions across last N days
 // ─────────────────────────────────────────────
 
@@ -465,8 +708,10 @@ export async function backtestPair(
   topK: number = 30,
   windowDays: number = 60,
   topNSource: number = 35,
-  payoutMultiplier: number = 17  // win = multiplier × cost when pair hits
+  payoutMultiplier: number = 17,  // win = multiplier × cost when pair hits
+  mode: "hot" | "cold" = "hot"
 ): Promise<PairBacktestResult> {
+  const predictor = mode === "cold" ? predictPairCold : predictPair;
   const { query } = await import("./db");
   const dateRows = await query<{ date: string }>(
     `SELECT DISTINCT date FROM lo_daily WHERE region = ? ORDER BY date DESC LIMIT ?`,
@@ -487,7 +732,7 @@ export async function backtestPair(
   for (const t of tierDefs) tierAcc.set(t.start, { hits: 0, daysCounted: 0, hitMap: new Map() });
 
   for (const date of dates) {
-    const r = await predictPair(region, windowDays, topNSource, topK, date);
+    const r = await predictor(region, windowDays, topNSource, topK, date);
     if (r.warning || r.pairs.length === 0) continue;
 
     const actualLo = await getLoOnDate(region, date);
