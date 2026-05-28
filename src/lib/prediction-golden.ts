@@ -12,7 +12,7 @@
  * be on-demand only (no auto-refresh) and is cached for 60 min per region+days.
  */
 import { query, type Region } from "./db";
-import { predictTopNHistorical, predict } from "./prediction";
+import { predict } from "./prediction";
 import { predictThreeDigit, backtestThreeDigit } from "./prediction-three";
 import { predictPair, predictPairCold, backtestPair } from "./prediction-pair";
 
@@ -179,16 +179,22 @@ async function getRecentDates(region: Region, windowDays: number): Promise<strin
 // ─────────────────────────────────────────────
 
 async function findGoldenLo2(region: Region, dates: string[]): Promise<GoldenModelResult> {
-  // Replay: for each date, get the top-50 lô prediction made with data BEFORE date,
+  // Replay: for each date, get the full ranked lô prediction made with data BEFORE date,
   // then compare against actual lô that came that date.
+  //
+  // Note: We use predict() (not predictTopNHistorical) because the latter signals
+  // `using_default=true` whenever adaptive weights lack performance history — but the
+  // picks are still valid ensemble output. predict() always returns the full ranked
+  // 100-lô list as long as ≥5 days of history exist.
   const dayRuns: DayRun[] = [];
   for (const date of dates) {
     const [pred, actual] = await Promise.all([
-      predictTopNHistorical(region, date, MAX_RANK, 14),
+      predict(region, 60, date),
       getLoSetForDate(region, date),
     ]);
-    if (pred.using_default) continue;
-    dayRuns.push({ date, ranked: pred.picks, actual });
+    if (pred.predictions.length === 0) continue;  // <5 days history → skip
+    const ranked = pred.predictions.slice(0, MAX_RANK).map((p) => p.lo_number);
+    dayRuns.push({ date, ranked, actual });
   }
 
   const segments = binSegments(dayRuns, SEGMENT_SIZE, MAX_RANK);
