@@ -368,49 +368,10 @@ export default function WatcherPage({ region }: { region: Region }) {
         </div>
       </section>
 
-      {/* Heat cards */}
-      {watched.length === 0 ? (
-        <div className="text-center py-12 text-slate-500 text-sm">
-          ↑ Nhập lô vào các ô trên hoặc bấm <b>📥 Import VIP Top 20</b> để bắt đầu
-        </div>
-      ) : loading ? (
-        <div className="text-center py-12 text-slate-500">⏳ Đang load độ nóng...</div>
-      ) : data && data.items.length > 0 ? (
-        <>
-          <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
-            <h3 className="text-sm md:text-base font-bold">
-              🌡️ Độ nóng — sắp xếp theo "chưa ra"
-            </h3>
-            <div className="flex gap-2 text-[0.65rem]">
-              <Legend color="bg-rose-500" label="🔥 Hot" />
-              <Legend color="bg-amber-500" label="🌤 Warm" />
-              <Legend color="bg-slate-500" label="❄️ Cold" />
-              <Legend color="bg-cyan-500" label="🧊 Frozen" />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {[...data.items]
-              .sort((a, b) => {
-                // Hot first, then by days_since_last desc
-                const heatRank = { hot: 0, warm: 1, cold: 2, frozen: 3 };
-                if (a.heat !== b.heat) return heatRank[a.heat] - heatRank[b.heat];
-                return (b.days_since_last ?? 999) - (a.days_since_last ?? 999);
-              })
-              .map((item) => (
-                <HeatCard key={item.lo_number} item={item} />
-              ))}
-          </div>
-        </>
-      ) : (
-        <div className="text-center py-12 text-slate-500 text-sm">
-          Không có data cho các lô đã nhập (chưa scrape?)
-        </div>
-      )}
-
       {/* ─────────────────────────────────────────── */}
       {/* Tier betting (Martingale 7d) section       */}
       {/* ─────────────────────────────────────────── */}
-      <section className="mt-6 md:mt-8 rounded-2xl bg-gradient-to-br from-emerald-900/25 via-teal-900/15 to-cyan-900/15 border border-emerald-500/40 overflow-hidden">
+      <section className="mb-4 md:mb-6 rounded-2xl bg-gradient-to-br from-emerald-900/25 via-teal-900/15 to-cyan-900/15 border border-emerald-500/40 overflow-hidden">
         <div className="px-4 md:px-6 py-3 md:py-4 border-b border-white/[0.06]">
           <h3 className="text-sm md:text-base font-bold flex items-center gap-2">
             💰 Bảng Cược Theo Tầng — Martingale 7 ngày
@@ -554,6 +515,46 @@ export default function WatcherPage({ region }: { region: Region }) {
           )}
         </div>
       </section>
+
+      {/* Heat cards */}
+      {watched.length === 0 ? (
+        <div className="text-center py-12 text-slate-500 text-sm">
+          ↑ Nhập lô vào các ô trên hoặc bấm <b>📥 Import VIP Top 20</b> để bắt đầu
+        </div>
+      ) : loading ? (
+        <div className="text-center py-12 text-slate-500">⏳ Đang load độ nóng...</div>
+      ) : data && data.items.length > 0 ? (
+        <>
+          <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+            <h3 className="text-sm md:text-base font-bold">
+              🌡️ Độ nóng — sắp xếp theo "chưa ra"
+            </h3>
+            <div className="flex gap-2 text-[0.65rem]">
+              <Legend color="bg-rose-500" label="🔥 Hot" />
+              <Legend color="bg-amber-500" label="🌤 Warm" />
+              <Legend color="bg-slate-500" label="❄️ Cold" />
+              <Legend color="bg-cyan-500" label="🧊 Frozen" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {[...data.items]
+              .sort((a, b) => {
+                // Hot first, then by days_since_last desc
+                const heatRank = { hot: 0, warm: 1, cold: 2, frozen: 3 };
+                if (a.heat !== b.heat) return heatRank[a.heat] - heatRank[b.heat];
+                return (b.days_since_last ?? 999) - (a.days_since_last ?? 999);
+              })
+              .map((item) => (
+                <HeatCard key={item.lo_number} item={item} />
+              ))}
+          </div>
+        </>
+      ) : (
+        <div className="text-center py-12 text-slate-500 text-sm">
+          Không có data cho các lô đã nhập (chưa scrape?)
+        </div>
+      )}
+
     </>
   );
 }
