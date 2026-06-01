@@ -123,7 +123,7 @@ export default function WatcherPage({ region }: { region: Region }) {
       const res = await fetch(`/api/predict/vip?region=${region}&window=90`);
       const json = await res.json();
       const picks: string[] = (json.final ?? [])
-        .slice(0, 10)
+        .slice(0, 20)
         .map((p: { lo_number: string }) => p.lo_number);
       if (picks.length === 0) {
         toast.show("error", "Chưa có VIP prediction. Vào tab VIP trước.");
@@ -151,7 +151,7 @@ export default function WatcherPage({ region }: { region: Region }) {
         </h2>
         <p className="text-xs md:text-sm text-slate-300 mt-1">
           Nhập lô anh muốn theo dõi → xem độ nóng/lạnh + lịch sử 7 ngày gần nhất.
-          Bấm <b>📥 Import VIP Top 10</b> để lấy nhanh predictions.
+          Bấm <b>📥 Import VIP Top 20</b> để lấy nhanh predictions.
         </p>
         <p className="text-[0.7rem] text-slate-400 mt-1">
           Tự lưu vào trình duyệt — F5 không mất.
@@ -170,7 +170,7 @@ export default function WatcherPage({ region }: { region: Region }) {
               disabled={importing}
               className="px-3 py-1.5 text-xs rounded bg-yellow-600 hover:bg-yellow-500 text-white font-bold disabled:opacity-50"
             >
-              {importing ? "⏳ Đang load..." : "📥 Import VIP Top 10"}
+              {importing ? "⏳ Đang load..." : "📥 Import VIP Top 20"}
             </button>
             <button
               onClick={clearAll}
@@ -198,7 +198,7 @@ export default function WatcherPage({ region }: { region: Region }) {
       {/* Heat cards */}
       {watched.length === 0 ? (
         <div className="text-center py-12 text-slate-500 text-sm">
-          ↑ Nhập lô vào các ô trên hoặc bấm <b>📥 Import VIP Top 10</b> để bắt đầu
+          ↑ Nhập lô vào các ô trên hoặc bấm <b>📥 Import VIP Top 20</b> để bắt đầu
         </div>
       ) : loading ? (
         <div className="text-center py-12 text-slate-500">⏳ Đang load độ nóng...</div>
