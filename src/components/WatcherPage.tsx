@@ -36,7 +36,7 @@ const DATE_STRIP_COUNT = 7; // # of date chips shown
 
 // Tier-betting (Martingale 7d) constants
 const TIER_COUNT = 7;
-const TIER_LO_COUNT = 10;
+const TIER_LO_COUNT = 20;
 const TIER_AMOUNTS_KEY = "watcher_tier_amounts_v1";
 const TIER_LOS_KEY = "watcher_tier_los_v1";
 const DEFAULT_TIER_AMOUNTS: number[] = [10, 20, 30, 40, 50, 80, 100];
@@ -317,7 +317,7 @@ export default function WatcherPage({ region }: { region: Region }) {
     return Array.from(set).sort();
   }, [tierLos]);
 
-  // Fetch heat data for the tier 10 lô (independent of the 20-slot fetch).
+  // Fetch heat data for the tier lô list (independent of the 20-slot fetch).
   // Honors viewDate when set so tier mapping also time-travels.
   useEffect(() => {
     if (tierWatched.length === 0) {
@@ -365,16 +365,16 @@ export default function WatcherPage({ region }: { region: Region }) {
       toast.show("error", "Đang ở chế độ lịch sử — quay về 'Hôm nay' để import");
       return;
     }
-    const first10 = slots
+    const picks = slots
       .map((s) => s.trim())
       .filter((s) => /^\d{1,2}$/.test(s))
       .slice(0, TIER_LO_COUNT);
     const filled = Array(TIER_LO_COUNT)
       .fill("")
-      .map((_, i) => first10[i] ?? "");
+      .map((_, i) => picks[i] ?? "");
     setTierLos(filled);
     saveLS(TIER_LOS_KEY, region, filled);
-    toast.show("success", `Đã lấy ${first10.length} lô từ Watcher`);
+    toast.show("success", `Đã lấy ${picks.length} lô từ Watcher`);
   }
 
   function clearTierLos() {
@@ -606,11 +606,11 @@ export default function WatcherPage({ region }: { region: Region }) {
           </div>
         </div>
 
-        {/* 10 lô inputs */}
+        {/* Tier lô inputs */}
         <div className="p-3 md:p-4 border-b border-white/[0.06]">
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <div className="text-[0.7rem] text-slate-300 font-semibold">
-              ▸ 10 lô áp dụng chiến thuật ({tierWatched.length}/{TIER_LO_COUNT})
+              ▸ {TIER_LO_COUNT} lô áp dụng chiến thuật ({tierWatched.length}/{TIER_LO_COUNT})
             </div>
             <div className="flex gap-1.5 flex-wrap">
               <button
@@ -619,7 +619,7 @@ export default function WatcherPage({ region }: { region: Region }) {
                 title={viewDate ? "Quay về 'Hôm nay' để import" : undefined}
                 className="px-2.5 py-1 text-[0.65rem] rounded bg-emerald-700 hover:bg-emerald-600 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                📥 Lấy 10 từ Watcher trên
+                📥 Lấy {TIER_LO_COUNT} từ Watcher trên
               </button>
               <button
                 onClick={clearTierLos}
@@ -658,7 +658,7 @@ export default function WatcherPage({ region }: { region: Region }) {
           </div>
           {tierWatched.length === 0 ? (
             <p className="text-center text-slate-500 text-xs py-6">
-              ↑ Nhập 10 lô (hoặc bấm <b className="text-emerald-300">Lấy 10 từ Watcher trên</b>) để xem bảng cược
+              ↑ Nhập {TIER_LO_COUNT} lô (hoặc bấm <b className="text-emerald-300">Lấy {TIER_LO_COUNT} từ Watcher trên</b>) để xem bảng cược
             </p>
           ) : tierLoading ? (
             <p className="text-center text-slate-500 text-xs py-6">⏳ Đang load độ nóng...</p>
