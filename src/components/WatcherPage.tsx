@@ -30,6 +30,7 @@ interface WatcherResponse {
 
 const SLOT_COUNT = 20; // 20 input slots
 const STORAGE_KEY = "watcher_numbers_v1";
+const PINNED_KEY = "watcher_pinned_v1";
 const VIEW_DATE_KEY = "watcher_view_date_v1";
 const DATE_STRIP_COUNT = 7; // # of date chips shown
 
@@ -108,6 +109,20 @@ function loadViewDate(region: Region): string | null {
   }
 }
 
+function loadPinned(region: Region): boolean[] {
+  const fallback = Array(SLOT_COUNT).fill(false);
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(`${PINNED_KEY}_${region}`);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return fallback;
+    return Array(SLOT_COUNT).fill(false).map((_, i) => parsed[i] === true);
+  } catch {
+    return fallback;
+  }
+}
+
 // days_since_last → tier index (0=1d, 6=7d). null/≥6 → 7d max.
 function dayToTier(days: number | null): number {
   if (days === null) return 6;
@@ -126,6 +141,9 @@ export default function WatcherPage({ region }: { region: Region }) {
   const [viewDate, setViewDate] = useState<string | null>(null);
   const [availableDates, setAvailableDates] = useState<string[]>([]); // all scraped dates desc
 
+  // Pinned slots: pinned[i]=true means slot i survives "Xoá hết" and "Import VIP Top 20".
+  const [pinned, setPinned] = useState<boolean[]>(() => Array(SLOT_COUNT).fill(false));
+
   // Hydrate from localStorage on region change
   useEffect(() => {
     const saved = loadFromStorage(region);
@@ -134,6 +152,7 @@ export default function WatcherPage({ region }: { region: Region }) {
       .map((_, i) => saved[i] ?? "");
     setSlots(filled);
     setViewDate(loadViewDate(region));
+    setPinned(loadPinned(region));
   }, [region]);
 
   // Fetch list of scraped dates for the strip
@@ -208,10 +227,25 @@ export default function WatcherPage({ region }: { region: Region }) {
   }
 
   function clearAll() {
-    const empty = Array(SLOT_COUNT).fill("");
-    setSlots(empty);
-    saveToStorage(region, empty);
-    setData(null);
+    // Keep pinned slots; only clear unpinned ones.
+    const next = slots.map((v, i) => (pinned[i] ? v : ""));
+    setSlots(next);
+    saveToStorage(region, next);
+    const anyLeft = next.some((s) => /^\d{1,2}$/.test(s.trim()));
+    if (!anyLeft) setData(null);
+  }
+
+  function togglePin(idx: number) {
+    const next = [...pinned];
+    next[idx] = !next[idx];
+    setPinned(next);
+    saveLS(PINNED_KEY, region, next);
+  }
+
+  function clearPins() {
+    const empty = Array(SLOT_COUNT).fill(false);
+    setPinned(empty);
+    saveLS(PINNED_KEY, region, empty);
   }
 
   async function importFromVip() {
@@ -231,12 +265,28 @@ export default function WatcherPage({ region }: { region: Region }) {
         toast.show("error", "Chưa có VIP prediction. Vào tab VIP trước.");
         return;
       }
+      // Pinned slots keep their current value. Unpinned slots get filled from VIP picks
+      // (in order, skipping picks already present in pinned slots to avoid duplicates).
+      const pinnedNumbers = new Set(
+        slots.filter((_, i) => pinned[i]).map((s) => s.trim()).filter(Boolean)
+      );
+      const remaining = picks.filter((p) => !pinnedNumbers.has(p));
+      let r = 0;
       const filled = Array(SLOT_COUNT)
         .fill("")
-        .map((_, i) => picks[i] ?? "");
+        .map((_, i) => {
+          if (pinned[i]) return slots[i];
+          return remaining[r++] ?? "";
+        });
       setSlots(filled);
       saveToStorage(region, filled);
-      toast.show("success", `Đã import top ${picks.length} từ VIP`);
+      const pinnedCount = pinned.filter(Boolean).length;
+      toast.show(
+        "success",
+        pinnedCount > 0
+          ? `Import xong — giữ ${pinnedCount} ô đã gim, fill ${SLOT_COUNT - pinnedCount} ô còn lại từ VIP`
+          : `Đã import top ${picks.length} từ VIP`
+      );
     } catch {
       toast.show("error", "Lỗi khi gọi VIP");
     } finally {
@@ -438,8 +488,13 @@ export default function WatcherPage({ region }: { region: Region }) {
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h3 className="text-sm font-bold text-slate-200">
             ⌨️ Nhập lô muốn theo dõi ({watched.length}/{SLOT_COUNT})
+            {pinned.some(Boolean) && (
+              <span className="ml-2 text-[0.65rem] text-amber-300 font-mono">
+                · 📌 {pinned.filter(Boolean).length} đã gim
+              </span>
+            )}
           </h3>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={importFromVip}
               disabled={importing || !!viewDate}
@@ -451,23 +506,56 @@ export default function WatcherPage({ region }: { region: Region }) {
             <button
               onClick={clearAll}
               className="px-3 py-1.5 text-xs rounded bg-slate-600 hover:bg-slate-500 text-white font-bold"
+              title="Xoá các ô CHƯA gim"
             >
               🗑️ Xoá hết
             </button>
+            {pinned.some(Boolean) && (
+              <button
+                onClick={clearPins}
+                className="px-3 py-1.5 text-xs rounded bg-amber-700 hover:bg-amber-600 text-white font-bold"
+                title="Bỏ gim toàn bộ ô"
+              >
+                📌 Bỏ gim tất cả
+              </button>
+            )}
           </div>
         </div>
+        <p className="text-[0.65rem] text-slate-500 mb-2">
+          💡 Bấm 📌 ở góc mỗi ô để gim — ô gim sẽ KHÔNG bị xoá khi Xoá hết / Import VIP. Vẫn gõ tay đè được bình thường.
+        </p>
         <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 md:gap-2">
-          {slots.map((val, i) => (
-            <input
-              key={i}
-              value={val}
-              onChange={(e) => handleSlotChange(i, e.target.value)}
-              maxLength={2}
-              inputMode="numeric"
-              placeholder="—"
-              className="w-full aspect-square text-center font-mono font-bold text-base md:text-xl rounded bg-[#1a2332] border-2 border-slate-700 focus:border-rose-400 text-slate-100 placeholder:text-slate-700 outline-none transition-colors"
-            />
-          ))}
+          {slots.map((val, i) => {
+            const isPinned = pinned[i];
+            return (
+              <div key={i} className="relative">
+                <input
+                  value={val}
+                  onChange={(e) => handleSlotChange(i, e.target.value)}
+                  maxLength={2}
+                  inputMode="numeric"
+                  placeholder="—"
+                  className={`w-full aspect-square text-center font-mono font-bold text-base md:text-xl rounded bg-[#1a2332] border-2 ${
+                    isPinned
+                      ? "border-amber-500 shadow-[0_0_0_1px_rgba(245,158,11,0.4)_inset]"
+                      : "border-slate-700"
+                  } focus:border-rose-400 text-slate-100 placeholder:text-slate-700 outline-none transition-colors`}
+                />
+                <button
+                  onClick={() => togglePin(i)}
+                  title={isPinned ? "Bỏ gim" : "Gim ô này"}
+                  aria-label={isPinned ? "Bỏ gim" : "Gim ô này"}
+                  className={`absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center text-[0.7rem] rounded transition-colors ${
+                    isPinned
+                      ? "text-amber-300 hover:text-amber-200"
+                      : "text-slate-700 hover:text-slate-400"
+                  }`}
+                >
+                  📌
+                </button>
+              </div>
+            );
+          })}
         </div>
       </section>
 
