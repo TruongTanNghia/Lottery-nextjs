@@ -30,6 +30,8 @@ interface WatcherResponse {
 
 const SLOT_COUNT = 20; // 20 input slots
 const STORAGE_KEY = "watcher_numbers_v1";
+const VIEW_DATE_KEY = "watcher_view_date_v1";
+const DATE_STRIP_COUNT = 7; // # of date chips shown
 
 // Tier-betting (Martingale 7d) constants
 const TIER_COUNT = 7;
@@ -93,6 +95,19 @@ function saveLS(key: string, region: Region, val: unknown): void {
   }
 }
 
+function loadViewDate(region: Region): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(`${VIEW_DATE_KEY}_${region}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed)) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // days_since_last → tier index (0=1d, 6=7d). null/≥6 → 7d max.
 function dayToTier(days: number | null): number {
   if (days === null) return 6;
@@ -107,6 +122,10 @@ export default function WatcherPage({ region }: { region: Region }) {
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
 
+  // Time-travel viewDate: null = "Hôm nay" (current state), else YYYY-MM-DD historical mode.
+  const [viewDate, setViewDate] = useState<string | null>(null);
+  const [availableDates, setAvailableDates] = useState<string[]>([]); // all scraped dates desc
+
   // Hydrate from localStorage on region change
   useEffect(() => {
     const saved = loadFromStorage(region);
@@ -114,7 +133,36 @@ export default function WatcherPage({ region }: { region: Region }) {
       .fill("")
       .map((_, i) => saved[i] ?? "");
     setSlots(filled);
+    setViewDate(loadViewDate(region));
   }, [region]);
+
+  // Fetch list of scraped dates for the strip
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/scrape/status?region=${region}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        const dates: string[] = j?.by_region?.[region]?.dates ?? [];
+        setAvailableDates(dates);
+        // If saved viewDate is no longer in scraped dates (rare — e.g. cleanup wiped it), reset.
+        if (viewDate && !dates.includes(viewDate)) {
+          setViewDate(null);
+          saveLS(VIEW_DATE_KEY, region, null);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // viewDate intentionally excluded — only refetch on region change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [region]);
+
+  function pickViewDate(d: string | null) {
+    setViewDate(d);
+    saveLS(VIEW_DATE_KEY, region, d);
+  }
 
   // Cleaned, deduped, sorted list of watched numbers
   const watched = useMemo(() => {
@@ -133,7 +181,8 @@ export default function WatcherPage({ region }: { region: Region }) {
     }
     setLoading(true);
     try {
-      const res = await fetch(`/api/watcher?region=${region}&numbers=${watched.join(",")}`);
+      const dateQ = viewDate ? `&date=${viewDate}` : "";
+      const res = await fetch(`/api/watcher?region=${region}&numbers=${watched.join(",")}${dateQ}`);
       const json = await res.json();
       if (json.status === "success") {
         setData(json);
@@ -143,7 +192,7 @@ export default function WatcherPage({ region }: { region: Region }) {
     } finally {
       setLoading(false);
     }
-  }, [region, watched, toast]);
+  }, [region, watched, viewDate, toast]);
 
   useEffect(() => {
     fetchHeat();
@@ -167,6 +216,10 @@ export default function WatcherPage({ region }: { region: Region }) {
 
   async function importFromVip() {
     if (importing) return;
+    if (viewDate) {
+      toast.show("error", "Đang ở chế độ lịch sử — quay về 'Hôm nay' để import");
+      return;
+    }
     setImporting(true);
     try {
       const res = await fetch(`/api/predict/vip?region=${region}&window=90`);
@@ -214,7 +267,8 @@ export default function WatcherPage({ region }: { region: Region }) {
     return Array.from(set).sort();
   }, [tierLos]);
 
-  // Fetch heat data for the tier 10 lô (independent of the 20-slot fetch)
+  // Fetch heat data for the tier 10 lô (independent of the 20-slot fetch).
+  // Honors viewDate when set so tier mapping also time-travels.
   useEffect(() => {
     if (tierWatched.length === 0) {
       setTierData(null);
@@ -222,7 +276,8 @@ export default function WatcherPage({ region }: { region: Region }) {
     }
     let cancelled = false;
     setTierLoading(true);
-    fetch(`/api/watcher?region=${region}&numbers=${tierWatched.join(",")}`)
+    const dateQ = viewDate ? `&date=${viewDate}` : "";
+    fetch(`/api/watcher?region=${region}&numbers=${tierWatched.join(",")}${dateQ}`)
       .then((r) => r.json())
       .then((j) => {
         if (cancelled) return;
@@ -237,7 +292,7 @@ export default function WatcherPage({ region }: { region: Region }) {
     return () => {
       cancelled = true;
     };
-  }, [region, tierWatched]);
+  }, [region, tierWatched, viewDate]);
 
   function handleTierAmountChange(idx: number, value: string) {
     const num = parseInt(value.replace(/\D/g, "")) || 0;
@@ -256,6 +311,10 @@ export default function WatcherPage({ region }: { region: Region }) {
   }
 
   function copyTierFromTop() {
+    if (viewDate) {
+      toast.show("error", "Đang ở chế độ lịch sử — quay về 'Hôm nay' để import");
+      return;
+    }
     const first10 = slots
       .map((s) => s.trim())
       .filter((s) => /^\d{1,2}$/.test(s))
@@ -331,6 +390,49 @@ export default function WatcherPage({ region }: { region: Region }) {
         </p>
       </section>
 
+      {/* Date strip — click to time-travel */}
+      <section className="mb-4 md:mb-6 rounded-2xl bg-[#0f1722] border border-slate-700/50 p-3 md:p-4">
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+            📅 Xem theo ngày
+            {viewDate && (
+              <span className="px-2 py-0.5 text-[0.65rem] rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-200 font-mono">
+                Lịch sử: {viewDate}
+              </span>
+            )}
+          </h3>
+          {viewDate && (
+            <button
+              onClick={() => pickViewDate(null)}
+              className="px-2.5 py-1 text-[0.7rem] rounded bg-rose-600 hover:bg-rose-500 text-white font-bold"
+            >
+              ⮌ Về Hôm Nay
+            </button>
+          )}
+        </div>
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          <DateChip
+            label="Hôm nay"
+            active={viewDate === null}
+            onClick={() => pickViewDate(null)}
+          />
+          {availableDates.slice(0, DATE_STRIP_COUNT).map((d) => (
+            <DateChip
+              key={d}
+              label={d.slice(5)}
+              sub={d.slice(0, 4)}
+              active={viewDate === d}
+              onClick={() => pickViewDate(d)}
+            />
+          ))}
+        </div>
+        {viewDate && (
+          <p className="text-[0.7rem] text-amber-300 mt-2">
+            ⚠️ Đang xem chế độ lịch sử — tất cả "ngày chưa ra" tính tới {viewDate}, không phải hôm nay.
+          </p>
+        )}
+      </section>
+
       {/* Input slots */}
       <section className="mb-4 md:mb-6 rounded-2xl bg-[#0f1722] border border-slate-700/50 p-4 md:p-5">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -340,8 +442,9 @@ export default function WatcherPage({ region }: { region: Region }) {
           <div className="flex gap-2">
             <button
               onClick={importFromVip}
-              disabled={importing}
-              className="px-3 py-1.5 text-xs rounded bg-yellow-600 hover:bg-yellow-500 text-white font-bold disabled:opacity-50"
+              disabled={importing || !!viewDate}
+              title={viewDate ? "Quay về 'Hôm nay' để import" : undefined}
+              className="px-3 py-1.5 text-xs rounded bg-yellow-600 hover:bg-yellow-500 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {importing ? "⏳ Đang load..." : "📥 Import VIP Top 20"}
             </button>
@@ -424,7 +527,9 @@ export default function WatcherPage({ region }: { region: Region }) {
             <div className="flex gap-1.5 flex-wrap">
               <button
                 onClick={copyTierFromTop}
-                className="px-2.5 py-1 text-[0.65rem] rounded bg-emerald-700 hover:bg-emerald-600 text-white font-bold"
+                disabled={!!viewDate}
+                title={viewDate ? "Quay về 'Hôm nay' để import" : undefined}
+                className="px-2.5 py-1 text-[0.65rem] rounded bg-emerald-700 hover:bg-emerald-600 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 📥 Lấy 10 từ Watcher trên
               </button>
@@ -556,6 +661,34 @@ export default function WatcherPage({ region }: { region: Region }) {
       )}
 
     </>
+  );
+}
+
+function DateChip({
+  label,
+  sub,
+  active,
+  onClick,
+}: {
+  label: string;
+  sub?: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`shrink-0 flex flex-col items-center px-3 py-1.5 rounded-lg border-2 transition-colors min-w-[64px] ${
+        active
+          ? "bg-rose-600 border-rose-400 text-white shadow-[0_2px_8px_rgba(244,63,94,0.35)]"
+          : "bg-[#1a2332] border-slate-700 text-slate-300 hover:bg-[#243044] hover:border-slate-500"
+      }`}
+    >
+      <span className={`text-[0.6rem] font-mono ${active ? "text-rose-100" : "text-slate-500"}`}>
+        {sub ?? ""}
+      </span>
+      <span className="text-xs md:text-sm font-bold font-mono">{label}</span>
+    </button>
   );
 }
 
