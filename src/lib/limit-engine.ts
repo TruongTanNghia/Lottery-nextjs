@@ -134,6 +134,14 @@ function previousDate(dateStr: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Calendar gap in days between two YYYY-MM-DD strings (end - start, clamped ≥ 0).
+function daysBetween(endDate: string, startDate: string): number {
+  const [y1, m1, d1] = endDate.split("-").map(Number);
+  const [y2, m2, d2] = startDate.split("-").map(Number);
+  const ms = Date.UTC(y1, m1 - 1, d1) - Date.UTC(y2, m2 - 1, d2);
+  return Math.max(0, Math.floor(ms / 86_400_000));
+}
+
 export async function updateAllLoStatus(targetDate: string, region: Region): Promise<void> {
   const { getDb, getAllLoStatus } = await import("./db");
   const db = getDb();
@@ -157,6 +165,12 @@ export async function updateAllLoStatus(targetDate: string, region: Region): Pro
     let consec = current?.consecutive_days ?? 0;
     let lastDate: string | null = current?.last_appeared_date ?? null;
 
+    // Idempotency guard: if lo_status already reflects a date ≥ targetDate,
+    // this is a stale re-process (cron's "last 3 dates" overlap). Skip — otherwise
+    // we'd inflate days_since_last by re-running `+= 1` and potentially clobber
+    // consec by failing the `lastDate === prevDate` check.
+    if (lastDate && lastDate >= targetDate) continue;
+
     if (appearedToday.has(lo)) {
       if (lastDate === prevDate) consec += 1;
       else consec = 1;
@@ -164,7 +178,8 @@ export async function updateAllLoStatus(targetDate: string, region: Region): Pro
       daysSince = 0;
       lastDate = targetDate;
     } else {
-      daysSince += 1;
+      // Compute calendar gap (idempotent) instead of `daysSince += 1` (drifts on re-process).
+      daysSince = lastDate ? daysBetween(targetDate, lastDate) : daysSince + 1;
     }
 
     const newLimit = calculateEffectiveLimit(daysSince, consec, schedule);
@@ -177,8 +192,8 @@ export async function updateAllLoStatus(targetDate: string, region: Region): Pro
     });
   }
 
-  // 1 round-trip for all 100 updates as a transaction
-  await db.batch(updates, "write");
+  // Batched as 1 round-trip. Empty array (all 100 skipped) is a no-op — short-circuit.
+  if (updates.length > 0) await db.batch(updates, "write");
 }
 
 export async function recalculateAllFromHistory(region?: Region): Promise<void> {
