@@ -123,7 +123,12 @@ function loadPinned(region: Region): boolean[] {
   }
 }
 
-// days_since_last → tier index (0=1d, 6=7d). null/≥6 → 7d max.
+// days_since_last → tier index (0=0d, 6=6d+). null/≥6 → tier 6 max.
+// Label semantics: tier 0 = "0d" (ra hôm nay), tier 1 = "1d", …, tier 6 = "6d+".
+function tierLabel(idx: number): string {
+  return idx >= 6 ? "6d+" : `${idx}d`;
+}
+
 function dayToTier(days: number | null): number {
   if (days === null) return 6;
   if (days <= 0) return 0;
@@ -401,7 +406,7 @@ export default function WatcherPage({ region }: { region: Region }) {
         lo_number: lo,
         days,
         tier_idx: tierIdx,
-        tier_label: `${tierIdx + 1}d`,
+        tier_label: tierLabel(tierIdx),
         amount,
         days_text:
           days === null
@@ -568,7 +573,7 @@ export default function WatcherPage({ region }: { region: Region }) {
             💰 Bảng Cược Theo Tầng — Martingale 7 ngày
           </h3>
           <p className="text-[0.7rem] text-slate-400 mt-0.5">
-            Tầng <b className="text-emerald-300">1d</b> = ra hôm nay → <b className="text-emerald-300">7d</b> = ≥6 ngày chưa về. Anh tự cài mức cược mỗi tầng, hệ thống tự gán theo "days_since_last". Tự lưu local, F5 không mất.
+            Tầng <b className="text-emerald-300">0d</b> = ra hôm nay → <b className="text-emerald-300">6d+</b> = ≥6 ngày chưa về. Số tầng khớp 1:1 với "X ngày chưa ra". Anh tự cài mức cược mỗi tầng, tự lưu local.
           </p>
         </div>
 
@@ -590,7 +595,7 @@ export default function WatcherPage({ region }: { region: Region }) {
             {tierAmounts.map((amt, i) => (
               <div key={i} className="flex flex-col">
                 <label className="text-[0.6rem] text-emerald-300 text-center font-mono font-bold mb-0.5">
-                  {i + 1}d
+                  {tierLabel(i)}
                 </label>
                 <div className="relative">
                   <input
@@ -702,7 +707,7 @@ export default function WatcherPage({ region }: { region: Region }) {
                 </table>
               </div>
               <p className="text-[0.65rem] text-slate-500 italic mt-2">
-                💡 Hàng đỏ = tầng nóng (1d-2d, vừa ra). Hàng xanh = tầng lạnh (6d-7d, lâu chưa về). Tổng cược: <b className="text-amber-300">{tierSummary.reduce((s, x) => s + x.amount, 0)}n</b>
+                💡 Hàng đỏ = tầng nóng (0d-1d, vừa ra). Hàng xanh = tầng lạnh (5d-6d+, lâu chưa về). Tổng cược: <b className="text-amber-300">{tierSummary.reduce((s, x) => s + x.amount, 0)}n</b>
               </p>
             </>
           )}
