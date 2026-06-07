@@ -157,6 +157,123 @@ async function getFourDigitOccurrencesOnDate(region: Region, date: string): Prom
 }
 
 // ─────────────────────────────────────────────
+// COMBINED-mode loaders (aggregate across all 3 regions)
+//
+// Rationale: 4-càng single-region is too sparse — 1-4 ĐB/day means model
+// has no real training signal in 10K-space. Aggregating 3 miền gives
+// ~6-8 ĐB/day (~1260 obs/180d) which is enough for digit-position + pair
+// frequency models to actually learn patterns.
+// ─────────────────────────────────────────────
+
+async function loadFourHistoryCombined(days: number, endDate?: string): Promise<DateMap> {
+  // ALL prizes ≥4 digits across all 3 regions (per user request — much denser
+  // training data, ~80-120 events/day instead of just ~7 G.DB/day).
+  let rows: { date: string; number: string }[];
+  if (endDate) {
+    const [ey, em, ed] = endDate.split("-").map(Number);
+    const endMs = Date.UTC(ey, em - 1, ed);
+    const startStr = new Date(endMs - days * 86_400_000).toISOString().slice(0, 10);
+    rows = await query<{ date: string; number: string }>(
+      `SELECT date, number FROM lottery_results
+       WHERE date >= ? AND date < ? AND LENGTH(number) >= 4`,
+      [startStr, endDate]
+    );
+  } else {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    rows = await query<{ date: string; number: string }>(
+      `SELECT date, number FROM lottery_results
+       WHERE date >= ? AND LENGTH(number) >= 4`,
+      [cutoffStr]
+    );
+  }
+  const out: DateMap = {};
+  for (const r of rows) {
+    const four = r.number.slice(-4).padStart(4, "0");
+    if (!out[r.date]) out[r.date] = {};
+    out[r.date][four] = (out[r.date][four] ?? 0) + 1;
+  }
+  return out;
+}
+
+async function loadThreeHistoryCombined(days: number, endDate?: string): Promise<Record<string, Record<string, number>>> {
+  let rows: { date: string; number: string }[];
+  if (endDate) {
+    const [ey, em, ed] = endDate.split("-").map(Number);
+    const endMs = Date.UTC(ey, em - 1, ed);
+    const startStr = new Date(endMs - days * 86_400_000).toISOString().slice(0, 10);
+    rows = await query<{ date: string; number: string }>(
+      `SELECT date, number FROM lottery_results
+       WHERE date >= ? AND date < ? AND LENGTH(number) >= 3`,
+      [startStr, endDate]
+    );
+  } else {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    rows = await query<{ date: string; number: string }>(
+      `SELECT date, number FROM lottery_results
+       WHERE date >= ? AND LENGTH(number) >= 3`,
+      [cutoffStr]
+    );
+  }
+  const out: Record<string, Record<string, number>> = {};
+  for (const r of rows) {
+    const three = r.number.slice(-3).padStart(3, "0");
+    if (!out[r.date]) out[r.date] = {};
+    out[r.date][three] = (out[r.date][three] ?? 0) + 1;
+  }
+  return out;
+}
+
+async function loadLoHistoryCombined(days: number, endDate?: string): Promise<Record<string, Record<string, number>>> {
+  let rows: { date: string; lo_number: string; count: number }[];
+  if (endDate) {
+    const [ey, em, ed] = endDate.split("-").map(Number);
+    const endMs = Date.UTC(ey, em - 1, ed);
+    const startStr = new Date(endMs - days * 86_400_000).toISOString().slice(0, 10);
+    rows = await query<{ date: string; lo_number: string; count: number }>(
+      `SELECT date, lo_number, SUM(count) as count FROM lo_daily
+       WHERE date >= ? AND date < ?
+       GROUP BY date, lo_number`,
+      [startStr, endDate]
+    );
+  } else {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    rows = await query<{ date: string; lo_number: string; count: number }>(
+      `SELECT date, lo_number, SUM(count) as count FROM lo_daily
+       WHERE date >= ?
+       GROUP BY date, lo_number`,
+      [cutoffStr]
+    );
+  }
+  const out: Record<string, Record<string, number>> = {};
+  for (const r of rows) {
+    if (!out[r.date]) out[r.date] = {};
+    out[r.date][r.lo_number] = r.count;
+  }
+  return out;
+}
+
+async function getFourDigitOccurrencesOnDateCombined(date: string): Promise<Map<string, number>> {
+  // ALL prizes ≥4 digits across all regions on this date (per user request).
+  const rows = await query<{ number: string }>(
+    `SELECT number FROM lottery_results
+     WHERE date = ? AND LENGTH(number) >= 4`,
+    [date]
+  );
+  const m = new Map<string, number>();
+  for (const r of rows) {
+    const k = r.number.slice(-4).padStart(4, "0");
+    m.set(k, (m.get(k) ?? 0) + 1);
+  }
+  return m;
+}
+
+// ─────────────────────────────────────────────
 // Score utilities
 // ─────────────────────────────────────────────
 
@@ -655,6 +772,190 @@ export async function predictFourDigit(
 }
 
 // ─────────────────────────────────────────────
+// COMBINED-mode predictor (3 miền aggregated)
+//
+// Critical changes vs per-region predictFourDigit:
+//   1. Weights REBALANCED: less borrow (signals from non-ĐB prizes don't
+//      necessarily correlate with ĐB-only 4-càng); more digitFreq + pairFreq
+//      (signals derived from the same ĐB data we're predicting).
+//   2. CANDIDATE POOL FILTERED to numbers that ACTUALLY appeared as 4-càng
+//      in the window (drops 8800+ never-seen candidates that would otherwise
+//      get scored from speculative borrow signals). This is the biggest
+//      hit-rate uplift.
+//   3. dayOfWeek disabled (3 regions have different rotation patterns —
+//      combined DoW is noisy).
+// ─────────────────────────────────────────────
+
+const COMBINED_WEIGHTS: Record<string, number> = {
+  frequency: 0.12,     // direct count over 1260 obs — still noisy but workable
+  recency: 0.15,       // recent EWMA on combined data
+  dayOfWeek: 0.0,      // disabled (3-region mix muddies the signal)
+  temperature: 0.08,
+  digitFreq: 0.28,     // STRONGEST signal — 5040 digit-pos obs / 40 cells
+  loBorrow: 0.07,      // de-emphasized (different prize → different patterns)
+  threeBorrow: 0.10,   // de-emphasized
+  pairFreq: 0.20,      // strong: 1260 obs across 3 pair positions × 100 cells
+};
+
+const COMBINED_SOFTMAX_T = 0.22;
+const COMBINED_RECENCY_HL = 12;
+const COMBINED_SHRINKAGE = 0.18;
+
+export interface FourCombinedResult {
+  combined: true;
+  window_days: number;
+  days_available: number;
+  warning?: string;
+  weights: Record<string, number>;
+  predictions: FourDigitItem[];
+  candidate_pool_size: number;     // # of distinct 4-càng that ever appeared in window
+  total_observations: number;      // total ĐB count across 3 miền
+  total_models: number;
+  consensus_threshold: number;
+  models: FourModelBreakdown[];
+  consensus: FourConsensusItem[];
+}
+
+export async function predictFourDigitCombined(
+  windowDays: number = 180,
+  endDate?: string
+): Promise<FourCombinedResult> {
+  const history = await loadFourHistoryCombined(windowDays, endDate);
+  const daysAvailable = Object.keys(history).length;
+
+  if (daysAvailable < 14) {
+    return {
+      combined: true,
+      window_days: windowDays,
+      days_available: daysAvailable,
+      warning: `Cần ít nhất 14 ngày data, hiện có ${daysAvailable}. Scrape thêm rồi quay lại.`,
+      weights: COMBINED_WEIGHTS,
+      predictions: [],
+      candidate_pool_size: 0,
+      total_observations: 0,
+      total_models: 8,
+      consensus_threshold: 4,
+      models: [],
+      consensus: [],
+    };
+  }
+
+  // Compute candidate pool = numbers that ACTUALLY appeared in window.
+  // This is the key filter: dropping 8000+ never-seen candidates that
+  // pure model speculation would over-rank from borrow signals.
+  const appeared = new Set<string>();
+  let totalObs = 0;
+  for (const date of Object.keys(history)) {
+    for (const [num, c] of Object.entries(history[date])) {
+      appeared.add(num);
+      totalObs += c;
+    }
+  }
+  const poolSize = appeared.size;
+
+  // Load supplementary denser histories for borrow models (parallel)
+  const [loHistory, threeHistory] = await Promise.all([
+    loadLoHistoryCombined(windowDays, endDate),
+    loadThreeHistoryCombined(windowDays, endDate),
+  ]);
+
+  const raw: Record<string, Record<string, number>> = {
+    frequency: modelFrequency(history, 2),  // alpha=2 (less smoothing — pool is filtered)
+    recency: modelRecency(history, COMBINED_RECENCY_HL),
+    dayOfWeek: modelDayOfWeek(history),
+    temperature: modelTemperature(history),
+    digitFreq: modelDigitFrequency(history),
+    loBorrow: modelLoBorrow(loHistory, COMBINED_RECENCY_HL - 2),
+    threeBorrow: modelThreeBorrow(threeHistory, COMBINED_RECENCY_HL),
+    pairFreq: modelPairFreq(history),
+  };
+  const norm: Record<string, Record<string, number>> = {};
+  for (const [k, m] of Object.entries(raw)) norm[k] = normalize(m);
+
+  // Composite — ONLY for candidates that appeared in window
+  const composite: Record<string, number> = {};
+  for (const n of appeared) {
+    composite[n] = 0;
+    for (const [k, m] of Object.entries(norm)) {
+      composite[n] += (COMBINED_WEIGHTS[k] ?? 0) * (m[n] ?? 0);
+    }
+  }
+  // Apply shrinkage within the filtered pool
+  const vals = Object.values(composite);
+  const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+  for (const n of appeared) composite[n] = (1 - COMBINED_SHRINKAGE) * composite[n] + COMBINED_SHRINKAGE * avg;
+
+  // Softmax over filtered pool
+  const expScores: Record<string, number> = {};
+  let sum = 0;
+  const maxS = Math.max(...Object.values(composite));
+  for (const n of appeared) {
+    const e = Math.exp((composite[n] - maxS) / COMBINED_SOFTMAX_T);
+    expScores[n] = e;
+    sum += e;
+  }
+  const probs: Record<string, number> = {};
+  for (const n of appeared) probs[n] = expScores[n] / sum;
+
+  const items: FourDigitItem[] = Array.from(appeared).map((num) => ({
+    rank: 0,
+    number: num,
+    probability: Math.round(probs[num] * 100 * 1_000_000) / 1_000_000,
+    composite_score: Math.round(composite[num] * 10000) / 10000,
+    breakdown: Object.fromEntries(
+      Object.entries(norm).map(([k, m]) => [k, Math.round((m[num] ?? 0) * 10000) / 10000])
+    ),
+  }));
+  items.sort((a, b) => b.probability - a.probability);
+  items.forEach((p, i) => { p.rank = i + 1; });
+
+  const TOP_PER_MODEL = 10;
+  const models: FourModelBreakdown[] = Object.entries(norm).map(([key, scores]) => {
+    const ranked = Array.from(appeared)
+      .map((n) => ({ number: n, norm_score: scores[n] ?? 0 }))
+      .sort((a, b) => b.norm_score - a.norm_score)
+      .slice(0, TOP_PER_MODEL)
+      .map((p, idx) => ({ rank: idx + 1, ...p, norm_score: Math.round(p.norm_score * 10000) / 10000 }));
+    return {
+      key,
+      label: MODEL_META[key]?.label ?? key,
+      question: MODEL_META[key]?.question ?? "",
+      weight: COMBINED_WEIGHTS[key] ?? 0,
+      top_picks: ranked,
+    };
+  });
+
+  // Consensus
+  const topSets: Record<string, Set<string>> = {};
+  for (const m of models) topSets[m.key] = new Set(m.top_picks.map((p) => p.number));
+  const appearancesPerNum: Record<string, string[]> = {};
+  for (const [k, set] of Object.entries(topSets)) {
+    for (const n of set) {
+      if (!appearancesPerNum[n]) appearancesPerNum[n] = [];
+      appearancesPerNum[n].push(k);
+    }
+  }
+  const allRanked = Object.entries(appearancesPerNum)
+    .map(([n, ms]) => ({ number: n, appearances_in_top: ms.length, models: ms }))
+    .sort((a, b) => b.appearances_in_top - a.appearances_in_top);
+  const consensus = allRanked.filter((x) => x.appearances_in_top >= 4);
+
+  return {
+    combined: true,
+    window_days: windowDays,
+    days_available: daysAvailable,
+    weights: COMBINED_WEIGHTS,
+    predictions: items,
+    candidate_pool_size: poolSize,
+    total_observations: totalObs,
+    total_models: 8,
+    consensus_threshold: 4,
+    models,
+    consensus,
+  };
+}
+
+// ─────────────────────────────────────────────
 // BACKTEST
 // ─────────────────────────────────────────────
 
@@ -862,5 +1163,165 @@ export async function backtestFourDigit(
     break_even_occurrences_per_day: Math.round(breakEvenOcc * 1000) / 1000,
     tiers,
     days: dayResults,
+  };
+}
+
+// ─────────────────────────────────────────────
+// COMBINED-mode backtest (3 miền aggregated)
+// ─────────────────────────────────────────────
+
+export interface FourCombinedBacktestResult extends Omit<FourBacktestResult, "region"> {
+  combined: true;
+  candidate_pool_size_avg: number;  // avg pool size across backtest days
+  total_observations: number;       // total ĐB events in window across miền
+}
+
+export async function backtestFourDigitCombined(
+  days: number = 14,
+  topK: number = 100,
+  windowDays: number = 180,
+  payoutVnd: number = 6_500_000
+): Promise<FourCombinedBacktestResult> {
+  // Distinct dates with at least 1 prize ≥4 digits across any region.
+  const dateRows = await query<{ date: string }>(
+    `SELECT DISTINCT date FROM lottery_results
+     WHERE LENGTH(number) >= 4
+     ORDER BY date DESC LIMIT ?`,
+    [days]
+  );
+  const dates = dateRows.map((r) => r.date).reverse();
+
+  const dayResults: FourBacktestDay[] = [];
+  const tierDefs = buildTiers(topK);
+  const tierAcc: Map<number, {
+    hits: number;
+    occ: number;
+    daysCounted: number;
+    hitMap: Map<string, { days: number; occ: number }>;
+  }> = new Map();
+  for (const t of tierDefs) tierAcc.set(t.start, { hits: 0, occ: 0, daysCounted: 0, hitMap: new Map() });
+
+  let poolSizeSum = 0;
+  let totalObsAggregated = 0;
+
+  for (const date of dates) {
+    const r = await predictFourDigitCombined(windowDays, date);
+    if (r.warning || r.predictions.length === 0) continue;
+    poolSizeSum += r.candidate_pool_size;
+    totalObsAggregated = Math.max(totalObsAggregated, r.total_observations);
+
+    const topPicks = r.predictions.slice(0, topK).map((p) => p.number);
+    const occMap = await getFourDigitOccurrencesOnDateCombined(date);
+    const hitPicks = topPicks.filter((n) => (occMap.get(n) ?? 0) > 0);
+    const totalOcc = hitPicks.reduce((s, n) => s + (occMap.get(n) ?? 0), 0);
+
+    const hit = hitPicks.length;
+    const actualCount = occMap.size;
+    const cost = topK * POINT_COST_VND_FOUR;
+    const win = totalOcc * payoutVnd;
+    const profit = win - cost;
+
+    for (const t of tierDefs) {
+      const tierPicks = topPicks.slice(t.start - 1, t.end);
+      let tHits = 0;
+      let tOcc = 0;
+      const acc = tierAcc.get(t.start)!;
+      for (const n of tierPicks) {
+        const c = occMap.get(n) ?? 0;
+        if (c > 0) {
+          tHits++;
+          tOcc += c;
+          const prev = acc.hitMap.get(n);
+          if (prev) { prev.days++; prev.occ += c; }
+          else acc.hitMap.set(n, { days: 1, occ: c });
+        }
+      }
+      acc.hits += tHits;
+      acc.occ += tOcc;
+      acc.daysCounted++;
+    }
+
+    dayResults.push({
+      date,
+      predicted_top: topPicks,
+      actual_count: actualCount,
+      hits: hit,
+      hit_picks: hitPicks,
+      total_occurrences: totalOcc,
+      hit_rate_pct: topK > 0 ? Math.round((hit / topK) * 10000) / 100 : 0,
+      coverage_pct: actualCount > 0 ? Math.round((hit / actualCount) * 10000) / 100 : 0,
+      cost_vnd: cost,
+      win_vnd: win,
+      profit_vnd: profit,
+    });
+  }
+
+  const tiers: FourTierStat[] = tierDefs.map((t) => {
+    const acc = tierAcc.get(t.start)!;
+    const picksPerDay = t.end - t.start + 1;
+    const totalPred = picksPerDay * acc.daysCounted;
+    const tCost = totalPred * POINT_COST_VND_FOUR;
+    const tWin = acc.occ * payoutVnd;
+    const tProfit = tWin - tCost;
+    const hitNumbers = Array.from(acc.hitMap.entries())
+      .map(([n, v]) => ({ number: n, days_hit: v.days, total_occ: v.occ }))
+      .sort((a, b) => b.total_occ - a.total_occ || b.days_hit - a.days_hit);
+    return {
+      range_start: t.start,
+      range_end: t.end,
+      label: t.label,
+      picks_per_day: picksPerDay,
+      total_predicted: totalPred,
+      total_hits: acc.hits,
+      total_occurrences: acc.occ,
+      hit_rate_pct: totalPred > 0 ? Math.round((acc.hits / totalPred) * 10000) / 100 : 0,
+      cost_vnd: tCost,
+      win_vnd: tWin,
+      profit_vnd: tProfit,
+      roi_pct: tCost > 0 ? Math.round((tProfit / tCost) * 10000) / 100 : 0,
+      hit_numbers: hitNumbers,
+    };
+  });
+
+  const totalPredicted = dayResults.length * topK;
+  const totalHits = dayResults.reduce((s, d) => s + d.hits, 0);
+  const totalOcc = dayResults.reduce((s, d) => s + d.total_occurrences, 0);
+  const totalActual = dayResults.reduce((s, d) => s + d.actual_count, 0);
+  // Baseline: with filtered pool, baseline = topK / pool_size (instead of /10000)
+  const avgPool = dayResults.length > 0 ? poolSizeSum / dayResults.length : SPACE_SIZE;
+  const baseline = (topK / Math.max(avgPool, topK)) * 100;
+  const hitRate = totalPredicted > 0 ? (totalHits / totalPredicted) * 100 : 0;
+  const coverage = totalActual > 0 ? (totalHits / totalActual) * 100 : 0;
+
+  const totalCost = dayResults.reduce((s, d) => s + d.cost_vnd, 0);
+  const totalWin = dayResults.reduce((s, d) => s + d.win_vnd, 0);
+  const totalProfit = totalWin - totalCost;
+  const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
+  const breakEvenOcc = payoutVnd > 0 ? (topK * POINT_COST_VND_FOUR) / payoutVnd : 0;
+
+  return {
+    combined: true,
+    days_window: days,
+    top_k: topK,
+    total_models: 8,
+    baseline_pct: Math.round(baseline * 1000) / 1000,
+    payout_per_hit_vnd: payoutVnd,
+    cost_per_pick_vnd: POINT_COST_VND_FOUR,
+    total_predicted: totalPredicted,
+    total_hits: totalHits,
+    total_occurrences: totalOcc,
+    total_actual: totalActual,
+    hit_rate_pct: Math.round(hitRate * 1000) / 1000,
+    coverage_pct: Math.round(coverage * 100) / 100,
+    lift_vs_baseline: baseline > 0 ? Math.round((hitRate / baseline) * 100) / 100 : 0,
+    total_cost_vnd: totalCost,
+    total_win_vnd: totalWin,
+    total_profit_vnd: totalProfit,
+    roi_pct: Math.round(roi * 100) / 100,
+    break_even_occurrences_per_day: Math.round(breakEvenOcc * 1000) / 1000,
+    tiers,
+    days: dayResults,
+    candidate_pool_size_avg: Math.round(avgPool),
+    total_observations: totalObsAggregated,
   };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { REGION_LABELS, type Region } from "@/lib/types";
+import { type Region } from "@/lib/types";
 import { useToast } from "./Toast";
 
 interface FourItem {
@@ -34,17 +34,18 @@ interface FourConsensusItem {
 
 interface FourResponse {
   status: string;
-  region: Region;
+  combined: true;
   window_days: number;
   days_available: number;
   warning?: string;
   weights: Record<string, number>;
   predictions: FourItem[];
+  candidate_pool_size: number;
+  total_observations: number;
   total_models: number;
   consensus_threshold: number;
   models: FourModelBreakdown[];
   consensus: FourConsensusItem[];
-  controversial: FourConsensusItem[];
 }
 
 interface BacktestDay {
@@ -79,7 +80,7 @@ interface TierStat {
 
 interface BacktestResponse {
   status: string;
-  region: Region;
+  combined: true;
   days_window: number;
   top_k: number;
   baseline_pct: number;
@@ -97,6 +98,8 @@ interface BacktestResponse {
   total_profit_vnd: number;
   roi_pct: number;
   break_even_occurrences_per_day: number;
+  candidate_pool_size_avg: number;
+  total_observations: number;
   tiers: TierStat[];
   days: BacktestDay[];
 }
@@ -124,7 +127,9 @@ function fmtVndShort(n: number): string {
   return Math.round(n).toString();
 }
 
-export default function PredictionFourPage({ region }: { region: Region }) {
+// Combined-mode tab — the region prop is intentionally ignored.
+// 4-càng aggregates G.DB across all 3 miền (see prediction-four.ts rationale).
+export default function PredictionFourPage(_props: { region: Region }) {
   const toast = useToast();
   const [data, setData] = useState<FourResponse | null>(null);
   const [backtest, setBacktest] = useState<BacktestResponse | null>(null);
@@ -134,24 +139,25 @@ export default function PredictionFourPage({ region }: { region: Region }) {
   const [topK, setTopK] = useState(100);
   const [backtestDays, setBacktestDays] = useState(14);
   const [payout, setPayout] = useState(6_500_000);
+  void _props;
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/predict/four?region=${region}&window=${windowDays}`)
+    fetch(`/api/predict/four?window=${windowDays}`)
       .then((r) => r.json())
       .then((d) => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [region, windowDays]);
+  }, [windowDays]);
 
   useEffect(() => {
     setBacktestLoading(true);
-    fetch(`/api/predict/four/backtest?region=${region}&days=${backtestDays}&top_k=${topK}&window=${windowDays}&payout=${payout}`)
+    fetch(`/api/predict/four/backtest?days=${backtestDays}&top_k=${topK}&window=${windowDays}&payout=${payout}`)
       .then((r) => r.json())
       .then((d) => setBacktest(d))
       .catch(() => setBacktest(null))
       .finally(() => setBacktestLoading(false));
-  }, [region, windowDays, topK, backtestDays, payout]);
+  }, [windowDays, topK, backtestDays, payout]);
 
   async function copyAll() {
     if (!data || data.predictions.length === 0) return;
@@ -175,7 +181,7 @@ export default function PredictionFourPage({ region }: { region: Region }) {
   }
 
   if (loading) {
-    return <div className="text-center py-20 text-slate-500">⏳ Đang phân tích 10.000 số (0000-9999)... mất ~20-40s</div>;
+    return <div className="text-center py-20 text-slate-500">⏳ Đang gộp ĐB của 3 miền + lọc số đã từng ra... mất ~10-20s</div>;
   }
 
   if (!data || data.warning) {
@@ -193,16 +199,25 @@ export default function PredictionFourPage({ region }: { region: Region }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-base md:text-lg font-bold flex items-center gap-2">
-              🎰 Dự Đoán 4 Càng — {REGION_LABELS[region]}
+              🎰 Dự Đoán 4 Càng
+              <span className="px-2 py-0.5 text-[0.65rem] rounded-full bg-fuchsia-500/20 border border-fuchsia-400/40 text-fuchsia-200 font-mono uppercase">
+                Tổng hợp 3 miền · TẤT cả giải
+              </span>
             </h2>
             <p className="text-xs md:text-sm text-slate-300 mt-1">
-              Đoán 4 số cuối của Đặc Biệt (0000-9999) • 8 model ensemble • Top {topK} candidate
+              Gộp <b>tất cả giải ≥4 chữ số</b> của MN + MB + MT (~80-120 sự kiện/ngày) • Lọc còn <b className="text-emerald-300">{data.candidate_pool_size}</b> số đã từng ra trong {data.window_days} ngày • 8 model
             </p>
             <p className="text-[0.7rem] md:text-xs text-slate-400 mt-1">
-              {data.days_available} ngày data G.DB • Window {data.window_days} • Baseline = {(topK / 10000 * 100).toFixed(2)}%
+              {data.days_available} ngày data • <b>{data.total_observations}</b> lần quan sát •
+              Baseline = <b className="text-amber-300">{((topK / data.candidate_pool_size) * 100).toFixed(2)}%/lần</b>
             </p>
-            <p className="text-[0.7rem] text-amber-300 mt-1">
-              ⚠️ 4 càng có không gian xác suất 10.000 số — hit rate kỳ vọng rất thấp. <b>Đọc backtest ROI trước khi đánh.</b>
+            <p className="text-[0.7rem] text-amber-300 mt-1.5">
+              ⚠️ <b>QUAN TRỌNG về payout:</b> Mở rộng sang tất cả giải có nghĩa là <b>hit</b> tính cho mọi giải ≥4 chữ.
+              Nhưng đa số nhà cái CHỈ trả tiền 4 càng cho <b>Đặc Biệt</b>. Anh cần check với bookie:
+              giải khác có được trả không, payout bao nhiêu, hay chỉ là tín hiệu tham khảo.
+            </p>
+            <p className="text-[0.7rem] text-rose-300 mt-1">
+              🚨 ROI backtest là <b>giả định</b>. Trước khi đánh: xác nhận tỉ lệ thật của bookie + thử số nhỏ vài ngày trước khi tăng vốn.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -267,10 +282,11 @@ export default function PredictionFourPage({ region }: { region: Region }) {
           <div className="px-4 md:px-6 py-3 md:py-4 border-b border-white/[0.06] flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm md:text-base font-bold flex items-center gap-2">
-                📊 Độ chính xác 4 Càng (backtest {backtest.days.length} ngày)
+                📊 Độ chính xác 4 Càng — Gộp 3 miền (backtest {backtest.days.length} ngày)
               </h3>
               <p className="text-[0.7rem] text-slate-400 mt-0.5">
-                Replay top {backtest.top_k} mỗi ngày, so với ĐB thực — baseline (đoán bừa) = {backtest.baseline_pct}%
+                Replay top {backtest.top_k} mỗi ngày, so với <b>tất cả giải ≥4 chữ</b> của 3 miền hôm đó (~80-120 sự kiện/ngày) •
+                Pool TB: <b className="text-emerald-300">{backtest.candidate_pool_size_avg} số</b> • Baseline = {backtest.baseline_pct}%/lần
               </p>
             </div>
             <select
