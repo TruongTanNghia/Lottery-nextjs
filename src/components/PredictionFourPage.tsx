@@ -100,6 +100,9 @@ interface BacktestResponse {
   break_even_occurrences_per_day: number;
   candidate_pool_size_avg: number;
   total_observations: number;
+  random_baseline_hits_per_day: number;
+  random_baseline_total_hits: number;
+  model_lift_vs_random: number;
   tiers: TierStat[];
   days: BacktestDay[];
 }
@@ -136,7 +139,7 @@ export default function PredictionFourPage(_props: { region: Region }) {
   const [loading, setLoading] = useState(true);
   const [backtestLoading, setBacktestLoading] = useState(true);
   const [windowDays, setWindowDays] = useState(180);
-  const [topK, setTopK] = useState(100);
+  const [topK, setTopK] = useState(200);
   const [backtestDays, setBacktestDays] = useState(14);
   const [payout, setPayout] = useState(6_500_000);
   void _props;
@@ -304,33 +307,53 @@ export default function PredictionFourPage(_props: { region: Region }) {
           {/* Aggregate KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 p-3 md:p-4">
             <Kpi
-              label="Tổng trúng / dự đoán"
-              value={`${backtest.total_hits}/${backtest.total_predicted}`}
+              label="Model — tổng trúng"
+              value={`${backtest.total_hits}`}
+              accent={backtest.total_hits >= backtest.random_baseline_total_hits ? "text-emerald-300" : "text-rose-300"}
               hint={`Top ${backtest.top_k} × ${backtest.days.length} ngày`}
             />
             <Kpi
-              label="Hit rate"
-              value={`${backtest.hit_rate_pct}%`}
-              accent={backtest.hit_rate_pct >= backtest.baseline_pct * 1.5 ? "text-emerald-300" : backtest.hit_rate_pct >= backtest.baseline_pct ? "text-amber-300" : "text-rose-300"}
-              hint={`Baseline ${backtest.baseline_pct}%`}
+              label="🎲 Random baseline"
+              value={`${backtest.random_baseline_total_hits}`}
+              accent="text-slate-300"
+              hint={`Nếu chọn random từ pool ${backtest.candidate_pool_size_avg}`}
             />
             <Kpi
-              label="Lift"
-              value={`${backtest.lift_vs_baseline}×`}
-              accent={backtest.lift_vs_baseline >= 2 ? "text-emerald-300" : backtest.lift_vs_baseline >= 1.2 ? "text-amber-300" : "text-rose-300"}
-              hint="hit/baseline"
+              label="Model lift vs Random"
+              value={`${backtest.model_lift_vs_random}×`}
+              accent={backtest.model_lift_vs_random >= 1.2 ? "text-emerald-300" : backtest.model_lift_vs_random >= 0.9 ? "text-amber-300" : "text-rose-300"}
+              hint={backtest.model_lift_vs_random >= 1.0 ? "✅ Khá hơn random" : "❌ Tệ hơn random"}
             />
             <Kpi
-              label="Coverage"
-              value={`${backtest.coverage_pct}%`}
+              label="Hit/ngày"
+              value={`${(backtest.total_hits / Math.max(1, backtest.days.length)).toFixed(2)}`}
               accent="text-cyan-300"
-              hint="% ĐB bắt được"
+              hint={`Random: ${backtest.random_baseline_hits_per_day}/ngày`}
             />
             <Kpi
               label="Ngày có hit"
               value={`${backtest.days.filter(d => d.hits > 0).length}/${backtest.days.length}`}
               accent={backtest.days.filter(d => d.hits > 0).length >= backtest.days.length * 0.3 ? "text-emerald-300" : "text-rose-300"}
             />
+          </div>
+
+          {/* Reality check */}
+          <div className="px-3 md:px-4 pb-3">
+            <div className={`rounded-lg border-l-2 px-3 py-2 text-[0.75rem] ${
+              backtest.model_lift_vs_random >= 1.2
+                ? "bg-emerald-500/5 border-emerald-400 text-emerald-200"
+                : backtest.model_lift_vs_random >= 0.9
+                ? "bg-amber-500/5 border-amber-400 text-amber-200"
+                : "bg-rose-500/5 border-rose-400 text-rose-200"
+            }`}>
+              🧮 <b>Trần lý thuyết:</b> chọn ngẫu nhiên K số từ pool ~{backtest.candidate_pool_size_avg} → kỳ vọng <b>{backtest.random_baseline_hits_per_day} hit/ngày</b>.
+              Model anh đang ra <b>{(backtest.total_hits / Math.max(1, backtest.days.length)).toFixed(2)} hit/ngày</b>.
+              {backtest.model_lift_vs_random >= 1.2
+                ? " Model thực sự có edge — đáng để tiếp tục tinh chỉnh."
+                : backtest.model_lift_vs_random >= 0.9
+                ? " Model gần bằng random — xổ số quá ngẫu nhiên để model học được pattern rõ ràng."
+                : " Model đang KÉM RANDOM. Đây là dấu hiệu model bị bias — em vừa rebalance weights, anh re-test sau khi deploy."}
+            </div>
           </div>
 
           {/* Money panel */}

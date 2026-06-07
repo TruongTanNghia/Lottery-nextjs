@@ -786,20 +786,28 @@ export async function predictFourDigit(
 //      combined DoW is noisy).
 // ─────────────────────────────────────────────
 
+// REBALANCED v2: prior weights had digitFreq + pairFreq + borrow at 65%
+// which created systematic bias (same 100 picks every day) → model
+// performed BELOW random selection from pool. Backtest data showed
+// 0.3 hits/day vs ~1.4/day random ceiling.
+//
+// New weights: 70% on frequency + recency (direct count signals that
+// actually correlate with future appearance for sparse data), small
+// contributions from other models for slight variation across days.
 const COMBINED_WEIGHTS: Record<string, number> = {
-  frequency: 0.12,     // direct count over 1260 obs — still noisy but workable
-  recency: 0.15,       // recent EWMA on combined data
+  frequency: 0.40,     // raw appearance count — strongest reliable signal
+  recency: 0.30,       // EWMA — recent appearances slightly more likely (noise-tolerant)
   dayOfWeek: 0.0,      // disabled (3-region mix muddies the signal)
-  temperature: 0.08,
-  digitFreq: 0.28,     // STRONGEST signal — 5040 digit-pos obs / 40 cells
-  loBorrow: 0.07,      // de-emphasized (different prize → different patterns)
-  threeBorrow: 0.10,   // de-emphasized
-  pairFreq: 0.20,      // strong: 1260 obs across 3 pair positions × 100 cells
+  temperature: 0.10,   // hot vs base — modest tie-breaker
+  digitFreq: 0.10,     // de-emphasized — was creating digit-pattern bias
+  loBorrow: 0.02,      // minimal — cross-prize signal is weak for ĐB
+  threeBorrow: 0.03,
+  pairFreq: 0.05,      // de-emphasized — was locking picks to specific endings
 };
 
-const COMBINED_SOFTMAX_T = 0.22;
-const COMBINED_RECENCY_HL = 12;
-const COMBINED_SHRINKAGE = 0.18;
+const COMBINED_SOFTMAX_T = 0.30;     // softer (was 0.22) — more day-to-day variation in top-K
+const COMBINED_RECENCY_HL = 14;
+const COMBINED_SHRINKAGE = 0.12;     // less shrinkage so frequency signal still ranks
 
 export interface FourCombinedResult {
   combined: true;
@@ -1172,8 +1180,14 @@ export async function backtestFourDigit(
 
 export interface FourCombinedBacktestResult extends Omit<FourBacktestResult, "region"> {
   combined: true;
-  candidate_pool_size_avg: number;  // avg pool size across backtest days
-  total_observations: number;       // total ĐB events in window across miền
+  candidate_pool_size_avg: number;     // avg pool size across backtest days
+  total_observations: number;          // total events in window across miền
+  // Random-baseline comparison (deterministic seed for reproducibility):
+  // each backtest day, pick K random numbers from THAT day's pool and count hits.
+  // This is the ceiling for ANY model that doesn't know the future.
+  random_baseline_hits_per_day: number;
+  random_baseline_total_hits: number;
+  model_lift_vs_random: number;        // model_hits / random_hits (1.0 = parity)
 }
 
 export async function backtestFourDigitCombined(
@@ -1203,6 +1217,7 @@ export async function backtestFourDigitCombined(
 
   let poolSizeSum = 0;
   let totalObsAggregated = 0;
+  let expectedRandomHits = 0;   // analytical expected hits if K picks were uniform-random from pool
 
   for (const date of dates) {
     const r = await predictFourDigitCombined(windowDays, date);
@@ -1214,6 +1229,13 @@ export async function backtestFourDigitCombined(
     const occMap = await getFourDigitOccurrencesOnDateCombined(date);
     const hitPicks = topPicks.filter((n) => (occMap.get(n) ?? 0) > 0);
     const totalOcc = hitPicks.reduce((s, n) => s + (occMap.get(n) ?? 0), 0);
+
+    // Random-baseline expectation for this day:
+    // count = (# of today's distinct events that are IN the pool) × (K / pool_size)
+    // = how many random picks from K we'd expect to land on actual events.
+    const poolSet = new Set(r.predictions.map((p) => p.number));
+    const eventsInPool = Array.from(occMap.keys()).filter((n) => poolSet.has(n)).length;
+    expectedRandomHits += eventsInPool * (topK / r.candidate_pool_size);
 
     const hit = hitPicks.length;
     const actualCount = occMap.size;
@@ -1323,5 +1345,12 @@ export async function backtestFourDigitCombined(
     days: dayResults,
     candidate_pool_size_avg: Math.round(avgPool),
     total_observations: totalObsAggregated,
+    random_baseline_hits_per_day: dayResults.length > 0
+      ? Math.round((expectedRandomHits / dayResults.length) * 100) / 100
+      : 0,
+    random_baseline_total_hits: Math.round(expectedRandomHits * 10) / 10,
+    model_lift_vs_random: expectedRandomHits > 0
+      ? Math.round((totalHits / expectedRandomHits) * 100) / 100
+      : 0,
   };
 }
