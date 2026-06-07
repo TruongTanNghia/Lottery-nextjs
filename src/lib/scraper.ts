@@ -192,6 +192,25 @@ function parseXsmbPage(html: string): Record<string, { prize_type: string; numbe
   const $ = cheerio.load(html);
   const results: Record<string, { prize_type: string; number: string }[]> = { "Mien Bac": [] };
 
+  // Strategy 1: xsmn.mobi current structure (table.colgiai) — same parser as XSMN/XSMT.
+  // XSMB has 1 province but xsmn.mobi may still wrap it in the multi-province table.
+  // Iterate ALL colgiai tables (not just .first()) to catch any layout.
+  const allColgiai = $("table.colgiai");
+  if (allColgiai.length) {
+    const merged: Record<string, { prize_type: string; number: string }[]> = {};
+    allColgiai.each((_, t) => {
+      parseMultiProvinceTable($, $(t), merged);
+    });
+    const totalNums = Object.values(merged).reduce((s, arr) => s + arr.length, 0);
+    if (totalNums > 0) {
+      // Collapse all provinces into a single "Mien Bac" bucket (XSMB only has 1 province).
+      const allNums: { prize_type: string; number: string }[] = [];
+      for (const arr of Object.values(merged)) allNums.push(...arr);
+      return { "Mien Bac": allNums };
+    }
+  }
+
+  // Strategy 2: legacy xskt.com.vn pattern (table.result#MB0).
   const labelMap: Record<string, string> = {
     "ĐB": "G.DB", DB: "G.DB", "Đ.B": "G.DB",
     "Mã ĐB": "MA_DB",
@@ -199,10 +218,7 @@ function parseXsmbPage(html: string): Record<string, { prize_type: string; numbe
     G5: "G.5", G6: "G.6", G7: "G.7",
   };
 
-  // Try xsmn.mobi pattern first: table.colgiai (same as XSMN)
-  let table = $("table.colgiai").first();
-  // Fallback: legacy xskt.com.vn pattern
-  if (!table.length) table = $('table.result[id^="MB"]').first();
+  let table = $('table.result[id^="MB"]').first();
   if (!table.length) table = $("table.result").first();
   if (!table.length) return results;
 
@@ -212,7 +228,6 @@ function parseXsmbPage(html: string): Record<string, { prize_type: string; numbe
     const cells = $row.find("td");
     if (cells.length < 2) return;
 
-    // xsmn.mobi uses td.txt-giai for label; legacy uses cells.eq(0)
     let labelCell = $row.find("td.txt-giai").first();
     if (!labelCell.length) labelCell = cells.eq(0);
     const labelText = labelCell.text().trim();
@@ -225,7 +240,6 @@ function parseXsmbPage(html: string): Record<string, { prize_type: string; numbe
     }
     if (!prizeType || prizeType === "MA_DB") return;
 
-    // xsmn.mobi: td.v-giai may have multiple value cells; legacy: cells.slice(1)
     let valueCells = $row.find("td.v-giai");
     if (!valueCells.length) valueCells = cells.slice(1);
 
@@ -250,7 +264,8 @@ async function scrapeXsmbDay(date: Date, force: boolean = false): Promise<Record
   if (!html) return null;
 
   const results = parseXsmbPage(html);
-  if (results["Mien Bac"]?.length > 0) {
+  const count = results["Mien Bac"]?.length ?? 0;
+  if (count > 0) {
     if (force) await deleteDataForDate(dateStr, "xsmb");
     await saveLotteryResults({
       date: dateStr,
@@ -258,7 +273,10 @@ async function scrapeXsmbDay(date: Date, force: boolean = false): Promise<Record
       region: "xsmb",
       results: results["Mien Bac"],
     });
-    console.log(`[XSMB] ${dateStr}: ${results["Mien Bac"].length} numbers`);
+    console.log(`[XSMB] ${dateStr}: ${count} numbers parsed + saved`);
+  } else {
+    // Surface parser failure in Vercel logs — caller may still think scrape succeeded otherwise.
+    console.warn(`[XSMB] ${dateStr}: parser returned 0 numbers. HTML len=${html.length}, first 200 chars: ${html.slice(0, 200)}`);
   }
   return results;
 }
