@@ -20,6 +20,7 @@ import PredictionPairPage from "@/components/PredictionPairPage";
 import PredictionThreePage from "@/components/PredictionThreePage";
 import PredictionVipPage from "@/components/PredictionVipPage";
 import VipBoardPage from "@/components/VipBoardPage";
+import PredictionFourPage from "@/components/PredictionFourPage";
 import SimPage from "@/components/SimPage";
 import TodayPage from "@/components/TodayPage";
 import WatcherPage from "@/components/WatcherPage";
@@ -47,7 +48,7 @@ function Dashboard() {
   const toast = useToast();
 
   const [region, setRegion] = useState<Region>("xsmn");
-  const [view, setView] = useState<"dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "golden">("dashboard");
+  const [view, setView] = useState<"dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden">("dashboard");
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -441,6 +442,8 @@ function Dashboard() {
           <PredictionPairPage region={region} />
         ) : view === "three" ? (
           <PredictionThreePage region={region} />
+        ) : view === "four" ? (
+          <PredictionFourPage region={region} />
         ) : view === "sim" ? (
           <SimPage region={region} />
         ) : view === "watcher" ? (
