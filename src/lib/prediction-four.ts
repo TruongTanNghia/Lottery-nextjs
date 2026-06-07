@@ -1031,14 +1031,16 @@ function buildTiers(topK: number): Array<{ start: number; end: number; label: st
   return out;
 }
 
-const POINT_COST_VND_FOUR = 23_000;
+// 4-càng market rate (user-confirmed from broker): 80k / số, ăn 6tr / hit (~75× ratio).
+// NOT the same as 3-chân (23k cost) — explicit constant here to prevent regression.
+const POINT_COST_VND_FOUR = 80_000;
 
 export async function backtestFourDigit(
   region: Region,
   days: number = 14,
   topK: number = 100,
   windowDays: number = 180,
-  payoutVnd: number = 6_500_000  // 4-càng pays ~280-330× cost per single appearance
+  payoutVnd: number = 6_000_000  // 4-càng standard: 80k cost / 6tr win = 75× ratio (confirmed from broker)
 ): Promise<FourBacktestResult> {
   const dateRows = await query<{ date: string }>(
     `SELECT DISTINCT date FROM lottery_results
@@ -1194,7 +1196,7 @@ export async function backtestFourDigitCombined(
   days: number = 14,
   topK: number = 100,
   windowDays: number = 180,
-  payoutVnd: number = 6_500_000
+  payoutVnd: number = 6_000_000
 ): Promise<FourCombinedBacktestResult> {
   // Distinct dates with at least 1 prize ≥4 digits across any region.
   const dateRows = await query<{ date: string }>(

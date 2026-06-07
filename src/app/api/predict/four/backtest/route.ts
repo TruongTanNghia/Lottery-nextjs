@@ -19,7 +19,7 @@ export async function GET(req: Request) {
     const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "14"), 3), 30);
     const topK = Math.min(Math.max(parseInt(url.searchParams.get("top_k") ?? "100"), 10), 300);
     const window = Math.min(Math.max(parseInt(url.searchParams.get("window") ?? "180"), 14), 360);
-    const payout = Math.min(Math.max(parseInt(url.searchParams.get("payout") ?? "6500000"), 1_000_000), 20_000_000);
+    const payout = Math.min(Math.max(parseInt(url.searchParams.get("payout") ?? "6000000"), 1_000_000), 20_000_000);
 
     const result = await backtestFourDigitCombined(days, topK, window, payout);
     return NextResponse.json({ status: "success", ...result });

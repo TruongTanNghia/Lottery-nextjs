@@ -141,7 +141,7 @@ export default function PredictionFourPage(_props: { region: Region }) {
   const [windowDays, setWindowDays] = useState(180);
   const [topK, setTopK] = useState(200);
   const [backtestDays, setBacktestDays] = useState(14);
-  const [payout, setPayout] = useState(6_500_000);
+  const [payout, setPayout] = useState(6_000_000);
   void _props;
 
   useEffect(() => {
@@ -364,7 +364,7 @@ export default function PredictionFourPage(_props: { region: Region }) {
                   💰 Lãi/Lỗ giả định (đánh 1 điểm × Top {backtest.top_k} / ngày)
                 </h4>
                 <p className="text-[0.7rem] text-slate-400 mt-0.5">
-                  Cost {fmtVnd(backtest.cost_per_pick_vnd)}/điểm × Top {backtest.top_k} = {fmtVnd(backtest.total_cost_vnd / Math.max(1, backtest.days.length))}/ngày •
+                  Cost {fmtVnd(backtest.cost_per_pick_vnd)}/số × Top {backtest.top_k} = {fmtVnd(backtest.total_cost_vnd / Math.max(1, backtest.days.length))}/ngày •
                   Trúng {fmtVnd(backtest.payout_per_hit_vnd)}/lần • Cần ≥ {backtest.break_even_occurrences_per_day} lần trúng/ngày để hoà
                 </p>
               </div>
@@ -375,11 +375,11 @@ export default function PredictionFourPage(_props: { region: Region }) {
                   onChange={(e) => setPayout(parseInt(e.target.value))}
                   className="px-2 py-1 rounded text-xs bg-[#1a2332] border border-slate-600 text-slate-100"
                 >
-                  <option value={4_000_000}>4tr (dealer chặt)</option>
+                  <option value={5_000_000}>5tr (dealer chặt)</option>
                   <option value={5_500_000}>5.5tr</option>
-                  <option value={6_500_000}>6.5tr (chuẩn)</option>
-                  <option value={7_500_000}>7.5tr (dealer tốt)</option>
-                  <option value={10_000_000}>10tr</option>
+                  <option value={6_000_000}>6tr (chuẩn — 80k/số)</option>
+                  <option value={7_000_000}>7tr</option>
+                  <option value={8_000_000}>8tr (dealer tốt)</option>
                 </select>
               </div>
             </div>
