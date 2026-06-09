@@ -130,20 +130,49 @@ function fmtVndShort(n: number): string {
   return Math.round(n).toString();
 }
 
-// Parse user's free-text 2-digit lô list: accept commas, spaces, tabs, newlines.
-// Pad to 2 digits ("5" → "05"). Dedupe + drop invalid.
-function parseLoList(raw: string): string[] {
-  if (!raw.trim()) return [];
-  const tokens = raw.split(/[,\s\t\n;]+/).map((t) => t.trim()).filter(Boolean);
-  const set = new Set<string>();
-  for (const t of tokens) {
-    if (!/^\d{1,2}$/.test(t)) continue;
-    set.add(t.padStart(2, "0"));
-  }
-  return Array.from(set).sort();
+// Digit-count pattern: customer types e.g. "11" meaning "contains 2 digit-1s".
+//   raw     → user's original token, for display
+//   counts  → Map<digit, required count>, e.g. "11" → {1:2}, "12" → {1:1, 2:1}
+//   total   → sum of counts; if > 4 the pattern can never match a 4-digit number
+interface DigitPattern {
+  raw: string;
+  counts: Map<string, number>;
+  total: number;
 }
 
-const FILTER_LIST_KEY = "four_lo_filter_v1";
+// Parse user's free-text digit-pattern list. Tokens 1-4 digits each.
+// "11" = 2 digit-1s. "12" = 1 digit-1 + 1 digit-2. "1234" = exactly those digits.
+// Dedupe by canonical sorted form (so "21" and "12" collapse to same pattern).
+function parsePatternList(raw: string): DigitPattern[] {
+  if (!raw.trim()) return [];
+  const tokens = raw.split(/[,\s\t\n;]+/).map((t) => t.trim()).filter(Boolean);
+  const seen = new Set<string>();
+  const out: DigitPattern[] = [];
+  for (const t of tokens) {
+    if (!/^\d{1,4}$/.test(t)) continue;
+    const canon = t.split("").sort().join("");
+    if (seen.has(canon)) continue;
+    seen.add(canon);
+    const counts = new Map<string, number>();
+    for (const ch of t) counts.set(ch, (counts.get(ch) ?? 0) + 1);
+    out.push({ raw: t, counts, total: t.length });
+  }
+  return out;
+}
+
+// Check if 4-digit number satisfies a digit pattern (i.e. for each digit in pattern,
+// 4-digit has AT LEAST that many occurrences).
+function fourMatchesPattern(four: string, pattern: DigitPattern): boolean {
+  if (pattern.total > 4) return false; // impossible to fit in 4 digits
+  const fc = new Map<string, number>();
+  for (const ch of four) fc.set(ch, (fc.get(ch) ?? 0) + 1);
+  for (const [d, c] of pattern.counts) {
+    if ((fc.get(d) ?? 0) < c) return false;
+  }
+  return true;
+}
+
+const FILTER_LIST_KEY = "four_pattern_filter_v1";
 
 function loadFilterList(): string {
   if (typeof window === "undefined") return "";
@@ -185,8 +214,8 @@ export default function PredictionFourPage(_props: { region: Region }) {
     setFilterRaw(loadFilterList());
   }, []);
 
-  // Parsed lô list (2-digit, padded)
-  const filterParsed = useMemo(() => parseLoList(filterRaw), [filterRaw]);
+  // Parsed digit-count patterns
+  const filterParsed = useMemo(() => parsePatternList(filterRaw), [filterRaw]);
 
   // Breakdown lookup for accordion details (4-digit → 8 model scores)
   const breakdownByNumber = useMemo(() => {
@@ -197,23 +226,27 @@ export default function PredictionFourPage(_props: { region: Region }) {
     return map;
   }, [data]);
 
-  // For each 4-digit in Top K: which user-lô(s) it CONTAINS (anywhere in 4-digit).
-  // Also: which user-lô(s) had zero matches in Top K.
-  const { matchedFour, loHitCounts, unmatchedLo } = useMemo(() => {
+  // For each 4-digit in Top K: which pattern(s) it satisfies (digit-count subset).
+  // Also: per-pattern hit counts + patterns that match 0 in Top K.
+  const { matchedFour, patternHitCounts, unmatchedPatterns } = useMemo(() => {
     const topKPicks = data?.predictions.slice(0, topK) ?? [];
-    const matches: { number: string; rank: number; matchedLos: string[] }[] = [];
-    const hits = new Map<string, number>();   // lô → # of 4-càng matches in Top K
-    for (const lo of filterParsed) hits.set(lo, 0);
+    const matches: { number: string; rank: number; matchedPatterns: string[] }[] = [];
+    const hits = new Map<string, number>();
+    for (const p of filterParsed) hits.set(p.raw, 0);
 
     for (const p of topKPicks) {
-      const matched = filterParsed.filter((lo) => p.number.includes(lo));
+      const matched = filterParsed.filter((pat) => fourMatchesPattern(p.number, pat));
       if (matched.length > 0) {
-        matches.push({ number: p.number, rank: p.rank, matchedLos: matched });
-        for (const lo of matched) hits.set(lo, (hits.get(lo) ?? 0) + 1);
+        matches.push({
+          number: p.number,
+          rank: p.rank,
+          matchedPatterns: matched.map((m) => m.raw),
+        });
+        for (const m of matched) hits.set(m.raw, (hits.get(m.raw) ?? 0) + 1);
       }
     }
-    const unmatched = filterParsed.filter((lo) => (hits.get(lo) ?? 0) === 0);
-    return { matchedFour: matches, loHitCounts: hits, unmatchedLo: unmatched };
+    const unmatched = filterParsed.filter((pat) => (hits.get(pat.raw) ?? 0) === 0).map((p) => p.raw);
+    return { matchedFour: matches, patternHitCounts: hits, unmatchedPatterns: unmatched };
   }, [filterParsed, data, topK]);
 
   function handleFilterChange(v: string) {
@@ -732,31 +765,44 @@ export default function PredictionFourPage(_props: { region: Region }) {
       </p>
 
       {/* ─────────────────────────────────────────────── */}
-      {/* FILTER SECTION: nhập lô 2 chữ → lọc 4-càng top K */}
-      {/* chứa lô đó                                       */}
+      {/* FILTER: nhập mẫu chữ số → lọc 4-càng top K       */}
+      {/* có đủ chữ số đó (digit-count subset)             */}
       {/* ─────────────────────────────────────────────── */}
       <section className="mt-4 md:mt-6 rounded-2xl bg-gradient-to-br from-emerald-900/20 via-teal-900/15 to-cyan-900/15 border border-emerald-500/40 overflow-hidden">
         <div className="px-4 md:px-6 py-3 md:py-4 border-b border-white/[0.06]">
           <h3 className="text-sm md:text-base font-bold flex items-center gap-2">
-            🎯 Lọc 4-Càng Theo Lô Chủ Đạo
+            🎯 Lọc 4-Càng Theo Mẫu Chữ Số
           </h3>
           <p className="text-[0.7rem] text-slate-400 mt-0.5">
-            Nhập lô 2 chữ anh chọn (vd <span className="text-emerald-300 font-mono">11, 23, 67</span>) → hệ thống quét <b className="text-emerald-300">Top {topK}</b> 4-càng,
-            tìm số nào <b>CHỨA</b> lô của anh (bất kỳ vị trí).
-            <b className="text-amber-300"> Auto-sync Top K dropdown ở trên.</b>
+            Nhập mẫu chữ số (vd <span className="text-emerald-300 font-mono">11</span>) → hệ thống quét <b className="text-emerald-300">Top {topK}</b> 4-càng,
+            tìm số có <b>đủ chữ số đó</b> (bất kỳ vị trí). <b className="text-amber-300">Auto-sync Top K dropdown.</b>
           </p>
+          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1.5 text-[0.65rem]">
+            <span className="text-slate-300">
+              <span className="font-mono text-emerald-300">11</span> = có ≥2 chữ số <b>1</b> → 1001, 0101, 1010, 1100…
+            </span>
+            <span className="text-slate-300">
+              <span className="font-mono text-emerald-300">12</span> = có ≥1 chữ <b>1</b> & ≥1 chữ <b>2</b> → 1234, 0012, 2010…
+            </span>
+            <span className="text-slate-300">
+              <span className="font-mono text-emerald-300">111</span> = có ≥3 chữ <b>1</b> → 1110, 1101, 1011, 0111…
+            </span>
+            <span className="text-slate-300">
+              <span className="font-mono text-emerald-300">7</span> = có ≥1 chữ <b>7</b> → bất kỳ số có chữ 7
+            </span>
+          </div>
         </div>
 
         {/* Input area */}
         <div className="p-3 md:p-4 border-b border-white/[0.06]">
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <label className="text-[0.7rem] text-slate-300 font-semibold">
-              ▸ List lô 2 chữ (00-99, ngắn tự pad: <span className="font-mono">5 → 05</span>):
+              ▸ List mẫu chữ số (1-4 chữ mỗi mẫu, cách bằng phẩy/space/newline):
             </label>
             <div className="flex gap-1.5">
               {filterParsed.length > 0 && (
                 <span className="px-2 py-0.5 text-[0.65rem] rounded-full bg-emerald-500/20 text-emerald-200 font-mono">
-                  ✓ {filterParsed.length} lô duy nhất
+                  ✓ {filterParsed.length} mẫu duy nhất
                 </span>
               )}
               <button
@@ -771,7 +817,7 @@ export default function PredictionFourPage(_props: { region: Region }) {
           <textarea
             value={filterRaw}
             onChange={(e) => handleFilterChange(e.target.value)}
-            placeholder="VD:&#10;11, 23, 67&#10;05 88 99&#10;7 (tự pad → 07)"
+            placeholder="VD:&#10;11, 23, 67&#10;111  →  số có ≥3 chữ 1&#10;1234  →  đủ cả {1,2,3,4}"
             rows={3}
             className="w-full px-3 py-2 rounded bg-[#1a2332] border-2 border-slate-700 focus:border-emerald-400 text-slate-100 font-mono text-sm outline-none resize-y"
           />
@@ -779,37 +825,45 @@ export default function PredictionFourPage(_props: { region: Region }) {
 
         {filterParsed.length === 0 ? (
           <div className="p-6 text-center text-slate-500 text-xs">
-            ↑ Nhập list lô 2 chữ để xem 4-càng top K nào khớp
+            ↑ Nhập mẫu chữ số để xem 4-càng top K nào có đủ chữ số đó
           </div>
         ) : (
           <>
-            {/* Per-lo summary */}
+            {/* Per-pattern summary */}
             <div className="px-4 py-3 border-b border-white/[0.06] bg-white/[0.02]">
-              <div className="text-[0.7rem] text-slate-400 uppercase font-semibold mb-2">Lô anh chọn → số 4-càng khớp trong Top {topK}:</div>
+              <div className="text-[0.7rem] text-slate-400 uppercase font-semibold mb-2">Mẫu anh chọn → số 4-càng khớp trong Top {topK}:</div>
               <div className="flex flex-wrap gap-1.5">
-                {filterParsed.map((lo) => {
-                  const count = loHitCounts.get(lo) ?? 0;
+                {filterParsed.map((pat) => {
+                  const count = patternHitCounts.get(pat.raw) ?? 0;
                   const isHot = count > 0;
+                  const tooFat = pat.total > 4;
                   return (
                     <span
-                      key={lo}
+                      key={pat.raw}
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono text-xs ${
-                        isHot
+                        tooFat
+                          ? "bg-rose-500/15 border-rose-500/50 text-rose-200"
+                          : isHot
                           ? "bg-emerald-500/15 border-emerald-400/50 text-emerald-100"
                           : "bg-rose-500/8 border-rose-500/30 text-rose-300/70"
                       }`}
+                      title={
+                        tooFat
+                          ? `${pat.raw} có ${pat.total} chữ → không thể nhét vào 4 ô`
+                          : Array.from(pat.counts).map(([d, c]) => `≥${c} chữ ${d}`).join(", ")
+                      }
                     >
-                      <span className="font-bold">{lo}</span>
-                      <span className={`text-[0.65rem] ${isHot ? "text-emerald-300" : "text-rose-400/70"}`}>
-                        {isHot ? `→ ${count} số` : "→ 0 số"}
+                      <span className="font-bold">{pat.raw}</span>
+                      <span className={`text-[0.65rem] ${tooFat ? "text-rose-300" : isHot ? "text-emerald-300" : "text-rose-400/70"}`}>
+                        {tooFat ? "→ quá dài!" : isHot ? `→ ${count} số` : "→ 0 số"}
                       </span>
                     </span>
                   );
                 })}
               </div>
-              {unmatchedLo.length > 0 && (
+              {unmatchedPatterns.length > 0 && (
                 <p className="mt-2 text-[0.65rem] text-rose-300/80 italic">
-                  ⚠️ {unmatchedLo.length} lô không có 4-càng nào trong Top {topK} khớp → có thể tăng Top K hoặc bỏ qua các lô này.
+                  ⚠️ {unmatchedPatterns.length} mẫu không có 4-càng nào khớp trong Top {topK} → có thể tăng Top K hoặc bỏ mẫu đó.
                 </p>
               )}
             </div>
@@ -818,7 +872,7 @@ export default function PredictionFourPage(_props: { region: Region }) {
             <div className="p-3 md:p-4">
               <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                 <h4 className="text-sm font-bold text-emerald-300">
-                  ✅ 4-Càng Khớp Lô ({matchedFour.length}) — sắp theo rank model tăng dần
+                  ✅ 4-Càng Khớp Mẫu ({matchedFour.length}) — sắp theo rank model tăng dần
                 </h4>
                 <button
                   onClick={copyMatched}
@@ -830,16 +884,18 @@ export default function PredictionFourPage(_props: { region: Region }) {
               </div>
               {matchedFour.length === 0 ? (
                 <p className="text-center text-slate-500 text-xs py-4">
-                  Top {topK} không có 4-càng nào chứa lô anh chọn — anh thử tăng Top K hoặc đổi list lô khác.
+                  Top {topK} không có 4-càng nào khớp mẫu anh chọn — thử tăng Top K hoặc đổi mẫu khác.
                 </p>
               ) : (
                 <div className="space-y-1.5">
                   {matchedFour.map((x) => {
                     const isOpen = expandedNumber === x.number;
                     const bd = breakdownByNumber.get(x.number);
-                    // Highlight matched lo position(s) in the 4-digit number
-                    const lo = x.matchedLos[0]; // primary match for visual emphasis
-                    const idx = lo ? x.number.indexOf(lo) : -1;
+                    // Find digits to highlight: union of all matched patterns' digit sets
+                    const highlightDigits = new Set<string>();
+                    for (const matchedRaw of x.matchedPatterns) {
+                      for (const ch of matchedRaw) highlightDigits.add(ch);
+                    }
                     return (
                       <div key={x.number} className="rounded-lg border border-emerald-400/40 bg-emerald-500/5 overflow-hidden">
                         <button
@@ -847,14 +903,15 @@ export default function PredictionFourPage(_props: { region: Region }) {
                           className="w-full px-3 py-2 flex items-center justify-between hover:bg-emerald-500/10 transition text-left"
                         >
                           <span className="flex items-center gap-3 flex-wrap">
-                            <span className="font-mono text-base md:text-lg font-extrabold text-emerald-100 tracking-wider">
-                              {idx >= 0 ? (
-                                <>
-                                  <span className="text-slate-400">{x.number.slice(0, idx)}</span>
-                                  <span className="text-yellow-300 bg-yellow-400/20 px-0.5 rounded">{x.number.slice(idx, idx + 2)}</span>
-                                  <span className="text-slate-400">{x.number.slice(idx + 2)}</span>
-                                </>
-                              ) : x.number}
+                            <span className="font-mono text-base md:text-lg font-extrabold tracking-wider">
+                              {x.number.split("").map((ch, i) => (
+                                <span
+                                  key={i}
+                                  className={highlightDigits.has(ch) ? "text-yellow-300 bg-yellow-400/20 px-0.5 rounded" : "text-slate-400"}
+                                >
+                                  {ch}
+                                </span>
+                              ))}
                             </span>
                             <span className="text-[0.7rem] font-mono text-emerald-300">
                               #{x.rank}
@@ -863,7 +920,7 @@ export default function PredictionFourPage(_props: { region: Region }) {
                               {x.rank <= 10 ? "🏆 Top 10" : x.rank <= 30 ? "🥇 Top 30" : x.rank <= 100 ? "🥈 Top 100" : `Top ${topK}`}
                             </span>
                             <span className="text-[0.65rem] text-amber-300">
-                              khớp lô: <b>{x.matchedLos.join(", ")}</b>
+                              khớp mẫu: <b>{x.matchedPatterns.join(", ")}</b>
                             </span>
                           </span>
                           <span className="text-[0.7rem] text-slate-400 shrink-0">
@@ -889,8 +946,7 @@ export default function PredictionFourPage(_props: { region: Region }) {
                 </div>
               )}
               <p className="mt-3 text-[0.65rem] text-slate-500 italic">
-                💡 Chữ vàng = đoạn chứa lô anh chọn. Nếu 1 số khớp nhiều lô, hiển thị tất cả ở "khớp lô".
-                Bấm vào số để xem 8 model thành phần.
+                💡 Chữ <b className="text-yellow-300">vàng</b> = chữ số khớp mẫu của anh. Bấm số để xem 8 model thành phần.
               </p>
             </div>
           </>
