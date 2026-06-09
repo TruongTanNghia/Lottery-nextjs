@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { type Region } from "@/lib/types";
 import { useToast } from "./Toast";
 
@@ -130,6 +130,39 @@ function fmtVndShort(n: number): string {
   return Math.round(n).toString();
 }
 
+// Parse user's free-text 4-digit list: accept commas, spaces, tabs, newlines.
+// Pad numerals shorter than 4 with leading zeros. Dedupe + drop invalid.
+function parseFourDigitList(raw: string): string[] {
+  if (!raw.trim()) return [];
+  const tokens = raw.split(/[,\s\t\n;]+/).map((t) => t.trim()).filter(Boolean);
+  const set = new Set<string>();
+  for (const t of tokens) {
+    if (!/^\d{1,4}$/.test(t)) continue;
+    set.add(t.padStart(4, "0"));
+  }
+  return Array.from(set).sort();
+}
+
+const FILTER_LIST_KEY = "four_filter_list_v1";
+
+function loadFilterList(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(FILTER_LIST_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function saveFilterList(s: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(FILTER_LIST_KEY, s);
+  } catch {
+    /* ignore */
+  }
+}
+
 // Combined-mode tab — the region prop is intentionally ignored.
 // 4-càng aggregates G.DB across all 3 miền (see prediction-four.ts rationale).
 export default function PredictionFourPage(_props: { region: Region }) {
@@ -143,6 +176,74 @@ export default function PredictionFourPage(_props: { region: Region }) {
   const [backtestDays, setBacktestDays] = useState(14);
   const [payout, setPayout] = useState(6_000_000);
   void _props;
+
+  // ─── Filter section: user's "số chủ đạo" intersected with model's top-K ───
+  const [filterRaw, setFilterRaw] = useState<string>("");
+  const [showAllExcluded, setShowAllExcluded] = useState(false);
+  const [expandedNumber, setExpandedNumber] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFilterRaw(loadFilterList());
+  }, []);
+
+  const filterParsed = useMemo(() => parseFourDigitList(filterRaw), [filterRaw]);
+
+  // Build rank lookup over ALL predictions (full pool ~9000), not just top K
+  const rankByNumber = useMemo(() => {
+    const map = new Map<string, number>();
+    if (data?.predictions) {
+      for (const p of data.predictions) map.set(p.number, p.rank);
+    }
+    return map;
+  }, [data]);
+
+  // Build breakdown lookup for accordion details
+  const breakdownByNumber = useMemo(() => {
+    const map = new Map<string, Record<string, number>>();
+    if (data?.predictions) {
+      for (const p of data.predictions) map.set(p.number, p.breakdown);
+    }
+    return map;
+  }, [data]);
+
+  // Intersection: filterParsed ∩ topK picks
+  const { included, excluded } = useMemo(() => {
+    const inc: { number: string; rank: number }[] = [];
+    const exc: { number: string; rank: number | null }[] = [];
+    for (const n of filterParsed) {
+      const rank = rankByNumber.get(n);
+      if (rank !== undefined && rank <= topK) {
+        inc.push({ number: n, rank });
+      } else {
+        exc.push({ number: n, rank: rank ?? null });
+      }
+    }
+    inc.sort((a, b) => a.rank - b.rank);
+    exc.sort((a, b) => (a.rank ?? 99999) - (b.rank ?? 99999));
+    return { included: inc, excluded: exc };
+  }, [filterParsed, rankByNumber, topK]);
+
+  function handleFilterChange(v: string) {
+    setFilterRaw(v);
+    saveFilterList(v);
+  }
+
+  function clearFilter() {
+    setFilterRaw("");
+    saveFilterList("");
+    setExpandedNumber(null);
+  }
+
+  async function copyIncluded() {
+    if (included.length === 0) return;
+    const txt = included.map((x) => x.number).join(", ");
+    try {
+      await navigator.clipboard.writeText(txt);
+      toast.show("success", `Copy ${included.length} số được chơi`);
+    } catch {
+      toast.show("error", "Trình duyệt chặn copy");
+    }
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -636,6 +737,191 @@ export default function PredictionFourPage(_props: { region: Region }) {
         💡 <b>Cách đọc:</b> Model "Mượn lô" và "Mượn 3 chân" leverage data dày hơn (100/1000-space) — trọng số cao nhất.
         Hover số bất kỳ để xem rank, probability, composite score.
       </p>
+
+      {/* ─────────────────────────────────────────────── */}
+      {/* FILTER SECTION: số chủ đạo ∩ Top K model        */}
+      {/* ─────────────────────────────────────────────── */}
+      <section className="mt-4 md:mt-6 rounded-2xl bg-gradient-to-br from-emerald-900/20 via-teal-900/15 to-cyan-900/15 border border-emerald-500/40 overflow-hidden">
+        <div className="px-4 md:px-6 py-3 md:py-4 border-b border-white/[0.06]">
+          <h3 className="text-sm md:text-base font-bold flex items-center gap-2">
+            🎯 Lọc theo Số Chủ Đạo của anh
+          </h3>
+          <p className="text-[0.7rem] text-slate-400 mt-0.5">
+            Dán list số chủ đạo → hệ thống lọc giao với <b className="text-emerald-300">Top {topK}</b> model. Chỉ chơi số nào trong cả 2.
+            <b className="text-amber-300"> Auto-sync với dropdown Top K phía trên.</b>
+          </p>
+        </div>
+
+        {/* Input area */}
+        <div className="p-3 md:p-4 border-b border-white/[0.06]">
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <label className="text-[0.7rem] text-slate-300 font-semibold">
+              ▸ List số chủ đạo (4 chữ — phẩy/space/newline đều OK; số ngắn tự pad số 0):
+            </label>
+            <div className="flex gap-1.5">
+              {filterParsed.length > 0 && (
+                <span className="px-2 py-0.5 text-[0.65rem] rounded-full bg-emerald-500/20 text-emerald-200 font-mono">
+                  ✓ {filterParsed.length} số duy nhất
+                </span>
+              )}
+              <button
+                onClick={clearFilter}
+                disabled={!filterRaw}
+                className="px-2.5 py-1 text-[0.65rem] rounded bg-slate-600 hover:bg-slate-500 text-white font-bold disabled:opacity-40"
+              >
+                🗑 Xoá hết
+              </button>
+            </div>
+          </div>
+          <textarea
+            value={filterRaw}
+            onChange={(e) => handleFilterChange(e.target.value)}
+            placeholder="VD:&#10;0123, 4567, 8901&#10;1234 5678 9012&#10;234 (tự pad → 0234)"
+            rows={4}
+            className="w-full px-3 py-2 rounded bg-[#1a2332] border-2 border-slate-700 focus:border-emerald-400 text-slate-100 font-mono text-sm outline-none resize-y"
+          />
+        </div>
+
+        {filterParsed.length === 0 ? (
+          <div className="p-6 text-center text-slate-500 text-xs">
+            ↑ Nhập list số chủ đạo để xem kết quả lọc
+          </div>
+        ) : (
+          <>
+            {/* Result summary */}
+            <div className="px-4 py-3 border-b border-white/[0.06] bg-white/[0.02]">
+              <div className="flex flex-wrap items-baseline gap-4 text-[0.75rem]">
+                <span>
+                  Đã nhập: <b className="text-slate-200 font-mono">{filterParsed.length}</b>
+                </span>
+                <span>
+                  ✅ Trùng Top {topK}: <b className="text-emerald-300 font-mono">{included.length}</b>
+                </span>
+                <span>
+                  ❌ Bị loại: <b className="text-rose-300 font-mono">{excluded.length}</b>
+                </span>
+                <span className="text-slate-400">
+                  ({((included.length / filterParsed.length) * 100).toFixed(0)}% match)
+                </span>
+              </div>
+            </div>
+
+            {/* Included (green) */}
+            <div className="p-3 md:p-4 border-b border-white/[0.06]">
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                <h4 className="text-sm font-bold text-emerald-300">
+                  ✅ Được Chơi ({included.length}) — sắp theo rank model tăng dần
+                </h4>
+                <button
+                  onClick={copyIncluded}
+                  disabled={included.length === 0}
+                  className="px-3 py-1.5 text-xs rounded bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold disabled:opacity-40"
+                >
+                  📋 Copy {included.length} số
+                </button>
+              </div>
+              {included.length === 0 ? (
+                <p className="text-center text-slate-500 text-xs py-4">
+                  Không có số nào trong list khớp Top {topK} model — anh nên tăng Top K hoặc xem lại list chủ đạo.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {included.map((x) => {
+                    const isOpen = expandedNumber === x.number;
+                    const bd = breakdownByNumber.get(x.number);
+                    return (
+                      <div key={x.number} className="rounded-lg border border-emerald-400/40 bg-emerald-500/5 overflow-hidden">
+                        <button
+                          onClick={() => setExpandedNumber(isOpen ? null : x.number)}
+                          className="w-full px-3 py-2 flex items-center justify-between hover:bg-emerald-500/10 transition"
+                        >
+                          <span className="flex items-center gap-3">
+                            <span className="font-mono text-base font-extrabold text-emerald-100 tracking-wider">
+                              {x.number}
+                            </span>
+                            <span className="text-[0.7rem] font-mono text-emerald-300">
+                              rank #{x.rank}
+                            </span>
+                            <span className="text-[0.65rem] text-slate-500">
+                              {x.rank <= 10 ? "🏆 Top 10" : x.rank <= 30 ? "🥇 Top 30" : x.rank <= 100 ? "🥈 Top 100" : `Top ${topK}`}
+                            </span>
+                          </span>
+                          <span className="text-[0.7rem] text-slate-400">
+                            {isOpen ? "▼ chi tiết" : "▶ xem chi tiết"}
+                          </span>
+                        </button>
+                        {isOpen && bd && (
+                          <div className="px-3 py-2 bg-[#0a0e17] border-t border-emerald-500/20">
+                            <div className="text-[0.6rem] text-slate-400 uppercase mb-1.5">Điểm từng model (normalized 0-1):</div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+                              {Object.entries(bd).map(([k, v]) => (
+                                <div key={k} className="flex items-center justify-between px-2 py-1 rounded bg-white/[0.03] text-[0.65rem]">
+                                  <span className="text-slate-300 font-mono">{k}</span>
+                                  <span className="text-emerald-300 font-mono font-bold">{v.toFixed(3)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Excluded (gray) */}
+            <div className="p-3 md:p-4">
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                <h4 className="text-sm font-bold text-rose-300">
+                  ❌ Không Nên Chơi ({excluded.length}) — ngoài Top {topK} model
+                </h4>
+                {excluded.length > 30 && (
+                  <button
+                    onClick={() => setShowAllExcluded((v) => !v)}
+                    className="px-2.5 py-1 text-[0.65rem] rounded bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold"
+                  >
+                    {showAllExcluded ? "Thu gọn" : `Hiện hết ${excluded.length}`}
+                  </button>
+                )}
+              </div>
+              {excluded.length === 0 ? (
+                <p className="text-center text-emerald-300 text-xs py-3 font-bold">
+                  🎉 Toàn bộ list của anh đều trong Top {topK} model — anh có gu tốt!
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {(showAllExcluded ? excluded : excluded.slice(0, 30)).map((x) => {
+                    const tooltip = x.rank
+                      ? `Rank trong full pool: #${x.rank} (cần ≤ ${topK})`
+                      : "Không có trong pool — chưa từng ra trong 180 ngày";
+                    return (
+                      <span
+                        key={x.number}
+                        title={tooltip}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-rose-500/8 border border-rose-500/30 text-rose-200/80 font-mono font-semibold text-xs"
+                      >
+                        {x.number}
+                        <span className="text-[0.55rem] text-rose-300/60">
+                          {x.rank ? `#${x.rank}` : "off-pool"}
+                        </span>
+                      </span>
+                    );
+                  })}
+                  {!showAllExcluded && excluded.length > 30 && (
+                    <span className="text-[0.7rem] text-slate-500 italic px-2 py-1">
+                      ... +{excluded.length - 30} nữa
+                    </span>
+                  )}
+                </div>
+              )}
+              <p className="mt-2 text-[0.65rem] text-slate-500 italic">
+                💡 Số có rank thấp (#1500-5000) = model có để ý nhưng chưa đủ cao. Số "off-pool" = chưa từng ra trong 180 ngày qua.
+              </p>
+            </div>
+          </>
+        )}
+      </section>
     </>
   );
 }
