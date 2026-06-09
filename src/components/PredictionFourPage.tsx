@@ -130,20 +130,20 @@ function fmtVndShort(n: number): string {
   return Math.round(n).toString();
 }
 
-// Parse user's free-text 4-digit list: accept commas, spaces, tabs, newlines.
-// Pad numerals shorter than 4 with leading zeros. Dedupe + drop invalid.
-function parseFourDigitList(raw: string): string[] {
+// Parse user's free-text 2-digit lô list: accept commas, spaces, tabs, newlines.
+// Pad to 2 digits ("5" → "05"). Dedupe + drop invalid.
+function parseLoList(raw: string): string[] {
   if (!raw.trim()) return [];
   const tokens = raw.split(/[,\s\t\n;]+/).map((t) => t.trim()).filter(Boolean);
   const set = new Set<string>();
   for (const t of tokens) {
-    if (!/^\d{1,4}$/.test(t)) continue;
-    set.add(t.padStart(4, "0"));
+    if (!/^\d{1,2}$/.test(t)) continue;
+    set.add(t.padStart(2, "0"));
   }
   return Array.from(set).sort();
 }
 
-const FILTER_LIST_KEY = "four_filter_list_v1";
+const FILTER_LIST_KEY = "four_lo_filter_v1";
 
 function loadFilterList(): string {
   if (typeof window === "undefined") return "";
@@ -177,27 +177,18 @@ export default function PredictionFourPage(_props: { region: Region }) {
   const [payout, setPayout] = useState(6_000_000);
   void _props;
 
-  // ─── Filter section: user's "số chủ đạo" intersected with model's top-K ───
+  // ─── Filter section: user's 2-digit lo list → matches in top-K 4-cang ───
   const [filterRaw, setFilterRaw] = useState<string>("");
-  const [showAllExcluded, setShowAllExcluded] = useState(false);
   const [expandedNumber, setExpandedNumber] = useState<string | null>(null);
 
   useEffect(() => {
     setFilterRaw(loadFilterList());
   }, []);
 
-  const filterParsed = useMemo(() => parseFourDigitList(filterRaw), [filterRaw]);
+  // Parsed lô list (2-digit, padded)
+  const filterParsed = useMemo(() => parseLoList(filterRaw), [filterRaw]);
 
-  // Build rank lookup over ALL predictions (full pool ~9000), not just top K
-  const rankByNumber = useMemo(() => {
-    const map = new Map<string, number>();
-    if (data?.predictions) {
-      for (const p of data.predictions) map.set(p.number, p.rank);
-    }
-    return map;
-  }, [data]);
-
-  // Build breakdown lookup for accordion details
+  // Breakdown lookup for accordion details (4-digit → 8 model scores)
   const breakdownByNumber = useMemo(() => {
     const map = new Map<string, Record<string, number>>();
     if (data?.predictions) {
@@ -206,22 +197,24 @@ export default function PredictionFourPage(_props: { region: Region }) {
     return map;
   }, [data]);
 
-  // Intersection: filterParsed ∩ topK picks
-  const { included, excluded } = useMemo(() => {
-    const inc: { number: string; rank: number }[] = [];
-    const exc: { number: string; rank: number | null }[] = [];
-    for (const n of filterParsed) {
-      const rank = rankByNumber.get(n);
-      if (rank !== undefined && rank <= topK) {
-        inc.push({ number: n, rank });
-      } else {
-        exc.push({ number: n, rank: rank ?? null });
+  // For each 4-digit in Top K: which user-lô(s) it CONTAINS (anywhere in 4-digit).
+  // Also: which user-lô(s) had zero matches in Top K.
+  const { matchedFour, loHitCounts, unmatchedLo } = useMemo(() => {
+    const topKPicks = data?.predictions.slice(0, topK) ?? [];
+    const matches: { number: string; rank: number; matchedLos: string[] }[] = [];
+    const hits = new Map<string, number>();   // lô → # of 4-càng matches in Top K
+    for (const lo of filterParsed) hits.set(lo, 0);
+
+    for (const p of topKPicks) {
+      const matched = filterParsed.filter((lo) => p.number.includes(lo));
+      if (matched.length > 0) {
+        matches.push({ number: p.number, rank: p.rank, matchedLos: matched });
+        for (const lo of matched) hits.set(lo, (hits.get(lo) ?? 0) + 1);
       }
     }
-    inc.sort((a, b) => a.rank - b.rank);
-    exc.sort((a, b) => (a.rank ?? 99999) - (b.rank ?? 99999));
-    return { included: inc, excluded: exc };
-  }, [filterParsed, rankByNumber, topK]);
+    const unmatched = filterParsed.filter((lo) => (hits.get(lo) ?? 0) === 0);
+    return { matchedFour: matches, loHitCounts: hits, unmatchedLo: unmatched };
+  }, [filterParsed, data, topK]);
 
   function handleFilterChange(v: string) {
     setFilterRaw(v);
@@ -234,12 +227,12 @@ export default function PredictionFourPage(_props: { region: Region }) {
     setExpandedNumber(null);
   }
 
-  async function copyIncluded() {
-    if (included.length === 0) return;
-    const txt = included.map((x) => x.number).join(", ");
+  async function copyMatched() {
+    if (matchedFour.length === 0) return;
+    const txt = matchedFour.map((x) => x.number).join(", ");
     try {
       await navigator.clipboard.writeText(txt);
-      toast.show("success", `Copy ${included.length} số được chơi`);
+      toast.show("success", `Copy ${matchedFour.length} số 4-càng khớp lô`);
     } catch {
       toast.show("error", "Trình duyệt chặn copy");
     }
@@ -739,16 +732,18 @@ export default function PredictionFourPage(_props: { region: Region }) {
       </p>
 
       {/* ─────────────────────────────────────────────── */}
-      {/* FILTER SECTION: số chủ đạo ∩ Top K model        */}
+      {/* FILTER SECTION: nhập lô 2 chữ → lọc 4-càng top K */}
+      {/* chứa lô đó                                       */}
       {/* ─────────────────────────────────────────────── */}
       <section className="mt-4 md:mt-6 rounded-2xl bg-gradient-to-br from-emerald-900/20 via-teal-900/15 to-cyan-900/15 border border-emerald-500/40 overflow-hidden">
         <div className="px-4 md:px-6 py-3 md:py-4 border-b border-white/[0.06]">
           <h3 className="text-sm md:text-base font-bold flex items-center gap-2">
-            🎯 Lọc theo Số Chủ Đạo của anh
+            🎯 Lọc 4-Càng Theo Lô Chủ Đạo
           </h3>
           <p className="text-[0.7rem] text-slate-400 mt-0.5">
-            Dán list số chủ đạo → hệ thống lọc giao với <b className="text-emerald-300">Top {topK}</b> model. Chỉ chơi số nào trong cả 2.
-            <b className="text-amber-300"> Auto-sync với dropdown Top K phía trên.</b>
+            Nhập lô 2 chữ anh chọn (vd <span className="text-emerald-300 font-mono">11, 23, 67</span>) → hệ thống quét <b className="text-emerald-300">Top {topK}</b> 4-càng,
+            tìm số nào <b>CHỨA</b> lô của anh (bất kỳ vị trí).
+            <b className="text-amber-300"> Auto-sync Top K dropdown ở trên.</b>
           </p>
         </div>
 
@@ -756,12 +751,12 @@ export default function PredictionFourPage(_props: { region: Region }) {
         <div className="p-3 md:p-4 border-b border-white/[0.06]">
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <label className="text-[0.7rem] text-slate-300 font-semibold">
-              ▸ List số chủ đạo (4 chữ — phẩy/space/newline đều OK; số ngắn tự pad số 0):
+              ▸ List lô 2 chữ (00-99, ngắn tự pad: <span className="font-mono">5 → 05</span>):
             </label>
             <div className="flex gap-1.5">
               {filterParsed.length > 0 && (
                 <span className="px-2 py-0.5 text-[0.65rem] rounded-full bg-emerald-500/20 text-emerald-200 font-mono">
-                  ✓ {filterParsed.length} số duy nhất
+                  ✓ {filterParsed.length} lô duy nhất
                 </span>
               )}
               <button
@@ -776,83 +771,108 @@ export default function PredictionFourPage(_props: { region: Region }) {
           <textarea
             value={filterRaw}
             onChange={(e) => handleFilterChange(e.target.value)}
-            placeholder="VD:&#10;0123, 4567, 8901&#10;1234 5678 9012&#10;234 (tự pad → 0234)"
-            rows={4}
+            placeholder="VD:&#10;11, 23, 67&#10;05 88 99&#10;7 (tự pad → 07)"
+            rows={3}
             className="w-full px-3 py-2 rounded bg-[#1a2332] border-2 border-slate-700 focus:border-emerald-400 text-slate-100 font-mono text-sm outline-none resize-y"
           />
         </div>
 
         {filterParsed.length === 0 ? (
           <div className="p-6 text-center text-slate-500 text-xs">
-            ↑ Nhập list số chủ đạo để xem kết quả lọc
+            ↑ Nhập list lô 2 chữ để xem 4-càng top K nào khớp
           </div>
         ) : (
           <>
-            {/* Result summary */}
+            {/* Per-lo summary */}
             <div className="px-4 py-3 border-b border-white/[0.06] bg-white/[0.02]">
-              <div className="flex flex-wrap items-baseline gap-4 text-[0.75rem]">
-                <span>
-                  Đã nhập: <b className="text-slate-200 font-mono">{filterParsed.length}</b>
-                </span>
-                <span>
-                  ✅ Trùng Top {topK}: <b className="text-emerald-300 font-mono">{included.length}</b>
-                </span>
-                <span>
-                  ❌ Bị loại: <b className="text-rose-300 font-mono">{excluded.length}</b>
-                </span>
-                <span className="text-slate-400">
-                  ({((included.length / filterParsed.length) * 100).toFixed(0)}% match)
-                </span>
+              <div className="text-[0.7rem] text-slate-400 uppercase font-semibold mb-2">Lô anh chọn → số 4-càng khớp trong Top {topK}:</div>
+              <div className="flex flex-wrap gap-1.5">
+                {filterParsed.map((lo) => {
+                  const count = loHitCounts.get(lo) ?? 0;
+                  const isHot = count > 0;
+                  return (
+                    <span
+                      key={lo}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono text-xs ${
+                        isHot
+                          ? "bg-emerald-500/15 border-emerald-400/50 text-emerald-100"
+                          : "bg-rose-500/8 border-rose-500/30 text-rose-300/70"
+                      }`}
+                    >
+                      <span className="font-bold">{lo}</span>
+                      <span className={`text-[0.65rem] ${isHot ? "text-emerald-300" : "text-rose-400/70"}`}>
+                        {isHot ? `→ ${count} số` : "→ 0 số"}
+                      </span>
+                    </span>
+                  );
+                })}
               </div>
+              {unmatchedLo.length > 0 && (
+                <p className="mt-2 text-[0.65rem] text-rose-300/80 italic">
+                  ⚠️ {unmatchedLo.length} lô không có 4-càng nào trong Top {topK} khớp → có thể tăng Top K hoặc bỏ qua các lô này.
+                </p>
+              )}
             </div>
 
-            {/* Included (green) */}
-            <div className="p-3 md:p-4 border-b border-white/[0.06]">
+            {/* Matched 4-càng */}
+            <div className="p-3 md:p-4">
               <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                 <h4 className="text-sm font-bold text-emerald-300">
-                  ✅ Được Chơi ({included.length}) — sắp theo rank model tăng dần
+                  ✅ 4-Càng Khớp Lô ({matchedFour.length}) — sắp theo rank model tăng dần
                 </h4>
                 <button
-                  onClick={copyIncluded}
-                  disabled={included.length === 0}
+                  onClick={copyMatched}
+                  disabled={matchedFour.length === 0}
                   className="px-3 py-1.5 text-xs rounded bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold disabled:opacity-40"
                 >
-                  📋 Copy {included.length} số
+                  📋 Copy {matchedFour.length} số
                 </button>
               </div>
-              {included.length === 0 ? (
+              {matchedFour.length === 0 ? (
                 <p className="text-center text-slate-500 text-xs py-4">
-                  Không có số nào trong list khớp Top {topK} model — anh nên tăng Top K hoặc xem lại list chủ đạo.
+                  Top {topK} không có 4-càng nào chứa lô anh chọn — anh thử tăng Top K hoặc đổi list lô khác.
                 </p>
               ) : (
                 <div className="space-y-1.5">
-                  {included.map((x) => {
+                  {matchedFour.map((x) => {
                     const isOpen = expandedNumber === x.number;
                     const bd = breakdownByNumber.get(x.number);
+                    // Highlight matched lo position(s) in the 4-digit number
+                    const lo = x.matchedLos[0]; // primary match for visual emphasis
+                    const idx = lo ? x.number.indexOf(lo) : -1;
                     return (
                       <div key={x.number} className="rounded-lg border border-emerald-400/40 bg-emerald-500/5 overflow-hidden">
                         <button
                           onClick={() => setExpandedNumber(isOpen ? null : x.number)}
-                          className="w-full px-3 py-2 flex items-center justify-between hover:bg-emerald-500/10 transition"
+                          className="w-full px-3 py-2 flex items-center justify-between hover:bg-emerald-500/10 transition text-left"
                         >
-                          <span className="flex items-center gap-3">
-                            <span className="font-mono text-base font-extrabold text-emerald-100 tracking-wider">
-                              {x.number}
+                          <span className="flex items-center gap-3 flex-wrap">
+                            <span className="font-mono text-base md:text-lg font-extrabold text-emerald-100 tracking-wider">
+                              {idx >= 0 ? (
+                                <>
+                                  <span className="text-slate-400">{x.number.slice(0, idx)}</span>
+                                  <span className="text-yellow-300 bg-yellow-400/20 px-0.5 rounded">{x.number.slice(idx, idx + 2)}</span>
+                                  <span className="text-slate-400">{x.number.slice(idx + 2)}</span>
+                                </>
+                              ) : x.number}
                             </span>
                             <span className="text-[0.7rem] font-mono text-emerald-300">
-                              rank #{x.rank}
+                              #{x.rank}
                             </span>
                             <span className="text-[0.65rem] text-slate-500">
                               {x.rank <= 10 ? "🏆 Top 10" : x.rank <= 30 ? "🥇 Top 30" : x.rank <= 100 ? "🥈 Top 100" : `Top ${topK}`}
                             </span>
+                            <span className="text-[0.65rem] text-amber-300">
+                              khớp lô: <b>{x.matchedLos.join(", ")}</b>
+                            </span>
                           </span>
-                          <span className="text-[0.7rem] text-slate-400">
-                            {isOpen ? "▼ chi tiết" : "▶ xem chi tiết"}
+                          <span className="text-[0.7rem] text-slate-400 shrink-0">
+                            {isOpen ? "▼" : "▶"}
                           </span>
                         </button>
                         {isOpen && bd && (
                           <div className="px-3 py-2 bg-[#0a0e17] border-t border-emerald-500/20">
-                            <div className="text-[0.6rem] text-slate-400 uppercase mb-1.5">Điểm từng model (normalized 0-1):</div>
+                            <div className="text-[0.6rem] text-slate-400 uppercase mb-1.5">Điểm 8 model thành phần (normalized 0-1):</div>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
                               {Object.entries(bd).map(([k, v]) => (
                                 <div key={k} className="flex items-center justify-between px-2 py-1 rounded bg-white/[0.03] text-[0.65rem]">
@@ -868,55 +888,9 @@ export default function PredictionFourPage(_props: { region: Region }) {
                   })}
                 </div>
               )}
-            </div>
-
-            {/* Excluded (gray) */}
-            <div className="p-3 md:p-4">
-              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-                <h4 className="text-sm font-bold text-rose-300">
-                  ❌ Không Nên Chơi ({excluded.length}) — ngoài Top {topK} model
-                </h4>
-                {excluded.length > 30 && (
-                  <button
-                    onClick={() => setShowAllExcluded((v) => !v)}
-                    className="px-2.5 py-1 text-[0.65rem] rounded bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold"
-                  >
-                    {showAllExcluded ? "Thu gọn" : `Hiện hết ${excluded.length}`}
-                  </button>
-                )}
-              </div>
-              {excluded.length === 0 ? (
-                <p className="text-center text-emerald-300 text-xs py-3 font-bold">
-                  🎉 Toàn bộ list của anh đều trong Top {topK} model — anh có gu tốt!
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {(showAllExcluded ? excluded : excluded.slice(0, 30)).map((x) => {
-                    const tooltip = x.rank
-                      ? `Rank trong full pool: #${x.rank} (cần ≤ ${topK})`
-                      : "Không có trong pool — chưa từng ra trong 180 ngày";
-                    return (
-                      <span
-                        key={x.number}
-                        title={tooltip}
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-rose-500/8 border border-rose-500/30 text-rose-200/80 font-mono font-semibold text-xs"
-                      >
-                        {x.number}
-                        <span className="text-[0.55rem] text-rose-300/60">
-                          {x.rank ? `#${x.rank}` : "off-pool"}
-                        </span>
-                      </span>
-                    );
-                  })}
-                  {!showAllExcluded && excluded.length > 30 && (
-                    <span className="text-[0.7rem] text-slate-500 italic px-2 py-1">
-                      ... +{excluded.length - 30} nữa
-                    </span>
-                  )}
-                </div>
-              )}
-              <p className="mt-2 text-[0.65rem] text-slate-500 italic">
-                💡 Số có rank thấp (#1500-5000) = model có để ý nhưng chưa đủ cao. Số "off-pool" = chưa từng ra trong 180 ngày qua.
+              <p className="mt-3 text-[0.65rem] text-slate-500 italic">
+                💡 Chữ vàng = đoạn chứa lô anh chọn. Nếu 1 số khớp nhiều lô, hiển thị tất cả ở "khớp lô".
+                Bấm vào số để xem 8 model thành phần.
               </p>
             </div>
           </>
