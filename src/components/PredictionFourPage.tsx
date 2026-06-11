@@ -173,6 +173,30 @@ function fourMatchesPattern(four: string, pattern: DigitPattern): boolean {
 }
 
 const FILTER_LIST_KEY = "four_pattern_filter_v1";
+const BET_BASE_KEY = "four_bet_base_v1";
+const DEFAULT_BET_BASE = 10;  // nghìn
+
+function loadBetBase(): number {
+  if (typeof window === "undefined") return DEFAULT_BET_BASE;
+  try {
+    const raw = window.localStorage.getItem(BET_BASE_KEY);
+    if (!raw) return DEFAULT_BET_BASE;
+    const n = parseInt(raw);
+    if (Number.isFinite(n) && n >= 0) return n;
+    return DEFAULT_BET_BASE;
+  } catch {
+    return DEFAULT_BET_BASE;
+  }
+}
+
+function saveBetBase(n: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(BET_BASE_KEY, String(n));
+  } catch {
+    /* ignore */
+  }
+}
 
 function loadFilterList(): string {
   if (typeof window === "undefined") return "";
@@ -206,13 +230,21 @@ export default function PredictionFourPage(_props: { region: Region }) {
   const [payout, setPayout] = useState(6_000_000);
   void _props;
 
-  // ─── Filter section: user's 2-digit lo list → matches in top-K 4-cang ───
+  // ─── Filter section: digit-count patterns → matches in top-K 4-cang ───
   const [filterRaw, setFilterRaw] = useState<string>("");
   const [expandedNumber, setExpandedNumber] = useState<string | null>(null);
+  const [betBase, setBetBase] = useState<number>(DEFAULT_BET_BASE);
 
   useEffect(() => {
     setFilterRaw(loadFilterList());
+    setBetBase(loadBetBase());
   }, []);
+
+  function handleBetBaseChange(v: string) {
+    const n = parseInt(v.replace(/\D/g, "")) || 0;
+    setBetBase(n);
+    saveBetBase(n);
+  }
 
   // Parsed digit-count patterns
   const filterParsed = useMemo(() => parsePatternList(filterRaw), [filterRaw]);
@@ -265,11 +297,31 @@ export default function PredictionFourPage(_props: { region: Region }) {
     const txt = matchedFour.map((x) => x.number).join(", ");
     try {
       await navigator.clipboard.writeText(txt);
-      toast.show("success", `Copy ${matchedFour.length} số 4-càng khớp lô`);
+      toast.show("success", `Copy ${matchedFour.length} số 4-càng khớp mẫu`);
     } catch {
       toast.show("error", "Trình duyệt chặn copy");
     }
   }
+
+  async function copyBetString() {
+    if (matchedFour.length === 0 || betBase <= 0) return;
+    // Format per number: "{number}b{bet}n" where bet = betBase × matchedPatterns.length
+    const txt = matchedFour
+      .map((x) => `${x.number}b${betBase * x.matchedPatterns.length}n`)
+      .join(", ");
+    try {
+      await navigator.clipboard.writeText(txt);
+      toast.show("success", `Copy ${matchedFour.length} số × mức cược`);
+    } catch {
+      toast.show("error", "Trình duyệt chặn copy");
+    }
+  }
+
+  // Total bet across all matched numbers
+  const totalBet = useMemo(
+    () => matchedFour.reduce((s, x) => s + betBase * x.matchedPatterns.length, 0),
+    [matchedFour, betBase]
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -868,19 +920,56 @@ export default function PredictionFourPage(_props: { region: Region }) {
               )}
             </div>
 
+            {/* Bet config bar */}
+            <div className="p-3 md:p-4 border-b border-white/[0.06] bg-amber-500/5">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-[0.7rem] text-slate-300 font-semibold whitespace-nowrap">
+                    💰 Mức cược cơ bản (1 mẫu khớp):
+                  </label>
+                  <div className="relative">
+                    <input
+                      value={betBase}
+                      onChange={(e) => handleBetBaseChange(e.target.value)}
+                      inputMode="numeric"
+                      className="w-20 px-2 py-1 text-center font-mono font-bold text-base rounded bg-[#1a2332] border-2 border-amber-500/50 focus:border-amber-300 text-amber-100 outline-none pr-5"
+                    />
+                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[0.65rem] text-amber-300 pointer-events-none">n</span>
+                  </div>
+                </div>
+                <div className="text-[0.7rem] text-slate-400">
+                  Khớp <b className="text-amber-300">N</b> mẫu → cược <b className="text-amber-300">{betBase}n × N</b>
+                </div>
+                <div className="ml-auto flex items-center gap-2">
+                  <span className="text-[0.7rem] text-slate-400">Tổng cược:</span>
+                  <span className="font-mono font-extrabold text-base text-amber-300">{totalBet}n</span>
+                </div>
+              </div>
+              <div className="mt-2 flex gap-2 flex-wrap">
+                <button
+                  onClick={copyBetString}
+                  disabled={matchedFour.length === 0 || betBase <= 0}
+                  className="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold disabled:opacity-40"
+                >
+                  📋 Copy chuỗi đánh ({matchedFour.length} số × mức cược)
+                </button>
+                <button
+                  onClick={copyMatched}
+                  disabled={matchedFour.length === 0}
+                  className="px-3 py-1.5 text-xs rounded bg-white/[0.08] hover:bg-white/[0.15] text-slate-200 font-semibold border border-slate-600 disabled:opacity-40"
+                  title="Chỉ copy danh sách số, không kèm mức cược"
+                >
+                  📋 Copy số (không tiền)
+                </button>
+              </div>
+            </div>
+
             {/* Matched 4-càng */}
             <div className="p-3 md:p-4">
               <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                 <h4 className="text-sm font-bold text-emerald-300">
                   ✅ 4-Càng Khớp Mẫu ({matchedFour.length}) — sắp theo rank model tăng dần
                 </h4>
-                <button
-                  onClick={copyMatched}
-                  disabled={matchedFour.length === 0}
-                  className="px-3 py-1.5 text-xs rounded bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold disabled:opacity-40"
-                >
-                  📋 Copy {matchedFour.length} số
-                </button>
               </div>
               {matchedFour.length === 0 ? (
                 <p className="text-center text-slate-500 text-xs py-4">
@@ -920,7 +1009,10 @@ export default function PredictionFourPage(_props: { region: Region }) {
                               {x.rank <= 10 ? "🏆 Top 10" : x.rank <= 30 ? "🥇 Top 30" : x.rank <= 100 ? "🥈 Top 100" : `Top ${topK}`}
                             </span>
                             <span className="text-[0.65rem] text-amber-300">
-                              khớp mẫu: <b>{x.matchedPatterns.join(", ")}</b>
+                              khớp <b>{x.matchedPatterns.length}</b> mẫu: <b>{x.matchedPatterns.join(", ")}</b>
+                            </span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-200 font-mono font-bold text-xs">
+                              {betBase * x.matchedPatterns.length}n
                             </span>
                           </span>
                           <span className="text-[0.7rem] text-slate-400 shrink-0">
