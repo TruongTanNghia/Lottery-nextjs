@@ -572,7 +572,7 @@ export default function PredictionFourPage(_props: { region: Region }) {
                 >
                   <option value={5_000_000}>5tr (dealer chặt)</option>
                   <option value={5_500_000}>5.5tr</option>
-                  <option value={6_000_000}>6tr (chuẩn — 80k/số)</option>
+                  <option value={6_000_000}>6tr (chuẩn — 70k/số)</option>
                   <option value={7_000_000}>7tr</option>
                   <option value={8_000_000}>8tr (dealer tốt)</option>
                 </select>

@@ -1031,9 +1031,9 @@ function buildTiers(topK: number): Array<{ start: number; end: number; label: st
   return out;
 }
 
-// 4-càng market rate (user-confirmed from broker): 80k / số, ăn 6tr / hit (~75× ratio).
-// NOT the same as 3-chân (23k cost) — explicit constant here to prevent regression.
-const POINT_COST_VND_FOUR = 80_000;
+// 4-càng market rate (user re-confirmed 2026-06-XX): 70k / số (was 80k).
+// Payout still 6tr/hit → ratio 85.7× cost. NOT the same as 3-chân (23k cost).
+const POINT_COST_VND_FOUR = 70_000;
 
 export async function backtestFourDigit(
   region: Region,
