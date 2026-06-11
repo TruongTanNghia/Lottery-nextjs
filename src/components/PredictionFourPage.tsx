@@ -249,6 +249,38 @@ const FOUR_COST_PER_PICK_VND = 70_000;    // 1 điểm = 70k
 const FOUR_PAYOUT_PER_HIT_VND = 6_000_000; // 6tr per hit (standard)
 const N_TO_VND = 1_000;                    // 1n stake = 1,000đ
 
+// ─── Sit-Out Filter state ──────────────────────────────────────
+// Recommend BET/SKIP today based on model's recent backtest accuracy.
+// Strategy: only bet on days when the model has been hitting recently
+// at a sufficient lift over random baseline. Skipping "cold" days
+// raises effective hit rate of the days we DO bet on.
+const SITOUT_KEYS = {
+  window: "four_so_window_v1",        // recent N days to check
+  minHit: "four_so_min_hit_v1",        // min hit rate % required to bet
+  minLift: "four_so_min_lift_v1",      // min lift vs random required
+};
+const SO_DEFAULTS = {
+  window: "7",
+  minHit: "1.5",
+  minLift: "1.2",
+};
+function loadSoStr(k: keyof typeof SO_DEFAULTS): string {
+  if (typeof window === "undefined") return SO_DEFAULTS[k];
+  try {
+    return window.localStorage.getItem(SITOUT_KEYS[k]) ?? SO_DEFAULTS[k];
+  } catch {
+    return SO_DEFAULTS[k];
+  }
+}
+function saveSoStr(k: keyof typeof SO_DEFAULTS, s: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SITOUT_KEYS[k], s);
+  } catch {
+    /* ignore */
+  }
+}
+
 function loadFilterList(): string {
   if (typeof window === "undefined") return "";
   try {
@@ -488,6 +520,90 @@ export default function PredictionFourPage(_props: { region: Region }) {
     saveBetBaseStr(s);
     toast.show("success", `Đã áp bet base = ${s}n`);
   }
+
+  // ─── Sit-Out Filter state ──────────────────────────────────────
+  const [soWindowStr, setSoWindowStr] = useState<string>(SO_DEFAULTS.window);
+  const [soMinHitStr, setSoMinHitStr] = useState<string>(SO_DEFAULTS.minHit);
+  const [soMinLiftStr, setSoMinLiftStr] = useState<string>(SO_DEFAULTS.minLift);
+
+  useEffect(() => {
+    setSoWindowStr(loadSoStr("window"));
+    setSoMinHitStr(loadSoStr("minHit"));
+    setSoMinLiftStr(loadSoStr("minLift"));
+  }, []);
+
+  function setSo<K extends keyof typeof SO_DEFAULTS>(key: K, setter: (s: string) => void, raw: string) {
+    let cleaned = raw.replace(/,/g, ".").replace(/[^\d.]/g, "");
+    const parts = cleaned.split(".");
+    if (parts.length > 2) cleaned = parts[0] + "." + parts.slice(1).join("");
+    setter(cleaned);
+    saveSoStr(key, cleaned);
+  }
+
+  const sitOutCalc = useMemo(() => {
+    if (!backtest || backtest.days.length < 2) return null;
+    const w = Math.max(1, parseInt(soWindowStr) || 7);
+    const minHit = parseFloat(soMinHitStr) || 0;
+    const minLift = parseFloat(soMinLiftStr) || 0;
+
+    // Current decision: look at last w backtest days
+    const recent = backtest.days.slice(-w);
+    const recentHits = recent.reduce((s, d) => s + d.hits, 0);
+    const recentPicks = recent.length * backtest.top_k;
+    const recentHitPct = recentPicks > 0 ? (recentHits / recentPicks) * 100 : 0;
+    const recentLift = backtest.baseline_pct > 0 ? recentHitPct / backtest.baseline_pct : 0;
+    const shouldBetToday = recentHitPct >= minHit && recentLift >= minLift;
+
+    // Simulate past: for each day i >= w, would we have bet that day?
+    // Decision uses ONLY data from days [i-w, i) (no leak).
+    let simBetDays = 0;
+    let simSkipDays = 0;
+    let simBetProfitVnd = 0;
+    let alwaysBetProfitVnd = 0;
+    let simBetCostVnd = 0;
+    let alwaysBetCostVnd = 0;
+    for (let i = w; i < backtest.days.length; i++) {
+      const prev = backtest.days.slice(i - w, i);
+      const ph = prev.reduce((s, d) => s + d.hits, 0);
+      const pp = prev.length * backtest.top_k;
+      const phPct = pp > 0 ? (ph / pp) * 100 : 0;
+      const pLift = backtest.baseline_pct > 0 ? phPct / backtest.baseline_pct : 0;
+      const wouldBet = phPct >= minHit && pLift >= minLift;
+      const d = backtest.days[i];
+      alwaysBetProfitVnd += d.profit_vnd;
+      alwaysBetCostVnd += d.cost_vnd;
+      if (wouldBet) {
+        simBetDays++;
+        simBetProfitVnd += d.profit_vnd;
+        simBetCostVnd += d.cost_vnd;
+      } else {
+        simSkipDays++;
+      }
+    }
+
+    const filterRoi = simBetCostVnd > 0 ? (simBetProfitVnd / simBetCostVnd) * 100 : 0;
+    const alwaysRoi = alwaysBetCostVnd > 0 ? (alwaysBetProfitVnd / alwaysBetCostVnd) * 100 : 0;
+    const savedVsAlways = simBetProfitVnd - alwaysBetProfitVnd;
+
+    return {
+      window: w,
+      minHit,
+      minLift,
+      recentHitPct,
+      recentLift,
+      shouldBetToday,
+      simBetDays,
+      simSkipDays,
+      simBetProfitVnd,
+      alwaysBetProfitVnd,
+      simBetCostVnd,
+      alwaysBetCostVnd,
+      filterRoi,
+      alwaysRoi,
+      savedVsAlways,
+      hasEnoughData: backtest.days.length > w,
+    };
+  }, [backtest, soWindowStr, soMinHitStr, soMinLiftStr]);
 
   useEffect(() => {
     setLoading(true);
@@ -1085,6 +1201,131 @@ export default function PredictionFourPage(_props: { region: Region }) {
                 </p>
               )}
             </div>
+
+            {/* Sit-Out Filter */}
+            {sitOutCalc && sitOutCalc.hasEnoughData && (
+              <div className={`p-3 md:p-4 border-b border-white/[0.06] ${
+                sitOutCalc.shouldBetToday ? "bg-emerald-500/10" : "bg-rose-500/10"
+              }`}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+                  <h4 className={`text-sm font-bold flex items-center gap-2 ${
+                    sitOutCalc.shouldBetToday ? "text-emerald-300" : "text-rose-300"
+                  }`}>
+                    🎯 Sit-Out Filter — Có nên đánh hôm nay?
+                  </h4>
+                </div>
+
+                {/* Big decision banner */}
+                <div className={`rounded-lg border-2 p-3 mb-3 text-center ${
+                  sitOutCalc.shouldBetToday
+                    ? "border-emerald-400 bg-emerald-500/20"
+                    : "border-rose-400 bg-rose-500/20"
+                }`}>
+                  <div className={`font-extrabold text-2xl md:text-3xl ${
+                    sitOutCalc.shouldBetToday ? "text-emerald-200" : "text-rose-200"
+                  }`}>
+                    {sitOutCalc.shouldBetToday ? "✅ ĐÁNH HÔM NAY" : "🚫 SIT-OUT HÔM NAY"}
+                  </div>
+                  <div className="text-[0.7rem] text-slate-300 mt-1">
+                    {sitOutCalc.shouldBetToday
+                      ? `Model ${sitOutCalc.window} ngày qua đạt hit ${sitOutCalc.recentHitPct.toFixed(2)}% (≥${sitOutCalc.minHit}%), lift ${sitOutCalc.recentLift.toFixed(2)}× (≥${sitOutCalc.minLift}×) → có tín hiệu`
+                      : `Model ${sitOutCalc.window} ngày qua chỉ đạt hit ${sitOutCalc.recentHitPct.toFixed(2)}% / lift ${sitOutCalc.recentLift.toFixed(2)}× → tín hiệu yếu, NÊN NGHỈ`}
+                  </div>
+                </div>
+
+                {/* Threshold inputs */}
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  <MgField
+                    label="Cửa sổ check"
+                    suffix="ngày gần nhất"
+                    value={soWindowStr}
+                    onChange={(v) => setSo("window", setSoWindowStr, v)}
+                  />
+                  <MgField
+                    label="Min hit rate"
+                    suffix="% (≥ thì đánh)"
+                    value={soMinHitStr}
+                    onChange={(v) => setSo("minHit", setSoMinHitStr, v)}
+                  />
+                  <MgField
+                    label="Min lift vs Random"
+                    suffix="× (≥ thì đánh)"
+                    value={soMinLiftStr}
+                    onChange={(v) => setSo("minLift", setSoMinLiftStr, v)}
+                  />
+                </div>
+
+                {/* Backtest simulation comparison */}
+                <div className="rounded-lg bg-black/30 border border-slate-600/30 p-3">
+                  <div className="text-[0.65rem] text-slate-400 uppercase font-semibold mb-2">
+                    📊 Mô phỏng: Nếu anh dùng filter này {sitOutCalc.simBetDays + sitOutCalc.simSkipDays} ngày qua…
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <Kpi
+                      label="Ngày đánh / Tổng"
+                      value={`${sitOutCalc.simBetDays}/${sitOutCalc.simBetDays + sitOutCalc.simSkipDays}`}
+                      hint={`Nghỉ ${sitOutCalc.simSkipDays} ngày`}
+                    />
+                    <Kpi
+                      label="ROI với filter"
+                      value={`${sitOutCalc.filterRoi.toFixed(1)}%`}
+                      accent={sitOutCalc.filterRoi >= 0 ? "text-emerald-300" : "text-rose-300"}
+                      hint={`P&L: ${fmtVndShort(sitOutCalc.simBetProfitVnd)}`}
+                    />
+                    <Kpi
+                      label="ROI nếu đánh mọi ngày"
+                      value={`${sitOutCalc.alwaysRoi.toFixed(1)}%`}
+                      accent={sitOutCalc.alwaysRoi >= 0 ? "text-emerald-300" : "text-rose-300"}
+                      hint={`P&L: ${fmtVndShort(sitOutCalc.alwaysBetProfitVnd)}`}
+                    />
+                    <Kpi
+                      label="Filter giúp / hại"
+                      value={`${sitOutCalc.savedVsAlways >= 0 ? "+" : ""}${fmtVndShort(sitOutCalc.savedVsAlways)}`}
+                      accent={sitOutCalc.savedVsAlways >= 0 ? "text-emerald-300" : "text-rose-300"}
+                      hint={sitOutCalc.savedVsAlways >= 0 ? "✅ Filter có ích" : "❌ Filter hại"}
+                    />
+                  </div>
+
+                  {/* Verdict */}
+                  <div className={`mt-3 rounded border-l-2 px-3 py-2 text-[0.75rem] ${
+                    sitOutCalc.savedVsAlways > 0
+                      ? "bg-emerald-500/10 border-emerald-400 text-emerald-200"
+                      : sitOutCalc.savedVsAlways === 0
+                      ? "bg-slate-500/10 border-slate-400 text-slate-200"
+                      : "bg-rose-500/10 border-rose-400 text-rose-200"
+                  }`}>
+                    {sitOutCalc.savedVsAlways > 0 ? (
+                      <>
+                        ✅ <b>Filter HỮU ÍCH:</b> Nếu anh dùng filter này 14 ngày qua, anh đã <b>tiết kiệm/lời thêm {fmtVndShort(sitOutCalc.savedVsAlways)}</b>.
+                        Filter đang lọc đúng các ngày tệ → nên tiếp tục dùng.
+                      </>
+                    ) : sitOutCalc.savedVsAlways === 0 ? (
+                      <>
+                        ⚖️ <b>Hoà:</b> Filter và đánh-mọi-ngày cho ROI tương đương.
+                        Có thể hạ ngưỡng hit/lift xuống nhẹ để bet nhiều ngày hơn.
+                      </>
+                    ) : (
+                      <>
+                        ❌ <b>Filter ĐANG HẠI:</b> Nếu anh dùng filter 14 ngày qua, anh đã <b>mất thêm {fmtVndShort(Math.abs(sitOutCalc.savedVsAlways))}</b> so với đánh mọi ngày.
+                        Filter đang skip nhầm các ngày có hit. Thử <b>HẠ ngưỡng</b> (vd min hit 1.0%, min lift 1.0×) hoặc TẮT filter.
+                      </>
+                    )}
+                  </div>
+
+                  {!sitOutCalc.shouldBetToday && (
+                    <p className="mt-2 text-[0.7rem] text-rose-200 italic">
+                      💡 Filter nói SIT-OUT, nhưng anh vẫn có thể đánh nếu muốn — đây là gợi ý, không phải khoá.
+                      Để chắc, anh có thể giảm bet base xuống ½ để hạn chế lỗ ngày tín hiệu yếu.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+            {sitOutCalc && !sitOutCalc.hasEnoughData && (
+              <div className="p-3 md:p-4 border-b border-white/[0.06] bg-slate-500/5 text-center text-xs text-slate-500">
+                ℹ️ Sit-Out Filter cần ít nhất {sitOutCalc.window + 1} ngày data — backtest hiện có {backtest?.days.length} ngày. Tăng "Backtest N ngày" ở trên để xem filter.
+              </div>
+            )}
 
             {/* Martingale recovery calculator */}
             <div className={`p-3 md:p-4 border-b border-white/[0.06] ${mgCalc.stopped ? "bg-rose-500/10" : !mgCalc.evPositive ? "bg-orange-500/10" : "bg-indigo-500/5"}`}>
