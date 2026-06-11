@@ -176,26 +176,32 @@ const FILTER_LIST_KEY = "four_pattern_filter_v1";
 const BET_BASE_KEY = "four_bet_base_v1";
 const DEFAULT_BET_BASE = 10;  // nghìn
 
-function loadBetBase(): number {
-  if (typeof window === "undefined") return DEFAULT_BET_BASE;
+function loadBetBaseStr(): string {
+  if (typeof window === "undefined") return String(DEFAULT_BET_BASE);
   try {
     const raw = window.localStorage.getItem(BET_BASE_KEY);
-    if (!raw) return DEFAULT_BET_BASE;
-    const n = parseInt(raw);
-    if (Number.isFinite(n) && n >= 0) return n;
-    return DEFAULT_BET_BASE;
+    if (!raw) return String(DEFAULT_BET_BASE);
+    return raw;
   } catch {
-    return DEFAULT_BET_BASE;
+    return String(DEFAULT_BET_BASE);
   }
 }
 
-function saveBetBase(n: number): void {
+function saveBetBaseStr(s: string): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(BET_BASE_KEY, String(n));
+    window.localStorage.setItem(BET_BASE_KEY, s);
   } catch {
     /* ignore */
   }
+}
+
+// Drop trailing zeros / unnecessary decimals: 10 → "10", 1.5 → "1.5", 1.50 → "1.5"
+function fmtBet(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "0";
+  if (Number.isInteger(n)) return String(n);
+  // Round to 3 decimal places to avoid floating-point noise like 0.1+0.2
+  return String(Math.round(n * 1000) / 1000);
 }
 
 function loadFilterList(): string {
@@ -233,17 +239,27 @@ export default function PredictionFourPage(_props: { region: Region }) {
   // ─── Filter section: digit-count patterns → matches in top-K 4-cang ───
   const [filterRaw, setFilterRaw] = useState<string>("");
   const [expandedNumber, setExpandedNumber] = useState<string | null>(null);
-  const [betBase, setBetBase] = useState<number>(DEFAULT_BET_BASE);
+  // betBaseStr is the raw string so the user can mid-type (e.g. "10." while
+  // about to type "10.5"). betBase is the parsed numeric value used in
+  // calculations — clamped to ≥0 and 0 on parse failure.
+  const [betBaseStr, setBetBaseStr] = useState<string>(String(DEFAULT_BET_BASE));
+  const betBase = useMemo(() => {
+    const n = parseFloat(betBaseStr);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  }, [betBaseStr]);
 
   useEffect(() => {
     setFilterRaw(loadFilterList());
-    setBetBase(loadBetBase());
+    setBetBaseStr(loadBetBaseStr());
   }, []);
 
   function handleBetBaseChange(v: string) {
-    const n = parseInt(v.replace(/\D/g, "")) || 0;
-    setBetBase(n);
-    saveBetBase(n);
+    // Allow digits and at most one decimal separator (. or ,)
+    let cleaned = v.replace(/,/g, ".").replace(/[^\d.]/g, "");
+    const parts = cleaned.split(".");
+    if (parts.length > 2) cleaned = parts[0] + "." + parts.slice(1).join("");
+    setBetBaseStr(cleaned);
+    saveBetBaseStr(cleaned);
   }
 
   // Parsed digit-count patterns
@@ -307,7 +323,7 @@ export default function PredictionFourPage(_props: { region: Region }) {
     if (matchedFour.length === 0 || betBase <= 0) return;
     // Format per number: "{number}b{bet}n" where bet = betBase × matchedPatterns.length
     const txt = matchedFour
-      .map((x) => `${x.number}b${betBase * x.matchedPatterns.length}n`)
+      .map((x) => `${x.number}b${fmtBet(betBase * x.matchedPatterns.length)}n`)
       .join(", ");
     try {
       await navigator.clipboard.writeText(txt);
@@ -929,20 +945,21 @@ export default function PredictionFourPage(_props: { region: Region }) {
                   </label>
                   <div className="relative">
                     <input
-                      value={betBase}
+                      value={betBaseStr}
                       onChange={(e) => handleBetBaseChange(e.target.value)}
-                      inputMode="numeric"
-                      className="w-20 px-2 py-1 text-center font-mono font-bold text-base rounded bg-[#1a2332] border-2 border-amber-500/50 focus:border-amber-300 text-amber-100 outline-none pr-5"
+                      inputMode="decimal"
+                      placeholder="0.5, 10, 1.5..."
+                      className="w-24 px-2 py-1 text-center font-mono font-bold text-base rounded bg-[#1a2332] border-2 border-amber-500/50 focus:border-amber-300 text-amber-100 outline-none pr-5"
                     />
                     <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[0.65rem] text-amber-300 pointer-events-none">n</span>
                   </div>
                 </div>
                 <div className="text-[0.7rem] text-slate-400">
-                  Khớp <b className="text-amber-300">N</b> mẫu → cược <b className="text-amber-300">{betBase}n × N</b>
+                  Khớp <b className="text-amber-300">N</b> mẫu → cược <b className="text-amber-300">{fmtBet(betBase)}n × N</b>
                 </div>
                 <div className="ml-auto flex items-center gap-2">
                   <span className="text-[0.7rem] text-slate-400">Tổng cược:</span>
-                  <span className="font-mono font-extrabold text-base text-amber-300">{totalBet}n</span>
+                  <span className="font-mono font-extrabold text-base text-amber-300">{fmtBet(totalBet)}n</span>
                 </div>
               </div>
               <div className="mt-2 flex gap-2 flex-wrap">
@@ -1012,7 +1029,7 @@ export default function PredictionFourPage(_props: { region: Region }) {
                               khớp <b>{x.matchedPatterns.length}</b> mẫu: <b>{x.matchedPatterns.join(", ")}</b>
                             </span>
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-200 font-mono font-bold text-xs">
-                              {betBase * x.matchedPatterns.length}n
+                              {fmtBet(betBase * x.matchedPatterns.length)}n
                             </span>
                           </span>
                           <span className="text-[0.7rem] text-slate-400 shrink-0">
