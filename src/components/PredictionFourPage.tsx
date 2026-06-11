@@ -204,6 +204,51 @@ function fmtBet(n: number): string {
   return String(Math.round(n * 1000) / 1000);
 }
 
+// ─── Martingale recovery state ──────────────────────────────────
+// All money values are in NGHÌN ĐỒNG (k). 1n bet = 1,000đ stake.
+// For 4 càng: cost per pick (1 điểm at bookie) = 70,000đ = 70n.
+//   So 1n stake = 1/70 điểm → hit-rate-per-điểm * (1/70) per n.
+const MARTINGALE_KEYS = {
+  bankroll: "four_mg_bankroll_v1",        // in nghìn (default 10,000 = 10tr)
+  target: "four_mg_target_pct_v1",         // % per day
+  yesterdayPnl: "four_mg_yesterday_pct_v1", // %
+  capPct: "four_mg_cap_pct_v1",            // max % of bankroll per day
+  consecLoss: "four_mg_consec_loss_v1",     // consecutive loss days
+  maxLossDays: "four_mg_max_loss_v1",      // stop after N losses
+};
+
+const MG_DEFAULTS = {
+  bankroll: "10000",   // 10 triệu
+  target: "10",
+  yesterdayPnl: "0",
+  capPct: "5",
+  consecLoss: "0",
+  maxLossDays: "3",
+};
+
+function loadMgStr(k: keyof typeof MG_DEFAULTS): string {
+  if (typeof window === "undefined") return MG_DEFAULTS[k];
+  try {
+    return window.localStorage.getItem(MARTINGALE_KEYS[k]) ?? MG_DEFAULTS[k];
+  } catch {
+    return MG_DEFAULTS[k];
+  }
+}
+
+function saveMgStr(k: keyof typeof MG_DEFAULTS, s: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(MARTINGALE_KEYS[k], s);
+  } catch {
+    /* ignore */
+  }
+}
+
+// 4-càng market constants (matches prediction-four.ts):
+const FOUR_COST_PER_PICK_VND = 70_000;    // 1 điểm = 70k
+const FOUR_PAYOUT_PER_HIT_VND = 6_000_000; // 6tr per hit (standard)
+const N_TO_VND = 1_000;                    // 1n stake = 1,000đ
+
 function loadFilterList(): string {
   if (typeof window === "undefined") return "";
   try {
@@ -338,6 +383,111 @@ export default function PredictionFourPage(_props: { region: Region }) {
     () => matchedFour.reduce((s, x) => s + betBase * x.matchedPatterns.length, 0),
     [matchedFour, betBase]
   );
+
+  // ─── Martingale recovery state ─────────────────────────────────
+  const [mgBankrollStr, setMgBankrollStr] = useState<string>(MG_DEFAULTS.bankroll);
+  const [mgTargetStr, setMgTargetStr] = useState<string>(MG_DEFAULTS.target);
+  const [mgYesterdayStr, setMgYesterdayStr] = useState<string>(MG_DEFAULTS.yesterdayPnl);
+  const [mgCapPctStr, setMgCapPctStr] = useState<string>(MG_DEFAULTS.capPct);
+  const [mgConsecLossStr, setMgConsecLossStr] = useState<string>(MG_DEFAULTS.consecLoss);
+  const [mgMaxLossStr, setMgMaxLossStr] = useState<string>(MG_DEFAULTS.maxLossDays);
+
+  useEffect(() => {
+    setMgBankrollStr(loadMgStr("bankroll"));
+    setMgTargetStr(loadMgStr("target"));
+    setMgYesterdayStr(loadMgStr("yesterdayPnl"));
+    setMgCapPctStr(loadMgStr("capPct"));
+    setMgConsecLossStr(loadMgStr("consecLoss"));
+    setMgMaxLossStr(loadMgStr("maxLossDays"));
+  }, []);
+
+  function setMg<K extends keyof typeof MG_DEFAULTS>(key: K, setter: (s: string) => void, raw: string) {
+    let cleaned = raw.replace(/,/g, ".").replace(/[^\d.\-]/g, "");
+    const parts = cleaned.split(".");
+    if (parts.length > 2) cleaned = parts[0] + "." + parts.slice(1).join("");
+    setter(cleaned);
+    saveMgStr(key, cleaned);
+  }
+
+  // ─── Martingale computed values ────────────────────────────────
+  const mgCalc = useMemo(() => {
+    const bankrollN = parseFloat(mgBankrollStr) || 0;
+    const target = parseFloat(mgTargetStr) || 0;
+    const yesterday = parseFloat(mgYesterdayStr) || 0;
+    const capPct = parseFloat(mgCapPctStr) || 0;
+    const consec = parseInt(mgConsecLossStr) || 0;
+    const maxLoss = parseInt(mgMaxLossStr) || 99;
+
+    // Stop signal: too many consecutive losses
+    const stopped = consec >= maxLoss;
+
+    // Total picks-per-base-unit (sum of pattern multipliers across matched numbers)
+    const totalUnitsPerBase = matchedFour.reduce((s, x) => s + x.matchedPatterns.length, 0);
+
+    // Hit rate per pick from backtest (random_baseline is the math ceiling for non-skill models)
+    const hitsPerDayTotal = backtest?.random_baseline_hits_per_day ?? 0;
+    const hitRatePerPick = backtest && backtest.top_k > 0 ? hitsPerDayTotal / backtest.top_k : 0;
+
+    // Convert to 1n-bet hit probability:
+    //   1 điểm = 70k stake. 1n = 1,000đ stake = 1/70 điểm.
+    //   Expected hits per day per 1n bet ≈ hitRatePerPick * (1/70)
+    // Expected daily profit per 1n bet:
+    //   profit_per_n = hitsPerN * payout - cost_per_n
+    //                = (hitRatePerPick / 70) * 6,000,000 - 1,000
+    const hitsPerN = hitRatePerPick / 70;
+    const evPerN = hitsPerN * FOUR_PAYOUT_PER_HIT_VND - N_TO_VND;
+    const evPositive = evPerN > 0;
+
+    // Required gain in đồng (recover yesterday + earn target)
+    const bankrollVnd = bankrollN * N_TO_VND;
+    const requiredGainVnd = ((-yesterday + target) / 100) * bankrollVnd;
+
+    // Suggested bet base = required_gain / (totalUnits * evPerN)
+    // (Only meaningful if EV > 0 and totalUnits > 0)
+    let suggestedBet = 0;
+    if (evPositive && totalUnitsPerBase > 0 && requiredGainVnd > 0) {
+      suggestedBet = requiredGainVnd / (totalUnitsPerBase * evPerN);
+    }
+
+    // CAP: max bet such that total daily cost ≤ capPct of bankroll
+    // Daily cost (in đồng) = totalUnits * betBase * N_TO_VND
+    // → betBase ≤ capPct/100 * bankrollVnd / (totalUnits * N_TO_VND)
+    const capBetVnd = (capPct / 100) * bankrollVnd;
+    const capBetBase = totalUnitsPerBase > 0
+      ? capBetVnd / (totalUnitsPerBase * N_TO_VND)
+      : 0;
+
+    const cappedSuggested = stopped ? 0 : Math.min(suggestedBet, capBetBase);
+    const wasCapped = !stopped && suggestedBet > capBetBase && capBetBase > 0;
+
+    return {
+      bankrollN,
+      bankrollVnd,
+      target,
+      yesterday,
+      capPct,
+      consec,
+      maxLoss,
+      stopped,
+      totalUnitsPerBase,
+      hitRatePerPick,
+      hitsPerN,
+      evPerN,
+      evPositive,
+      requiredGainVnd,
+      suggestedBet,
+      capBetBase,
+      cappedSuggested,
+      wasCapped,
+    };
+  }, [mgBankrollStr, mgTargetStr, mgYesterdayStr, mgCapPctStr, mgConsecLossStr, mgMaxLossStr, matchedFour, backtest]);
+
+  function applyMartingale() {
+    const s = String(Math.round(mgCalc.cappedSuggested * 1000) / 1000);
+    setBetBaseStr(s);
+    saveBetBaseStr(s);
+    toast.show("success", `Đã áp bet base = ${s}n`);
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -936,6 +1086,141 @@ export default function PredictionFourPage(_props: { region: Region }) {
               )}
             </div>
 
+            {/* Martingale recovery calculator */}
+            <div className={`p-3 md:p-4 border-b border-white/[0.06] ${mgCalc.stopped ? "bg-rose-500/10" : !mgCalc.evPositive ? "bg-orange-500/10" : "bg-indigo-500/5"}`}>
+              <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+                <h4 className="text-sm font-bold text-indigo-300 flex items-center gap-2">
+                  📊 Tự Tính Hạn Mức Cược (Martingale + CAP)
+                </h4>
+                {mgCalc.stopped && (
+                  <span className="px-2 py-0.5 text-[0.65rem] rounded-full bg-rose-500/30 text-rose-100 font-bold uppercase">
+                    🛑 STOP — {mgCalc.consec} ngày lỗ liên tiếp ≥ {mgCalc.maxLoss}
+                  </span>
+                )}
+                {!mgCalc.stopped && !mgCalc.evPositive && (
+                  <span className="px-2 py-0.5 text-[0.65rem] rounded-full bg-orange-500/30 text-orange-100 font-bold uppercase">
+                    ⚠️ EV ÂM — Martingale RỦI RO CAO
+                  </span>
+                )}
+              </div>
+
+              {/* Inputs */}
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-3">
+                <MgField
+                  label="Vốn ban đầu"
+                  suffix="n (= đ × 1k)"
+                  value={mgBankrollStr}
+                  onChange={(v) => setMg("bankroll", setMgBankrollStr, v)}
+                />
+                <MgField
+                  label="Target ROI"
+                  suffix="%/ngày"
+                  value={mgTargetStr}
+                  onChange={(v) => setMg("target", setMgTargetStr, v)}
+                />
+                <MgField
+                  label="P&L hôm qua"
+                  suffix="%"
+                  value={mgYesterdayStr}
+                  onChange={(v) => setMg("yesterdayPnl", setMgYesterdayStr, v)}
+                />
+                <MgField
+                  label="CAP cược"
+                  suffix="% vốn"
+                  value={mgCapPctStr}
+                  onChange={(v) => setMg("capPct", setMgCapPctStr, v)}
+                />
+                <MgField
+                  label="Lỗ liên tiếp"
+                  suffix="ngày"
+                  value={mgConsecLossStr}
+                  onChange={(v) => setMg("consecLoss", setMgConsecLossStr, v)}
+                />
+                <MgField
+                  label="Stop sau"
+                  suffix="ngày lỗ"
+                  value={mgMaxLossStr}
+                  onChange={(v) => setMg("maxLossDays", setMgMaxLossStr, v)}
+                />
+              </div>
+
+              {/* Output panel */}
+              <div className="rounded-lg bg-black/30 border border-indigo-500/30 p-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+                  <Kpi
+                    label="Hit rate model"
+                    value={`${(mgCalc.hitRatePerPick * 100).toFixed(2)}%/pick`}
+                    accent={mgCalc.evPositive ? "text-emerald-300" : "text-rose-300"}
+                    hint={`Cần ${(N_TO_VND / FOUR_PAYOUT_PER_HIT_VND * 70 * 100).toFixed(2)}%/pick để hoà`}
+                  />
+                  <Kpi
+                    label="EV per 1n bet"
+                    value={`${mgCalc.evPerN >= 0 ? "+" : ""}${fmtBet(mgCalc.evPerN)}đ`}
+                    accent={mgCalc.evPositive ? "text-emerald-300" : "text-rose-300"}
+                    hint={mgCalc.evPositive ? "Có edge mỏng" : "Lỗ kỳ vọng"}
+                  />
+                  <Kpi
+                    label="Cần lời/ngày"
+                    value={fmtVndShort(mgCalc.requiredGainVnd)}
+                    hint={`${(-mgCalc.yesterday + mgCalc.target).toFixed(1)}% vốn`}
+                  />
+                  <Kpi
+                    label="Tổng units/ngày"
+                    value={`${mgCalc.totalUnitsPerBase}`}
+                    hint={`${matchedFour.length} số × multipliers`}
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/[0.06]">
+                  <div>
+                    <div className="text-[0.65rem] text-slate-400 uppercase">Bet base đề xuất hôm nay:</div>
+                    <div className="flex items-baseline gap-2">
+                      <span className={`font-mono font-extrabold text-2xl ${mgCalc.stopped || !mgCalc.evPositive ? "text-rose-300" : "text-emerald-300"}`}>
+                        {fmtBet(mgCalc.cappedSuggested)}n
+                      </span>
+                      {mgCalc.wasCapped && (
+                        <span className="text-[0.65rem] text-amber-300 font-mono">
+                          (CAP: {fmtBet(mgCalc.suggestedBet)}n → {fmtBet(mgCalc.capBetBase)}n)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={applyMartingale}
+                    disabled={mgCalc.stopped || !mgCalc.evPositive || mgCalc.cappedSuggested <= 0}
+                    className="px-3 py-2 text-xs rounded bg-indigo-500 hover:bg-indigo-400 text-white font-bold disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    ⬇️ Áp xuống ô "Mức cược cơ bản"
+                  </button>
+                </div>
+
+                {/* Warnings */}
+                {mgCalc.stopped && (
+                  <p className="mt-2 text-[0.75rem] text-rose-200">
+                    🛑 <b>STOP-LOSS kích hoạt:</b> Lỗ {mgCalc.consec} ngày liên tiếp đã vượt ngưỡng {mgCalc.maxLoss}.
+                    Nên DỪNG đánh hôm nay. Reset "Lỗ liên tiếp" về 0 nếu hôm nay anh thắng ngày khác.
+                  </p>
+                )}
+                {!mgCalc.stopped && !mgCalc.evPositive && (
+                  <p className="mt-2 text-[0.75rem] text-orange-200">
+                    ⚠️ <b>EV ÂM = Martingale BẤT KHẢ THI:</b> Mỗi 1n bet kỳ vọng <b>lỗ</b> {fmtBet(-mgCalc.evPerN)}đ.
+                    Cược to thêm = lỗ to thêm. Em <b>khoá</b> nút áp. Anh nên: (1) đợi data dày hơn để hit rate model lên, (2) hoặc đổi sang chiến thuật không scaling.
+                  </p>
+                )}
+                {!mgCalc.stopped && mgCalc.evPositive && mgCalc.wasCapped && (
+                  <p className="mt-2 text-[0.75rem] text-amber-200">
+                    🚧 <b>CAP rủi ro đã giới hạn bet:</b> Đề xuất toán học là {fmtBet(mgCalc.suggestedBet)}n
+                    nhưng đã bị cắt xuống {fmtBet(mgCalc.capBetBase)}n (≤ {mgCalc.capPct}% vốn). Anh sẽ recover chậm hơn nhưng an toàn.
+                  </p>
+                )}
+                {!mgCalc.stopped && mgCalc.evPositive && !mgCalc.wasCapped && mgCalc.cappedSuggested > 0 && (
+                  <p className="mt-2 text-[0.75rem] text-emerald-200">
+                    ✅ EV dương + chưa chạm CAP. Bet base đề xuất an toàn theo các giả định toán.
+                  </p>
+                )}
+              </div>
+            </div>
+
             {/* Bet config bar */}
             <div className="p-3 md:p-4 border-b border-white/[0.06] bg-amber-500/5">
               <div className="flex flex-wrap items-center gap-3">
@@ -1062,6 +1347,33 @@ export default function PredictionFourPage(_props: { region: Region }) {
         )}
       </section>
     </>
+  );
+}
+
+function MgField({
+  label,
+  suffix,
+  value,
+  onChange,
+}: {
+  label: string;
+  suffix: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <div className="text-[0.6rem] text-slate-400 uppercase font-semibold">{label}</div>
+      <div className="flex items-baseline gap-1 mt-0.5">
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          inputMode="decimal"
+          className="w-full px-2 py-1 text-center font-mono font-bold text-sm rounded bg-[#1a2332] border-2 border-indigo-500/40 focus:border-indigo-300 text-indigo-100 outline-none"
+        />
+      </div>
+      <div className="text-[0.55rem] text-slate-500 mt-0.5">{suffix}</div>
+    </div>
   );
 }
 
