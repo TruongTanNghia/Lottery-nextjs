@@ -261,7 +261,10 @@ export default function WatcherPage({ region }: { region: Region }) {
     }
     setImporting(true);
     try {
-      const res = await fetch(`/api/predict/vip?region=${region}&window=90`);
+      // window=30 must match PredictionVipPage default (line 178: useState(30)).
+      // Mismatched windows yield DIFFERENT rankings — customer reported number 90
+      // in VIP tab's Top 10 was MISSING from Watcher import.
+      const res = await fetch(`/api/predict/vip?region=${region}&window=30`);
       const json = await res.json();
       const picks: string[] = (json.final ?? [])
         .slice(0, 20)
