@@ -146,7 +146,7 @@ export default function WatcherPage({ region }: { region: Region }) {
   const [viewDate, setViewDate] = useState<string | null>(null);
   const [availableDates, setAvailableDates] = useState<string[]>([]); // all scraped dates desc
 
-  // Pinned slots: pinned[i]=true means slot i survives "Xoá hết" and "Import VIP Top 20".
+  // Pinned slots: pinned[i]=true means slot i survives "Xoá hết" and "Import VIP Top 10/20".
   const [pinned, setPinned] = useState<boolean[]>(() => Array(SLOT_COUNT).fill(false));
 
   // Hydrate from localStorage on region change
@@ -253,7 +253,9 @@ export default function WatcherPage({ region }: { region: Region }) {
     saveLS(PINNED_KEY, region, empty);
   }
 
-  async function importFromVip() {
+  // Import top N from VIP prediction. count must match a chip label (10 or 20)
+  // so the toast/UI is unambiguous. window=30 is critical — see comment below.
+  async function importFromVip(count: 10 | 20) {
     if (importing) return;
     if (viewDate) {
       toast.show("error", "Đang ở chế độ lịch sử — quay về 'Hôm nay' để import");
@@ -261,13 +263,13 @@ export default function WatcherPage({ region }: { region: Region }) {
     }
     setImporting(true);
     try {
-      // window=30 must match PredictionVipPage default (line 178: useState(30)).
+      // window=30 MUST match PredictionVipPage default (useState(30) at line 178).
       // Mismatched windows yield DIFFERENT rankings — customer reported number 90
-      // in VIP tab's Top 10 was MISSING from Watcher import.
+      // in VIP tab's Top 10 was MISSING from Watcher import when this was window=90.
       const res = await fetch(`/api/predict/vip?region=${region}&window=30`);
       const json = await res.json();
       const picks: string[] = (json.final ?? [])
-        .slice(0, 20)
+        .slice(0, count)
         .map((p: { lo_number: string }) => p.lo_number);
       if (picks.length === 0) {
         toast.show("error", "Chưa có VIP prediction. Vào tab VIP trước.");
@@ -275,6 +277,7 @@ export default function WatcherPage({ region }: { region: Region }) {
       }
       // Pinned slots keep their current value. Unpinned slots get filled from VIP picks
       // (in order, skipping picks already present in pinned slots to avoid duplicates).
+      const pinnedCount = pinned.filter(Boolean).length;
       const pinnedNumbers = new Set(
         slots.filter((_, i) => pinned[i]).map((s) => s.trim()).filter(Boolean)
       );
@@ -288,12 +291,17 @@ export default function WatcherPage({ region }: { region: Region }) {
         });
       setSlots(filled);
       saveToStorage(region, filled);
-      const pinnedCount = pinned.filter(Boolean).length;
+
+      // Toast reports the ACTUAL number of slots filled from VIP picks (not the
+      // nominal top-K) so user can verify what happened. unpinnedSlots = 20-pinnedCount
+      // is the maximum we can fill; remaining.length caps it from below.
+      const unpinnedSlots = SLOT_COUNT - pinnedCount;
+      const vipFilled = Math.min(remaining.length, unpinnedSlots);
       toast.show(
         "success",
         pinnedCount > 0
-          ? `Import xong — giữ ${pinnedCount} ô đã gim, fill ${SLOT_COUNT - pinnedCount} ô còn lại từ VIP`
-          : `Đã import top ${picks.length} từ VIP`
+          ? `Import Top ${count} — giữ ${pinnedCount} ô gim, fill ${vipFilled} số mới từ VIP`
+          : `Đã import Top ${picks.length} từ VIP`
       );
     } catch {
       toast.show("error", "Lỗi khi gọi VIP");
@@ -441,7 +449,7 @@ export default function WatcherPage({ region }: { region: Region }) {
         </h2>
         <p className="text-xs md:text-sm text-slate-300 mt-1">
           Nhập lô anh muốn theo dõi → xem độ nóng/lạnh + lịch sử 7 ngày gần nhất.
-          Bấm <b>📥 Import VIP Top 20</b> để lấy nhanh predictions.
+          Bấm <b>📥 Import VIP Top 10</b> hoặc <b>Top 20</b> để lấy nhanh predictions.
         </p>
         <p className="text-[0.7rem] text-slate-400 mt-1">
           Tự lưu vào trình duyệt — F5 không mất.
@@ -504,9 +512,17 @@ export default function WatcherPage({ region }: { region: Region }) {
           </h3>
           <div className="flex gap-2 flex-wrap">
             <button
-              onClick={importFromVip}
+              onClick={() => importFromVip(10)}
               disabled={importing || !!viewDate}
-              title={viewDate ? "Quay về 'Hôm nay' để import" : undefined}
+              title={viewDate ? "Quay về 'Hôm nay' để import" : "Lấy 10 lô top đầu từ VIP prediction"}
+              className="px-3 py-1.5 text-xs rounded bg-yellow-600 hover:bg-yellow-500 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {importing ? "⏳ Đang load..." : "📥 Import VIP Top 10"}
+            </button>
+            <button
+              onClick={() => importFromVip(20)}
+              disabled={importing || !!viewDate}
+              title={viewDate ? "Quay về 'Hôm nay' để import" : "Lấy 20 lô top từ VIP prediction"}
               className="px-3 py-1.5 text-xs rounded bg-yellow-600 hover:bg-yellow-500 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {importing ? "⏳ Đang load..." : "📥 Import VIP Top 20"}
@@ -720,7 +736,7 @@ export default function WatcherPage({ region }: { region: Region }) {
       {/* Heat cards */}
       {watched.length === 0 ? (
         <div className="text-center py-12 text-slate-500 text-sm">
-          ↑ Nhập lô vào các ô trên hoặc bấm <b>📥 Import VIP Top 20</b> để bắt đầu
+          ↑ Nhập lô vào các ô trên hoặc bấm <b>📥 Import VIP Top 10/20</b> để bắt đầu
         </div>
       ) : loading ? (
         <div className="text-center py-12 text-slate-500">⏳ Đang load độ nóng...</div>
