@@ -258,17 +258,30 @@ async function loadLoHistoryCombined(days: number, endDate?: string): Promise<Re
   return out;
 }
 
-async function getFourDigitOccurrencesOnDateCombined(date: string): Promise<Map<string, number>> {
-  // ALL prizes ≥4 digits across all regions on this date (per user request).
-  const rows = await query<{ number: string }>(
-    `SELECT number FROM lottery_results
+// Per-region occurrence breakdown for a date — used to color hit chips
+// by which miền the number came out in (customer asked "số trúng miền nào").
+// Replaced the old count-only getFourDigitOccurrencesOnDateCombined since the
+// total can be derived from this richer return shape.
+type RegionBreakdown = { total: number; byRegion: Partial<Record<Region, number>> };
+async function getFourDigitOccurrencesByRegionOnDateCombined(
+  date: string
+): Promise<Map<string, RegionBreakdown>> {
+  const rows = await query<{ number: string; region: string }>(
+    `SELECT number, region FROM lottery_results
      WHERE date = ? AND LENGTH(number) >= 4`,
     [date]
   );
-  const m = new Map<string, number>();
+  const m = new Map<string, RegionBreakdown>();
   for (const r of rows) {
     const k = r.number.slice(-4).padStart(4, "0");
-    m.set(k, (m.get(k) ?? 0) + 1);
+    let entry = m.get(k);
+    if (!entry) {
+      entry = { total: 0, byRegion: {} };
+      m.set(k, entry);
+    }
+    entry.total++;
+    const region = r.region as Region;
+    entry.byRegion[region] = (entry.byRegion[region] ?? 0) + 1;
   }
   return m;
 }
@@ -973,6 +986,11 @@ export interface FourBacktestDay {
   actual_count: number;       // # of distinct 4-digit ĐB that came that day
   hits: number;               // # of top_k picks that appeared
   hit_picks: string[];
+  // Per-hit region breakdown so UI can color chips by miền (combined mode only).
+  // Aligned with hit_picks (same order). Each entry shows which regions
+  // had this number, and how many times in each. Optional because the legacy
+  // per-region backtestFourDigit doesn't track this (it's already region-known).
+  hit_picks_regions?: Array<{ number: string; byRegion: Partial<Record<Region, number>> }>;
   total_occurrences: number;  // sum of appearance counts on hit picks
   hit_rate_pct: number;
   coverage_pct: number;
@@ -1228,19 +1246,27 @@ export async function backtestFourDigitCombined(
     totalObsAggregated = Math.max(totalObsAggregated, r.total_observations);
 
     const topPicks = r.predictions.slice(0, topK).map((p) => p.number);
-    const occMap = await getFourDigitOccurrencesOnDateCombined(date);
-    const hitPicks = topPicks.filter((n) => (occMap.get(n) ?? 0) > 0);
-    const totalOcc = hitPicks.reduce((s, n) => s + (occMap.get(n) ?? 0), 0);
+    // Region-aware fetch: customer asked to color hits by miền.
+    // Returns Map<4-digit, {total, byRegion: {xsmn?, xsmb?, xsmt?}}>.
+    const occByRegion = await getFourDigitOccurrencesByRegionOnDateCombined(date);
+    const hitPicks = topPicks.filter((n) => (occByRegion.get(n)?.total ?? 0) > 0);
+    const totalOcc = hitPicks.reduce((s, n) => s + (occByRegion.get(n)?.total ?? 0), 0);
+
+    // Aligned per-hit region breakdown for UI chip coloring.
+    const hitPicksRegions = hitPicks.map((n) => ({
+      number: n,
+      byRegion: occByRegion.get(n)?.byRegion ?? {},
+    }));
 
     // Random-baseline expectation for this day:
     // count = (# of today's distinct events that are IN the pool) × (K / pool_size)
     // = how many random picks from K we'd expect to land on actual events.
     const poolSet = new Set(r.predictions.map((p) => p.number));
-    const eventsInPool = Array.from(occMap.keys()).filter((n) => poolSet.has(n)).length;
+    const eventsInPool = Array.from(occByRegion.keys()).filter((n) => poolSet.has(n)).length;
     expectedRandomHits += eventsInPool * (topK / r.candidate_pool_size);
 
     const hit = hitPicks.length;
-    const actualCount = occMap.size;
+    const actualCount = occByRegion.size;
     const cost = topK * POINT_COST_VND_FOUR;
     const win = totalOcc * payoutVnd;
     const profit = win - cost;
@@ -1251,7 +1277,7 @@ export async function backtestFourDigitCombined(
       let tOcc = 0;
       const acc = tierAcc.get(t.start)!;
       for (const n of tierPicks) {
-        const c = occMap.get(n) ?? 0;
+        const c = occByRegion.get(n)?.total ?? 0;
         if (c > 0) {
           tHits++;
           tOcc += c;
@@ -1271,6 +1297,7 @@ export async function backtestFourDigitCombined(
       actual_count: actualCount,
       hits: hit,
       hit_picks: hitPicks,
+      hit_picks_regions: hitPicksRegions,
       total_occurrences: totalOcc,
       hit_rate_pct: topK > 0 ? Math.round((hit / topK) * 10000) / 100 : 0,
       coverage_pct: actualCount > 0 ? Math.round((hit / actualCount) * 10000) / 100 : 0,

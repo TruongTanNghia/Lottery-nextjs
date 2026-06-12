@@ -54,6 +54,8 @@ interface BacktestDay {
   actual_count: number;
   hits: number;
   hit_picks: string[];
+  // Per-hit region breakdown (combined mode only). Aligned with hit_picks order.
+  hit_picks_regions?: Array<{ number: string; byRegion: Partial<Record<"xsmn" | "xsmb" | "xsmt", number>> }>;
   total_occurrences: number;
   hit_rate_pct: number;
   coverage_pct: number;
@@ -61,6 +63,14 @@ interface BacktestDay {
   win_vnd: number;
   profit_vnd: number;
 }
+
+// Customer asked: color hit chips by which miền the number came out in.
+// Three distinct colors so anh can tell at a glance which region drove the hit.
+const REGION_CHIP_COLOR: Record<"xsmn" | "xsmb" | "xsmt", { bg: string; border: string; text: string; label: string }> = {
+  xsmn: { bg: "bg-blue-500/20", border: "border-blue-400/60", text: "text-blue-100", label: "MN" },
+  xsmb: { bg: "bg-rose-500/20", border: "border-rose-400/60", text: "text-rose-100", label: "MB" },
+  xsmt: { bg: "bg-amber-500/20", border: "border-amber-400/60", text: "text-amber-100", label: "MT" },
+};
 
 interface TierStat {
   range_start: number;
@@ -933,7 +943,26 @@ export default function PredictionFourPage(_props: { region: Region }) {
           )}
 
           {/* Per-day table */}
-          <div className="overflow-x-auto border-t border-white/[0.06]">
+          <div className="border-t border-white/[0.06]">
+            {/* Legend explaining the region chip colors */}
+            <div className="px-3 md:px-4 py-2 bg-white/[0.02] border-b border-white/[0.04] flex flex-wrap items-center gap-2 text-[0.65rem]">
+              <span className="text-slate-400 font-semibold uppercase">Màu cột "Trúng":</span>
+              {(["xsmn", "xsmb", "xsmt"] as const).map((rk) => {
+                const c = REGION_CHIP_COLOR[rk];
+                const full = rk === "xsmn" ? "Miền Nam" : rk === "xsmb" ? "Miền Bắc" : "Miền Trung";
+                return (
+                  <span
+                    key={rk}
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${c.bg} border ${c.border} ${c.text} font-mono`}
+                  >
+                    <b>{c.label}</b>
+                    <span className="text-slate-300/80">= {full}</span>
+                  </span>
+                );
+              })}
+              <span className="text-slate-500 italic">— mỗi chip = 1 số trúng ở 1 miền cụ thể (hover xem số lần ra)</span>
+            </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-[0.72rem] md:text-xs">
               <thead className="bg-white/[0.03] text-slate-400 uppercase">
                 <tr>
@@ -942,7 +971,7 @@ export default function PredictionFourPage(_props: { region: Region }) {
                   <th className="px-3 py-2 text-center">ĐB thực</th>
                   <th className="px-3 py-2 text-center">Hit rate</th>
                   <th className="px-3 py-2 text-right">Lãi/Lỗ</th>
-                  <th className="px-3 py-2 text-left">Trúng</th>
+                  <th className="px-3 py-2 text-left">Trúng (theo miền)</th>
                 </tr>
               </thead>
               <tbody>
@@ -962,17 +991,57 @@ export default function PredictionFourPage(_props: { region: Region }) {
                       <td className={`px-3 py-2 text-right font-mono font-bold ${pc}`}>
                         {d.profit_vnd >= 0 ? "+" : ""}{fmtVndShort(d.profit_vnd)}
                       </td>
-                      <td className="px-3 py-2 font-mono text-emerald-200">
-                        {d.hit_picks.length === 0
-                          ? <span className="text-slate-600">—</span>
-                          : d.hit_picks.slice(0, 4).join(", ")}
-                        {d.hit_picks.length > 4 && <span className="text-slate-500"> …</span>}
+                      <td className="px-3 py-2">
+                        {d.hit_picks.length === 0 ? (
+                          <span className="text-slate-600">—</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {d.hit_picks.slice(0, 4).flatMap((number, i) => {
+                              const regions = d.hit_picks_regions?.[i]?.byRegion ?? {};
+                              const regionKeys = (Object.keys(regions) as Array<"xsmn" | "xsmb" | "xsmt">)
+                                .filter((k) => (regions[k] ?? 0) > 0);
+                              // Fallback when region info missing (e.g. legacy backtest)
+                              if (regionKeys.length === 0) {
+                                return [
+                                  <span
+                                    key={`${number}-noreg`}
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-700/40 border border-slate-600 text-slate-200 text-[0.65rem] font-mono font-bold"
+                                  >
+                                    {number}
+                                  </span>,
+                                ];
+                              }
+                              // One colored chip per (number, region) pair
+                              return regionKeys.map((rk) => {
+                                const c = REGION_CHIP_COLOR[rk];
+                                const cnt = regions[rk] ?? 0;
+                                return (
+                                  <span
+                                    key={`${number}-${rk}`}
+                                    title={`${number} ra ở ${c.label} ${cnt} lần ngày này`}
+                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${c.bg} border ${c.border} ${c.text} text-[0.65rem] font-mono`}
+                                  >
+                                    <span className="text-[0.55rem] opacity-70">{c.label}</span>
+                                    <b>{number}</b>
+                                    {cnt > 1 && <span className="text-[0.55rem] opacity-70">×{cnt}</span>}
+                                  </span>
+                                );
+                              });
+                            })}
+                            {d.hit_picks.length > 4 && (
+                              <span className="text-[0.65rem] text-slate-500 italic px-1 py-0.5">
+                                +{d.hit_picks.length - 4} nữa
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         </section>
       ) : null}
