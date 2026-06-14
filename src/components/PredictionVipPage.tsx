@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { REGION_LABELS, type Region } from "@/lib/types";
 import { formatDate } from "@/lib/format";
 import { useToast } from "./Toast";
+import PatternFilterPanel from "./PatternFilterPanel";
 
 function nextDateOf(dateStr: string | null): string | null {
   if (!dateStr) return null;
@@ -933,6 +934,29 @@ export default function PredictionVipPage({
           );
         })}
       </div>
+
+      {/* Pattern filter + Martingale + Bet multiplier (shared component).
+          VIP doesn't have per-day backtest in this response shape, so Sit-Out
+          and Martingale-EV will compute from null → still useful for the
+          pattern filter + bet multiplier portion. Cost/payout = lô 23k/1.84tr. */}
+      <PatternFilterPanel
+        predictions={data.final.map((p) => ({
+          rank: p.rank,
+          number: p.lo_number,
+          probability: p.probability,
+          composite_score: p.composite_score,
+          breakdown: p.breakdown,
+        }))}
+        topK={20}
+        backtest={null}
+        numberDigits={2}
+        numberSpaceSize={100}
+        costPerPick={23_000}
+        payoutPerHit={1_840_000}
+        storagePrefix="vip"
+        label="Lô 2 chữ"
+        unitOfPick="lô"
+      />
     </>
   );
 }

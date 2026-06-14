@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { REGION_LABELS, type Region } from "@/lib/types";
 import { useToast } from "./Toast";
+import PatternFilterPanel from "./PatternFilterPanel";
 
 interface ThreeItem {
   rank: number;
@@ -787,6 +788,20 @@ export default function PredictionThreePage({ region }: { region: Region }) {
           </div>
         </>
       )}
+
+      {/* Pattern filter + Martingale + Sit-Out + Bet multiplier (shared component) */}
+      <PatternFilterPanel
+        predictions={data.predictions}
+        topK={topK}
+        backtest={backtest ? { days: backtest.days, top_k: backtest.top_k, baseline_pct: backtest.baseline_pct } : null}
+        numberDigits={3}
+        numberSpaceSize={1000}
+        costPerPick={23_000}
+        payoutPerHit={600_000}
+        storagePrefix="three"
+        label="3 Chân"
+        unitOfPick="số"
+      />
     </>
   );
 }
