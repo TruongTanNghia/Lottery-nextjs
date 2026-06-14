@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatDate } from "@/lib/format";
 import { REGION_LABELS, type Region } from "@/lib/types";
 import { useToast } from "./Toast";
 
-type ViewMode = "normal" | "last2" | "last3";
+type ViewMode = "normal" | "last2" | "last3" | "last4";
 
 interface ProvinceBlock {
   name: string;
@@ -41,7 +41,23 @@ const PRIZE_LABELS: Record<string, string> = {
 function transformNumber(num: string, mode: ViewMode): string {
   if (mode === "last2") return num.slice(-2);
   if (mode === "last3") return num.slice(-3);
+  if (mode === "last4") return num.slice(-4);
   return num;
+}
+
+// Extract distinct last-N-digit endings from a province block array.
+// Used by "loại bỏ" strategy: aggregate across days/regions then dedup + sort asc.
+// Numbers shorter than N digits are skipped (no valid suffix).
+function extractEndings(blocks: ProvinceBlock[], digits: 3 | 4): string[] {
+  const set = new Set<string>();
+  for (const prov of blocks) {
+    for (const prize of prov.prizes) {
+      for (const num of prize.numbers) {
+        if (num.length >= digits) set.add(num.slice(-digits));
+      }
+    }
+  }
+  return Array.from(set).sort();
 }
 
 export default function HistoryPage({ region }: { region: Region }) {
@@ -53,6 +69,91 @@ export default function HistoryPage({ region }: { region: Region }) {
   const [rescraping, setRescraping] = useState(false);
   const [rescrapeStatus, setRescrapeStatus] = useState("");
   const [healthChecking, setHealthChecking] = useState(false);
+
+  // ─── "Loại bỏ" strategy: aggregate 3/4-digit endings across regions+days ───
+  const [aggDays, setAggDays] = useState(7);
+  const [aggRegions, setAggRegions] = useState({ xsmn: true, xsmb: true, xsmt: true });
+  const [aggCache, setAggCache] = useState<Partial<Record<Region, ApiResponse>>>({});
+  const [aggLoading, setAggLoading] = useState(false);
+
+  async function fetchAggregatedRegions() {
+    setAggLoading(true);
+    try {
+      // Fetch all 3 regions in parallel — request enough days that aggDays + any
+      // user re-tweak fits without re-fetching. Cap at 45 to match max selector.
+      const fetchN = Math.max(aggDays, 45);
+      const responses = await Promise.all(
+        (["xsmn", "xsmb", "xsmt"] as const).map((r) =>
+          fetch(`/api/results/history-full?region=${r}&days=${fetchN}`).then((res) => res.json())
+        )
+      );
+      setAggCache({ xsmn: responses[0], xsmb: responses[1], xsmt: responses[2] });
+      toast.show("success", "Đã tải data 3 miền");
+    } catch {
+      toast.show("error", "Lỗi khi tải data 3 miền");
+    } finally {
+      setAggLoading(false);
+    }
+  }
+
+  // Per-date endings map: date → { last3, last4 } across selected regions.
+  // Used both by the top-panel aggregate AND per-day copy buttons in each DayCard.
+  const perDateEndings = useMemo(() => {
+    const map = new Map<string, { last3: string[]; last4: string[] }>();
+    if (!aggCache.xsmn && !aggCache.xsmb && !aggCache.xsmt) return map;
+
+    // Collect all distinct dates across enabled regions
+    const datesSet = new Set<string>();
+    for (const r of ["xsmn", "xsmb", "xsmt"] as const) {
+      if (!aggRegions[r]) continue;
+      const d = aggCache[r]?.data ?? [];
+      for (const day of d) datesSet.add(day.date);
+    }
+
+    for (const date of datesSet) {
+      const blocks: ProvinceBlock[] = [];
+      for (const r of ["xsmn", "xsmb", "xsmt"] as const) {
+        if (!aggRegions[r]) continue;
+        const day = aggCache[r]?.data.find((d) => d.date === date);
+        if (day) blocks.push(...day.provinces);
+      }
+      map.set(date, {
+        last3: extractEndings(blocks, 3),
+        last4: extractEndings(blocks, 4),
+      });
+    }
+    return map;
+  }, [aggCache, aggRegions]);
+
+  // Aggregate across last aggDays for the top panel
+  const aggregated = useMemo(() => {
+    if (perDateEndings.size === 0) return null;
+    // Sort dates desc, take first aggDays
+    const recentDates = Array.from(perDateEndings.keys()).sort().reverse().slice(0, aggDays);
+    const set3 = new Set<string>();
+    const set4 = new Set<string>();
+    for (const date of recentDates) {
+      const e = perDateEndings.get(date);
+      if (!e) continue;
+      for (const s of e.last3) set3.add(s);
+      for (const s of e.last4) set4.add(s);
+    }
+    return {
+      last3: Array.from(set3).sort(),
+      last4: Array.from(set4).sort(),
+      datesCovered: recentDates,
+    };
+  }, [perDateEndings, aggDays]);
+
+  async function copyAggList(arr: string[], label: string) {
+    if (arr.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(arr.join(", "));
+      toast.show("success", `Copy ${arr.length} số ${label} đã ra`);
+    } catch {
+      toast.show("error", "Trình duyệt chặn copy");
+    }
+  }
 
   async function runHealthCheck() {
     setHealthChecking(true);
@@ -242,7 +343,7 @@ export default function HistoryPage({ region }: { region: Region }) {
               <option value={45}>45 ngày</option>
             </select>
             <div className="flex gap-1 p-1 rounded bg-[#1a2332] border border-slate-600">
-              {(["normal", "last2", "last3"] as const).map((m) => (
+              {(["normal", "last2", "last3", "last4"] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setView(m)}
@@ -252,7 +353,7 @@ export default function HistoryPage({ region }: { region: Region }) {
                       : "text-slate-400 hover:text-slate-100"
                   }`}
                 >
-                  {m === "normal" ? "Số đầy đủ" : m === "last2" ? "2 số cuối" : "3 số cuối"}
+                  {m === "normal" ? "Số đầy đủ" : m === "last2" ? "2 số cuối" : m === "last3" ? "3 số cuối" : "4 số cuối"}
                 </button>
               ))}
             </div>
@@ -276,17 +377,136 @@ export default function HistoryPage({ region }: { region: Region }) {
         </div>
       </section>
 
+      {/* "Loại bỏ" aggregation panel — top panel for cross-region copy */}
+      <section className="mb-4 md:mb-6 rounded-2xl bg-gradient-to-br from-rose-900/20 via-orange-900/15 to-amber-900/10 border border-amber-500/40 p-4">
+        <h3 className="text-sm md:text-base font-bold flex items-center gap-2">
+          🎯 Chiến Thuật Loại Bỏ — Số Đuôi Đã Ra (3 miền)
+        </h3>
+        <p className="text-[0.7rem] text-slate-400 mt-0.5">
+          Gộp tất cả giải ≥3/4 chữ của các miền chọn, dedup + sắp tăng. Copy → dán vào model lọc để bỏ các số "vừa ra".
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+          <div>
+            <label className="text-[0.6rem] text-slate-400 uppercase font-semibold">N ngày gần nhất</label>
+            <select
+              value={aggDays}
+              onChange={(e) => setAggDays(parseInt(e.target.value))}
+              className="w-full mt-0.5 px-2 py-1 rounded text-xs bg-[#1a2332] border border-slate-600 text-slate-100"
+            >
+              <option value={1}>1 ngày</option>
+              <option value={3}>3 ngày</option>
+              <option value={7}>7 ngày</option>
+              <option value={14}>14 ngày</option>
+              <option value={30}>30 ngày</option>
+              <option value={45}>45 ngày</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[0.6rem] text-slate-400 uppercase font-semibold">Miền (cộng dồn)</label>
+            <div className="flex gap-2 mt-1">
+              {(["xsmn", "xsmb", "xsmt"] as const).map((r) => (
+                <label key={r} className="flex items-center gap-1 text-xs text-slate-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={aggRegions[r]}
+                    onChange={(e) => setAggRegions((prev) => ({ ...prev, [r]: e.target.checked }))}
+                    className="accent-amber-500"
+                  />
+                  {r === "xsmn" ? "MN" : r === "xsmb" ? "MB" : "MT"}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="sm:col-span-2 flex items-end gap-2">
+            <button
+              onClick={fetchAggregatedRegions}
+              disabled={aggLoading}
+              className="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold disabled:opacity-40"
+            >
+              {aggLoading ? "⏳ Đang tải..." : aggregated ? "🔄 Tải lại" : "🎯 Tính loại bỏ"}
+            </button>
+            {aggregated && (
+              <span className="text-[0.7rem] text-slate-400">
+                Đã gộp {aggregated.datesCovered.length} ngày × {Object.values(aggRegions).filter(Boolean).length} miền
+              </span>
+            )}
+          </div>
+        </div>
+
+        {aggregated && (
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="rounded-lg bg-amber-500/10 border border-amber-400/40 p-3">
+              <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                <div>
+                  <div className="text-[0.6rem] text-slate-400 uppercase font-semibold">3 số cuối đã ra</div>
+                  <div className="font-mono font-extrabold text-lg text-amber-300">
+                    {aggregated.last3.length}<span className="text-[0.7rem] text-slate-500">/1000 ({(aggregated.last3.length / 10).toFixed(1)}%)</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => copyAggList(aggregated.last3, "3 chân")}
+                  className="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold"
+                >
+                  📋 Copy
+                </button>
+              </div>
+              <div className="text-[0.65rem] font-mono text-slate-300 max-h-16 overflow-y-auto">
+                {aggregated.last3.slice(0, 30).join(", ")}
+                {aggregated.last3.length > 30 && <span className="text-slate-500"> … +{aggregated.last3.length - 30}</span>}
+              </div>
+            </div>
+            <div className="rounded-lg bg-fuchsia-500/10 border border-fuchsia-400/40 p-3">
+              <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                <div>
+                  <div className="text-[0.6rem] text-slate-400 uppercase font-semibold">4 số cuối đã ra</div>
+                  <div className="font-mono font-extrabold text-lg text-fuchsia-300">
+                    {aggregated.last4.length}<span className="text-[0.7rem] text-slate-500">/10000 ({(aggregated.last4.length / 100).toFixed(2)}%)</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => copyAggList(aggregated.last4, "4 càng")}
+                  className="px-3 py-1.5 text-xs rounded bg-fuchsia-500 hover:bg-fuchsia-400 text-white font-bold"
+                >
+                  📋 Copy
+                </button>
+              </div>
+              <div className="text-[0.65rem] font-mono text-slate-300 max-h-16 overflow-y-auto">
+                {aggregated.last4.slice(0, 25).join(", ")}
+                {aggregated.last4.length > 25 && <span className="text-slate-500"> … +{aggregated.last4.length - 25}</span>}
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* Per-day blocks */}
       <div className="space-y-3 md:space-y-4">
         {data.data.map((day) => (
-          <DayCard key={day.date} day={day} view={view} />
+          <DayCard
+            key={day.date}
+            day={day}
+            view={view}
+            endings={perDateEndings.get(day.date) ?? null}
+            onCopy={copyAggList}
+          />
         ))}
       </div>
     </>
   );
 }
 
-function DayCard({ day, view }: { day: DayBlock; view: ViewMode }) {
+function DayCard({
+  day,
+  view,
+  endings,
+  onCopy,
+}: {
+  day: DayBlock;
+  view: ViewMode;
+  endings: { last3: string[]; last4: string[] } | null;
+  onCopy: (arr: string[], label: string) => void;
+}) {
   const provinceCount = day.provinces.length;
 
   const prizeOrder = ["G.DB", "G.1", "G.2", "G.3", "G.4", "G.5", "G.6", "G.7", "G.8"];
@@ -313,6 +533,7 @@ function DayCard({ day, view }: { day: DayBlock; view: ViewMode }) {
     normal: "bg-white/[0.04] border-white/[0.08] text-slate-100",
     last2: "bg-emerald-500/10 border-emerald-500/30 text-emerald-300",
     last3: "bg-amber-500/10 border-amber-500/30 text-amber-300",
+    last4: "bg-fuchsia-500/10 border-fuchsia-500/30 text-fuchsia-300",
   };
 
   return (
@@ -322,10 +543,30 @@ function DayCard({ day, view }: { day: DayBlock; view: ViewMode }) {
           {formatDate(day.date)}{" "}
           <span className="text-slate-500 font-mono text-xs">({day.date})</span>
         </h3>
-        <span className="text-[0.7rem] text-slate-400">
-          {provinceCount} đài •{" "}
-          {day.provinces.map((p) => `${p.name}(${totalNumbers(p.name)})`).join(" / ")}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {endings && (
+            <>
+              <button
+                onClick={() => onCopy(endings.last3, `3 chân ngày ${day.date}`)}
+                title={`Copy ${endings.last3.length} số 3 cuối đã ra ngày này (gộp các miền chọn)`}
+                className="px-2 py-0.5 text-[0.65rem] rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 font-bold font-mono"
+              >
+                📋 3c·{endings.last3.length}
+              </button>
+              <button
+                onClick={() => onCopy(endings.last4, `4 càng ngày ${day.date}`)}
+                title={`Copy ${endings.last4.length} số 4 cuối đã ra ngày này (gộp các miền chọn)`}
+                className="px-2 py-0.5 text-[0.65rem] rounded bg-fuchsia-500/20 hover:bg-fuchsia-500/30 border border-fuchsia-400/40 text-fuchsia-200 font-bold font-mono"
+              >
+                📋 4c·{endings.last4.length}
+              </button>
+            </>
+          )}
+          <span className="text-[0.7rem] text-slate-400">
+            {provinceCount} đài •{" "}
+            {day.provinces.map((p) => `${p.name}(${totalNumbers(p.name)})`).join(" / ")}
+          </span>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
