@@ -8,20 +8,18 @@
  *   - XSMB: 1 ĐB / day → 180 days = 180 observations for 10,000 candidates.
  *   - XSMN: 3-4 ĐB / day → ~540-720 obs in 180 days.
  *   - Even with 720 obs, ≥86% of 10K candidates never appear in window.
- *   - Raw frequency is noise. Borrow models (from denser 3-chân + 2-chân lô
- *     spaces) carry most of the signal.
  *
- * 8-Model ensemble:
+ * 6-Model self-derived ensemble (per user request — no "mượn số" / borrow):
  *   1. frequency      — Laplace-smoothed (alpha bumped to 4 for 10K space)
  *   2. recency        — EWMA, half-life 14d
  *   3. dayOfWeek      — same weekday history
- *   4. temperature    — 14d recent vs 60d baseline (longer windows than 3-chân)
+ *   4. temperature    — 14d recent vs 60d baseline
  *   5. digitFreq      — per-position digit independence (4 positions × 10 digits)
- *   6. loBorrow       — last 2 digits "CD" → leverage 100-space lô data (DENSEST)
- *   7. threeBorrow    — last 3 digits "BCD" → leverage 1000-space 3-chân data
- *   8. pairFreq       — first-2 "AB" + middle "BC" + last-2 "CD" pair distributions
+ *   6. pairFreq       — first-2 "AB" + middle "BC" + last-2 "CD" pair distributions
  *
- * Per-region tuning weights borrow models heavily for 4-càng.
+ * Removed in this revision: loBorrow (mượn lô 2 chữ) + threeBorrow (mượn 3 chân)
+ * — user explicitly said "không có cơ chế mượn số". Old borrow weights
+ * (~0.40 per region) redistributed to digitFreq + pairFreq.
  */
 import { query, type Region } from "./db";
 
@@ -67,75 +65,6 @@ async function loadFourHistory(
     const four = r.number.slice(-4).padStart(4, "0");
     if (!out[r.date]) out[r.date] = {};
     out[r.date][four] = (out[r.date][four] ?? 0) + 1;
-  }
-  return out;
-}
-
-/** Load 3-digit history (all prizes ≥3 digits) for "threeBorrow" model. */
-async function loadThreeHistory(
-  region: Region,
-  days: number,
-  endDate?: string
-): Promise<Record<string, Record<string, number>>> {
-  let rows: { date: string; number: string }[];
-  if (endDate) {
-    const [ey, em, ed] = endDate.split("-").map(Number);
-    const endMs = Date.UTC(ey, em - 1, ed);
-    const startStr = new Date(endMs - days * 86_400_000).toISOString().slice(0, 10);
-    rows = await query<{ date: string; number: string }>(
-      `SELECT date, number FROM lottery_results
-       WHERE region = ? AND date >= ? AND date < ? AND LENGTH(number) >= 3`,
-      [region, startStr, endDate]
-    );
-  } else {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    rows = await query<{ date: string; number: string }>(
-      `SELECT date, number FROM lottery_results
-       WHERE region = ? AND date >= ? AND LENGTH(number) >= 3`,
-      [region, cutoffStr]
-    );
-  }
-  const out: Record<string, Record<string, number>> = {};
-  for (const r of rows) {
-    const three = r.number.slice(-3).padStart(3, "0");
-    if (!out[r.date]) out[r.date] = {};
-    out[r.date][three] = (out[r.date][three] ?? 0) + 1;
-  }
-  return out;
-}
-
-/** Load 2-digit lô history (denser — for loBorrow). */
-async function loadLoHistory(
-  region: Region,
-  days: number,
-  endDate?: string
-): Promise<Record<string, Record<string, number>>> {
-  let rows: { date: string; lo_number: string; count: number }[];
-  if (endDate) {
-    const [ey, em, ed] = endDate.split("-").map(Number);
-    const endMs = Date.UTC(ey, em - 1, ed);
-    const startStr = new Date(endMs - days * 86_400_000).toISOString().slice(0, 10);
-    rows = await query<{ date: string; lo_number: string; count: number }>(
-      `SELECT date, lo_number, count FROM lo_daily
-       WHERE region = ? AND date >= ? AND date < ?`,
-      [region, startStr, endDate]
-    );
-  } else {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    rows = await query<{ date: string; lo_number: string; count: number }>(
-      `SELECT date, lo_number, count FROM lo_daily
-       WHERE region = ? AND date >= ?`,
-      [region, cutoffStr]
-    );
-  }
-  const out: Record<string, Record<string, number>> = {};
-  for (const r of rows) {
-    if (!out[r.date]) out[r.date] = {};
-    out[r.date][r.lo_number] = r.count;
   }
   return out;
 }
@@ -193,67 +122,6 @@ async function loadFourHistoryCombined(days: number, endDate?: string): Promise<
     const four = r.number.slice(-4).padStart(4, "0");
     if (!out[r.date]) out[r.date] = {};
     out[r.date][four] = (out[r.date][four] ?? 0) + 1;
-  }
-  return out;
-}
-
-async function loadThreeHistoryCombined(days: number, endDate?: string): Promise<Record<string, Record<string, number>>> {
-  let rows: { date: string; number: string }[];
-  if (endDate) {
-    const [ey, em, ed] = endDate.split("-").map(Number);
-    const endMs = Date.UTC(ey, em - 1, ed);
-    const startStr = new Date(endMs - days * 86_400_000).toISOString().slice(0, 10);
-    rows = await query<{ date: string; number: string }>(
-      `SELECT date, number FROM lottery_results
-       WHERE date >= ? AND date < ? AND LENGTH(number) >= 3`,
-      [startStr, endDate]
-    );
-  } else {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    rows = await query<{ date: string; number: string }>(
-      `SELECT date, number FROM lottery_results
-       WHERE date >= ? AND LENGTH(number) >= 3`,
-      [cutoffStr]
-    );
-  }
-  const out: Record<string, Record<string, number>> = {};
-  for (const r of rows) {
-    const three = r.number.slice(-3).padStart(3, "0");
-    if (!out[r.date]) out[r.date] = {};
-    out[r.date][three] = (out[r.date][three] ?? 0) + 1;
-  }
-  return out;
-}
-
-async function loadLoHistoryCombined(days: number, endDate?: string): Promise<Record<string, Record<string, number>>> {
-  let rows: { date: string; lo_number: string; count: number }[];
-  if (endDate) {
-    const [ey, em, ed] = endDate.split("-").map(Number);
-    const endMs = Date.UTC(ey, em - 1, ed);
-    const startStr = new Date(endMs - days * 86_400_000).toISOString().slice(0, 10);
-    rows = await query<{ date: string; lo_number: string; count: number }>(
-      `SELECT date, lo_number, SUM(count) as count FROM lo_daily
-       WHERE date >= ? AND date < ?
-       GROUP BY date, lo_number`,
-      [startStr, endDate]
-    );
-  } else {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    rows = await query<{ date: string; lo_number: string; count: number }>(
-      `SELECT date, lo_number, SUM(count) as count FROM lo_daily
-       WHERE date >= ?
-       GROUP BY date, lo_number`,
-      [cutoffStr]
-    );
-  }
-  const out: Record<string, Record<string, number>> = {};
-  for (const r of rows) {
-    if (!out[r.date]) out[r.date] = {};
-    out[r.date][r.lo_number] = r.count;
   }
   return out;
 }
@@ -325,7 +193,7 @@ function softmax(scores: Record<string, number>, T: number): Record<string, numb
 }
 
 // ─────────────────────────────────────────────
-// 8 Models
+// 6 Models (self-derived — no borrow)
 // ─────────────────────────────────────────────
 
 /** Raw count + Laplace smoothing (alpha bumped to 4 for 10K-space sparseness). */
@@ -443,66 +311,6 @@ function modelDigitFrequency(history: DateMap): Record<string, number> {
 }
 
 /**
- * BORROW from 2-digit lô (100-space, DENSEST data we have).
- * For 4-digit "ABCD", the lô tail = "CD".
- * If "CD" is hot recently as lô → boost all "**CD" candidates.
- */
-function modelLoBorrow(
-  loHistory: Record<string, Record<string, number>>,
-  halfLife: number = 10
-): Record<string, number> {
-  const loDates = Object.keys(loHistory).sort();
-  if (loDates.length === 0) return emptyScores();
-  const loScore: Record<string, number> = {};
-  for (let i = 0; i < 100; i++) loScore[String(i).padStart(2, "0")] = 0;
-  const decay = Math.log(2) / halfLife;
-  const todayIdx = loDates.length - 1;
-  for (let i = 0; i < loDates.length; i++) {
-    const age = todayIdx - i;
-    const w = Math.exp(-decay * age);
-    for (const [lo, c] of Object.entries(loHistory[loDates[i]])) {
-      loScore[lo] = (loScore[lo] ?? 0) + w * c;
-    }
-  }
-  const out = emptyScores();
-  for (const n of ALL_FOUR) {
-    const lo = n.slice(2); // last 2 digits "CD"
-    out[n] = loScore[lo] ?? 0;
-  }
-  return out;
-}
-
-/**
- * BORROW from 3-digit (1000-space).
- * For "ABCD", the 3-chân tail = "BCD".
- * If "BCD" is hot recently as 3-chân → boost all "*BCD" candidates.
- */
-function modelThreeBorrow(
-  threeHistory: Record<string, Record<string, number>>,
-  halfLife: number = 12
-): Record<string, number> {
-  const dates = Object.keys(threeHistory).sort();
-  if (dates.length === 0) return emptyScores();
-  const threeScore: Record<string, number> = {};
-  for (let i = 0; i < 1000; i++) threeScore[String(i).padStart(3, "0")] = 0;
-  const decay = Math.log(2) / halfLife;
-  const todayIdx = dates.length - 1;
-  for (let i = 0; i < dates.length; i++) {
-    const age = todayIdx - i;
-    const w = Math.exp(-decay * age);
-    for (const [three, c] of Object.entries(threeHistory[dates[i]])) {
-      threeScore[three] = (threeScore[three] ?? 0) + w * c;
-    }
-  }
-  const out = emptyScores();
-  for (const n of ALL_FOUR) {
-    const three = n.slice(1); // last 3 digits "BCD"
-    out[n] = threeScore[three] ?? 0;
-  }
-  return out;
-}
-
-/**
  * Pair-Decomposition: score "ABCD" by 3 overlapping pair frequencies.
  *   AB (first-2) × BC (middle-2) × CD (last-2)
  * Captures local correlations the position-independent digitFreq misses.
@@ -560,47 +368,41 @@ interface FourRegionParams {
   shrinkage: number;
 }
 
-// Weights heavily skewed toward BORROW models since they leverage
-// 10× / 100× denser data spaces (3-chân: 1K; lô: 100).
+// REMOVED loBorrow + threeBorrow. The user explicitly said "không có cơ chế
+// mượn số" — 4-càng must derive only from its OWN 4-digit history. Borrow
+// weights (~0.40-0.44 per region) redistributed mostly to digitFreq + pairFreq
+// (the strongest self-derived signals), plus modest bumps to recency/freq/dow.
 const REGION_PARAMS: Record<Region, FourRegionParams> = {
   xsmn: {
     weights: {
-      frequency: 0.05,    // raw is mostly noise in 10K
-      recency: 0.08,
-      dayOfWeek: 0.06,
-      temperature: 0.05,
-      digitFreq: 0.18,    // independent per-position
-      loBorrow: 0.22,     // strongest borrow (lô densest)
-      threeBorrow: 0.20,
-      pairFreq: 0.16,
+      frequency: 0.10,
+      recency: 0.18,
+      dayOfWeek: 0.08,
+      temperature: 0.08,
+      digitFreq: 0.28,
+      pairFreq: 0.28,
     },
     softmaxT: 0.20, recencyHalfLife: 14, shrinkage: 0.15,
   },
   xsmb: {
-    // Single province → DoW doesn't matter; only 1 ĐB/day → leaner data
     weights: {
-      frequency: 0.04,
-      recency: 0.08,
+      frequency: 0.10,
+      recency: 0.18,
       dayOfWeek: 0.02,
-      temperature: 0.04,
-      digitFreq: 0.20,
-      loBorrow: 0.24,     // MB has 27 lô/day → loBorrow strongest here
-      threeBorrow: 0.20,
-      pairFreq: 0.18,
+      temperature: 0.08,
+      digitFreq: 0.32,
+      pairFreq: 0.30,
     },
     softmaxT: 0.22, recencyHalfLife: 14, shrinkage: 0.20,
   },
   xsmt: {
-    // Province rotation by weekday → DoW matters most
     weights: {
-      frequency: 0.04,
-      recency: 0.06,
-      dayOfWeek: 0.16,
-      temperature: 0.04,
-      digitFreq: 0.16,
-      loBorrow: 0.22,
-      threeBorrow: 0.18,
-      pairFreq: 0.14,
+      frequency: 0.08,
+      recency: 0.12,
+      dayOfWeek: 0.22,
+      temperature: 0.06,
+      digitFreq: 0.26,
+      pairFreq: 0.26,
     },
     softmaxT: 0.24, recencyHalfLife: 10, shrinkage: 0.22,
   },
@@ -612,8 +414,6 @@ const MODEL_META: Record<string, { label: string; question: string }> = {
   dayOfWeek: { label: "Cùng thứ", question: "Hay về vào thứ này?" },
   temperature: { label: "Hot vs base", question: "ĐANG HOT hơn baseline?" },
   digitFreq: { label: "Vị trí chữ số", question: "Từng vị trí 1/2/3/4 hay là số nào?" },
-  loBorrow: { label: "Mượn lô (2 chữ đuôi)", question: "Đuôi 2 chữ CD đang hot?" },
-  threeBorrow: { label: "Mượn 3 chân", question: "3 chữ đuôi BCD đang hot?" },
   pairFreq: { label: "Cặp chữ số", question: "Cặp AB/BC/CD có tần suất cao?" },
 };
 
@@ -688,7 +488,7 @@ export async function predictFourDigit(
       warning: `Cần ít nhất 14 ngày data G.DB, hiện có ${daysAvailable}. Scrape thêm rồi quay lại.`,
       weights: params.weights,
       predictions: [],
-      total_models: 8,
+      total_models: 6,
       consensus_threshold: CONSENSUS_THRESHOLD[region],
       models: [],
       consensus: [],
@@ -696,20 +496,13 @@ export async function predictFourDigit(
     };
   }
 
-  // Load supplementary denser histories for borrow models (parallel)
-  const [loHistory, threeHistory] = await Promise.all([
-    loadLoHistory(region, windowDays, endDate),
-    loadThreeHistory(region, windowDays, endDate),
-  ]);
-
+  // No borrow models — purely self-derived 4-digit signals.
   const raw: Record<string, Record<string, number>> = {
     frequency: modelFrequency(history),
     recency: modelRecency(history, params.recencyHalfLife),
     dayOfWeek: modelDayOfWeek(history),
     temperature: modelTemperature(history),
     digitFreq: modelDigitFrequency(history),
-    loBorrow: modelLoBorrow(loHistory, params.recencyHalfLife - 2),
-    threeBorrow: modelThreeBorrow(threeHistory, params.recencyHalfLife),
     pairFreq: modelPairFreq(history),
   };
   const norm: Record<string, Record<string, number>> = {};
@@ -776,7 +569,7 @@ export async function predictFourDigit(
     days_available: daysAvailable,
     weights: params.weights,
     predictions: items,
-    total_models: 8,
+    total_models: 6,
     consensus_threshold: threshold,
     models,
     consensus,
@@ -807,15 +600,15 @@ export async function predictFourDigit(
 // New weights: 70% on frequency + recency (direct count signals that
 // actually correlate with future appearance for sparse data), small
 // contributions from other models for slight variation across days.
+// No borrow models — purely self-derived. Old borrow weights (0.05 total)
+// redistributed evenly to frequency/recency/temperature/digitFreq/pairFreq.
 const COMBINED_WEIGHTS: Record<string, number> = {
-  frequency: 0.40,     // raw appearance count — strongest reliable signal
-  recency: 0.30,       // EWMA — recent appearances slightly more likely (noise-tolerant)
-  dayOfWeek: 0.0,      // disabled (3-region mix muddies the signal)
-  temperature: 0.10,   // hot vs base — modest tie-breaker
-  digitFreq: 0.10,     // de-emphasized — was creating digit-pattern bias
-  loBorrow: 0.02,      // minimal — cross-prize signal is weak for ĐB
-  threeBorrow: 0.03,
-  pairFreq: 0.05,      // de-emphasized — was locking picks to specific endings
+  frequency: 0.41,
+  recency: 0.31,
+  dayOfWeek: 0.0,
+  temperature: 0.11,
+  digitFreq: 0.11,
+  pairFreq: 0.06,
 };
 
 const COMBINED_SOFTMAX_T = 0.30;     // softer (was 0.22) — more day-to-day variation in top-K
@@ -854,7 +647,7 @@ export async function predictFourDigitCombined(
       predictions: [],
       candidate_pool_size: 0,
       total_observations: 0,
-      total_models: 8,
+      total_models: 6,
       consensus_threshold: 4,
       models: [],
       consensus: [],
@@ -874,20 +667,13 @@ export async function predictFourDigitCombined(
   }
   const poolSize = appeared.size;
 
-  // Load supplementary denser histories for borrow models (parallel)
-  const [loHistory, threeHistory] = await Promise.all([
-    loadLoHistoryCombined(windowDays, endDate),
-    loadThreeHistoryCombined(windowDays, endDate),
-  ]);
-
+  // No borrow models — purely self-derived 4-digit signals.
   const raw: Record<string, Record<string, number>> = {
     frequency: modelFrequency(history, 2),  // alpha=2 (less smoothing — pool is filtered)
     recency: modelRecency(history, COMBINED_RECENCY_HL),
     dayOfWeek: modelDayOfWeek(history),
     temperature: modelTemperature(history),
     digitFreq: modelDigitFrequency(history),
-    loBorrow: modelLoBorrow(loHistory, COMBINED_RECENCY_HL - 2),
-    threeBorrow: modelThreeBorrow(threeHistory, COMBINED_RECENCY_HL),
     pairFreq: modelPairFreq(history),
   };
   const norm: Record<string, Record<string, number>> = {};
@@ -969,7 +755,7 @@ export async function predictFourDigitCombined(
     predictions: items,
     candidate_pool_size: poolSize,
     total_observations: totalObs,
-    total_models: 8,
+    total_models: 6,
     consensus_threshold: 4,
     models,
     consensus,
@@ -1173,7 +959,7 @@ export async function backtestFourDigit(
     region,
     days_window: days,
     top_k: topK,
-    total_models: 8,
+    total_models: 6,
     baseline_pct: Math.round(baseline * 1000) / 1000,
     payout_per_hit_vnd: payoutVnd,
     cost_per_pick_vnd: POINT_COST_VND_FOUR,
@@ -1354,7 +1140,7 @@ export async function backtestFourDigitCombined(
     combined: true,
     days_window: days,
     top_k: topK,
-    total_models: 8,
+    total_models: 6,
     baseline_pct: Math.round(baseline * 1000) / 1000,
     payout_per_hit_vnd: payoutVnd,
     cost_per_pick_vnd: POINT_COST_VND_FOUR,

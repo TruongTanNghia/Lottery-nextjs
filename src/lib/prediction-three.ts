@@ -50,40 +50,6 @@ async function loadThreeHistory(
   return out;
 }
 
-/** Load 2-digit lô history (for modelLoBorrow which borrows from denser data). */
-async function loadLoHistory(
-  region: Region,
-  days: number,
-  endDate?: string
-): Promise<Record<string, Record<string, number>>> {
-  let rows: { date: string; lo_number: string; count: number }[];
-  if (endDate) {
-    const [ey, em, ed] = endDate.split("-").map(Number);
-    const endMs = Date.UTC(ey, em - 1, ed);
-    const startStr = new Date(endMs - days * 86_400_000).toISOString().slice(0, 10);
-    rows = await query<{ date: string; lo_number: string; count: number }>(
-      `SELECT date, lo_number, count FROM lo_daily
-       WHERE region = ? AND date >= ? AND date < ?`,
-      [region, startStr, endDate]
-    );
-  } else {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    rows = await query<{ date: string; lo_number: string; count: number }>(
-      `SELECT date, lo_number, count FROM lo_daily
-       WHERE region = ? AND date >= ?`,
-      [region, cutoffStr]
-    );
-  }
-  const out: Record<string, Record<string, number>> = {};
-  for (const r of rows) {
-    if (!out[r.date]) out[r.date] = {};
-    out[r.date][r.lo_number] = r.count;
-  }
-  return out;
-}
-
 /**
  * Per-3-digit occurrence counts on a specific date.
  * Some prizes share last 3 digits → multiplicity matters for money calc
@@ -294,48 +260,13 @@ function modelDigitFrequency(history: DateMap): Record<string, number> {
 }
 
 /**
- * 2-digit Lô Borrowing: leverage existing dense 2-digit lô data.
- *   For "ABC", the lô (last 2 digits) is "BC".
- *   If "BC" is hot recently as lô → boost "ABC".
- *   Borrows signal from a MUCH denser data space (100 vs 1000).
- */
-function modelLoBorrow(
-  loHistory: Record<string, Record<string, number>>,
-  halfLife: number = 7
-): Record<string, number> {
-  const loDates = Object.keys(loHistory).sort();
-  if (loDates.length === 0) return emptyScores();
-
-  // EWMA score per 2-digit lô
-  const loScore: Record<string, number> = {};
-  for (let i = 0; i < 100; i++) loScore[String(i).padStart(2, "0")] = 0;
-  const decay = Math.log(2) / halfLife;
-  const todayIdx = loDates.length - 1;
-  for (let i = 0; i < loDates.length; i++) {
-    const ageDays = todayIdx - i;
-    const w = Math.exp(-decay * ageDays);
-    for (const [lo, c] of Object.entries(loHistory[loDates[i]])) {
-      loScore[lo] = (loScore[lo] ?? 0) + w * c;
-    }
-  }
-
-  // Score each 3-digit "ABC" by its lô "BC" score
-  const out = emptyScores();
-  for (const n of ALL_THREE) {
-    const lo = n.slice(1); // last 2 digits = lô
-    out[n] = loScore[lo] ?? 0;
-  }
-  return out;
-}
-
-/**
  * Pair-Decomposition: score "ABC" by frequency of (first-2 "AB") × (last-2 "BC").
  * Captures pairwise digit CORRELATIONS that the independence-based
  * modelDigitFrequency misses. Both pair-frequencies are dense (100-space
  * vs 1000-space) → much smoother signal.
  *
  * Why "first-2" is new info:
- *   - last-2 frequency overlaps with modelLoBorrow (both reflect lô patterns)
+ *   - last-2 ("BC") = the lô pattern from the 3-chân itself
  *   - first-2 frequency = how often a 3-digit prize starts with this prefix
  *     (e.g., is "12_" a common prefix? Independent of digitFreq[0]×digitFreq[1])
  */
@@ -392,45 +323,45 @@ interface ThreeRegionParams {
 // Per-region weights now include pairFreq (pairwise digit decomposition).
 // Softer softmax T + slightly more shrinkage → broader top-K coverage
 // in the sparse 1000-space (trade peak confidence for better hit count).
+// REMOVED loBorrow (used to be 0.22 weight in each region). The user explicitly
+// said "không có cơ chế mượn số" — 3-chân should derive purely from its OWN
+// data, not borrow from 2-digit lô patterns. The 0.22 was redistributed mostly
+// to digitFreq + pairFreq (per-position + pair-position frequencies from G.DB
+// itself), plus small bumps to frequency/recency/streak.
 const REGION_PARAMS: Record<"xsmn" | "xsmb" | "xsmt", ThreeRegionParams> = {
   xsmn: {
     weights: {
-      frequency: 0.08,        // direct count is sparse — minimal weight
-      recency: 0.12,
-      dayOfWeek: 0.07,
-      temperature: 0.06,
-      streak: 0.05,
-      digitFreq: 0.20,        // per-position digit (independence)
-      loBorrow: 0.22,         // 2-digit lô borrowing (denser space)
-      pairFreq: 0.20,         // NEW: pairwise digit correlations
+      frequency: 0.10,
+      recency: 0.16,
+      dayOfWeek: 0.08,
+      temperature: 0.07,
+      streak: 0.07,
+      digitFreq: 0.26,
+      pairFreq: 0.26,
     },
     softmaxT: 0.16, recencyHalfLife: 10, shrinkage: 0.08,
   },
   xsmb: {
-    // 27 prizes/day → more data per draw; DoW useless (1 đài)
     weights: {
-      frequency: 0.10,
-      recency: 0.12,
+      frequency: 0.12,
+      recency: 0.16,
       dayOfWeek: 0.02,
-      temperature: 0.06,
-      streak: 0.08,
-      digitFreq: 0.20,
-      loBorrow: 0.22,
-      pairFreq: 0.20,
+      temperature: 0.08,
+      streak: 0.10,
+      digitFreq: 0.26,
+      pairFreq: 0.26,
     },
     softmaxT: 0.18, recencyHalfLife: 12, shrinkage: 0.15,
   },
   xsmt: {
-    // Province rotation → DoW critical; less data per day
     weights: {
-      frequency: 0.06,
-      recency: 0.08,
-      dayOfWeek: 0.20,        // still important for MT
-      temperature: 0.04,
+      frequency: 0.08,
+      recency: 0.12,
+      dayOfWeek: 0.24,
+      temperature: 0.06,
       streak: 0.04,
-      digitFreq: 0.20,
-      loBorrow: 0.22,
-      pairFreq: 0.16,
+      digitFreq: 0.22,
+      pairFreq: 0.24,
     },
     softmaxT: 0.22, recencyHalfLife: 6, shrinkage: 0.22,
   },
@@ -489,7 +420,6 @@ const MODEL_META: Record<string, { label: string; question: string }> = {
   temperature: { label: "Hot vs base", question: "Số nào ĐANG HOT hơn trung bình?" },
   streak: { label: "Liên tiếp", question: "Số đang về LIÊN TIẾP có nên đánh tiếp?" },
   digitFreq: { label: "Vị trí chữ số", question: "Mỗi vị trí (trăm/chục/đơn vị) hay là số nào?" },
-  loBorrow: { label: "Mượn lô 2 chữ", question: "Lô 2 chữ số đuôi (BC) đang hot?" },
   pairFreq: { label: "Cặp 2 chữ số", question: "Cặp đầu (AB) + cặp đuôi (BC) có tần suất cao?" },
 };
 
@@ -525,9 +455,7 @@ export async function predictThreeDigit(
     };
   }
 
-  // Load denser 2-digit lô history (used by loBorrow model)
-  const loHistory = await loadLoHistory(region, windowDays, endDate);
-
+  // No "mượn số" / borrow models — purely self-derived signals from 3-digit history.
   const raw: Record<string, Record<string, number>> = {
     frequency: modelFrequency(history),
     recency: modelRecency(history, params.recencyHalfLife),
@@ -535,7 +463,6 @@ export async function predictThreeDigit(
     temperature: modelTemperature(history),
     streak: modelStreak(history),
     digitFreq: modelDigitFrequency(history),
-    loBorrow: modelLoBorrow(loHistory, params.recencyHalfLife),
     pairFreq: modelPairFreq(history),
   };
   const norm: Record<string, Record<string, number>> = {};
