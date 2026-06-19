@@ -2,7 +2,7 @@
 
 import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
 
-type ViewKey = "dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden";
+type ViewKey = "dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling";
 
 interface Props {
   current: Region;
@@ -48,7 +48,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
       </div>
 
       <div className="flex flex-wrap gap-1 md:gap-1.5 p-1 rounded-full bg-[#111827] border border-[#1f2937]">
-        {(["dashboard", "prediction", "vip", "golden", "pair", "three", "four", "sim", "watcher", "today", "accuracy", "history"] as const).map((v) => {
+        {(["dashboard", "prediction", "vip", "golden", "pair", "three", "four", "sim", "watcher", "today", "accuracy", "history", "rolling"] as const).map((v) => {
           const labels: Record<ViewKey, string> = {
             dashboard: "📊 Dashboard",
             prediction: "🔮 Dự Đoán",
@@ -62,6 +62,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
             today: "📡 Hôm Nay",
             accuracy: "🎯 Độ Chính Xác",
             history: "📑 Lịch Sử",
+            rolling: "🌀 Cuốn Chiếu",
           };
           const activeBg: Record<ViewKey, string> = {
             dashboard: "bg-blue-900 shadow-[0_1px_6px_rgba(59,130,246,0.25)]",
@@ -76,6 +77,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
             today: "bg-emerald-700 shadow-[0_1px_6px_rgba(16,185,129,0.25)]",
             accuracy: "bg-purple-700 shadow-[0_1px_6px_rgba(139,92,246,0.25)]",
             history: "bg-indigo-700 shadow-[0_1px_6px_rgba(99,102,241,0.25)]",
+            rolling: "bg-cyan-700 shadow-[0_1px_6px_rgba(34,211,238,0.35)]",
           };
           return (
             <button

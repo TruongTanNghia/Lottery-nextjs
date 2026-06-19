@@ -24,6 +24,7 @@ import PredictionFourPage from "@/components/PredictionFourPage";
 import SimPage from "@/components/SimPage";
 import TodayPage from "@/components/TodayPage";
 import WatcherPage from "@/components/WatcherPage";
+import RollingPage from "@/components/RollingPage";
 import { formatDate } from "@/lib/format";
 import {
   REGION_LABELS,
@@ -48,7 +49,7 @@ function Dashboard() {
   const toast = useToast();
 
   const [region, setRegion] = useState<Region>("xsmn");
-  const [view, setView] = useState<"dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden">("dashboard");
+  const [view, setView] = useState<"dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling">("dashboard");
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -448,6 +449,8 @@ function Dashboard() {
           <SimPage region={region} />
         ) : view === "watcher" ? (
           <WatcherPage region={region} />
+        ) : view === "rolling" ? (
+          <RollingPage region={region} />
         ) : view === "today" ? (
           <TodayPage />
         ) : view === "accuracy" ? (
