@@ -594,21 +594,21 @@ function DayPairCard({
       </div>
 
       <div className="p-4 md:p-5 space-y-3 md:space-y-4">
-        {/* Hôm qua strip */}
-        <ChipStrip
-          title={prevLabel}
-          count={candList.length}
-          counts={row.candidateCounts}
-          overlap={overlap}
-          onCopyAll={() => onCopy(candList.join(", "), `${candList.length} đuôi hôm qua`)}
-        />
-        {/* Hôm nay strip */}
+        {/* Hôm nay strip — đặt trên theo yêu cầu khách */}
         <ChipStrip
           title={`Hôm nay (${row.date})`}
           count={targetList.length}
           counts={row.targetCounts}
           overlap={overlap}
           onCopyAll={() => onCopy(targetList.join(", "), `${targetList.length} đuôi hôm nay`)}
+        />
+        {/* Hôm qua strip — đặt dưới */}
+        <ChipStrip
+          title={prevLabel}
+          count={candList.length}
+          counts={row.candidateCounts}
+          overlap={overlap}
+          onCopyAll={() => onCopy(candList.join(", "), `${candList.length} đuôi hôm qua`)}
         />
         {/* Footer — quick copy row */}
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/[0.04]">
