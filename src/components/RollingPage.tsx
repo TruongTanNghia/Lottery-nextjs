@@ -635,9 +635,11 @@ function DayPairCard({
 }
 
 /**
- * Horizontal strip of ending chips for one day.
- * Numbers in `overlap` get red highlight (= appeared on both days of the pair).
- * Count > 1 shows ×N suffix.
+ * Strip for one day — splits chips into TWO sub-rows:
+ *   1. "Trùng" — big bold red chips (only the overlapping numbers)
+ *   2. "Còn lại" — dimmed chips (everything else)
+ * Layout is denser horizontally but FAR easier to scan because the eye
+ * locks onto the bright red row first.
  */
 function ChipStrip({
   title,
@@ -653,46 +655,79 @@ function ChipStrip({
   onCopyAll: () => void;
 }) {
   const sorted = Array.from(counts.keys()).sort();
+  const hits = sorted.filter((n) => overlap.has(n));
+  const others = sorted.filter((n) => !overlap.has(n));
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="text-[0.65rem] md:text-xs uppercase tracking-wider font-semibold text-slate-400">
-          {title} <span className="text-slate-600">— {count} số</span>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs md:text-sm font-bold text-slate-200">
+          {title}
+          <span className="ml-2 text-[0.65rem] font-mono font-normal text-slate-500">
+            {count} số · {hits.length} trùng
+          </span>
         </div>
         {sorted.length > 0 && (
           <button
             onClick={onCopyAll}
-            className="px-2 py-0.5 rounded text-[0.6rem] font-semibold bg-white/[0.04] hover:bg-white/[0.08] text-slate-300"
+            className="px-2 py-0.5 rounded text-[0.6rem] font-semibold bg-white/[0.04] hover:bg-white/[0.08] text-slate-400"
           >
-            Copy
+            Copy tất cả
           </button>
         )}
       </div>
+
       {sorted.length === 0 ? (
         <div className="text-xs text-slate-600 italic">— Không có dữ liệu —</div>
       ) : (
-        <div className="flex flex-wrap gap-1">
-          {sorted.map((n) => {
-            const c = counts.get(n) ?? 0;
-            const isHit = overlap.has(n);
-            return (
-              <span
-                key={n}
-                className={`px-1.5 py-0.5 rounded text-[0.65rem] md:text-xs font-mono font-semibold border ${
-                  isHit
-                    ? "bg-red-500/15 border-red-500/40 text-red-300"
-                    : "bg-white/[0.03] border-white/[0.06] text-slate-300"
-                }`}
-              >
-                {n}
-                {c > 1 && (
-                  <span className={`ml-0.5 text-[0.55rem] ${isHit ? "text-red-400" : "text-amber-400"}`}>
-                    ×{c}
-                  </span>
-                )}
+        <div className="space-y-2.5">
+          {/* Hits row — bright, bold, breathing */}
+          {hits.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 items-center">
+              <span className="text-[0.6rem] font-mono uppercase tracking-wider text-red-400/70 mr-1">
+                Trùng
               </span>
-            );
-          })}
+              {hits.map((n) => {
+                const c = counts.get(n) ?? 0;
+                return (
+                  <span
+                    key={n}
+                    className="relative px-2 py-1 rounded text-sm md:text-base font-mono font-bold bg-red-500/20 border border-red-500/50 text-red-300 shadow-[0_0_10px_-3px_rgba(239,68,68,0.35)]"
+                  >
+                    {n}
+                    {c > 1 && (
+                      <sup className="ml-0.5 text-[0.55rem] font-bold text-red-200/90">
+                        ×{c}
+                      </sup>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Others row — muted */}
+          {others.length > 0 && (
+            <div className="flex flex-wrap gap-1 items-center">
+              <span className="text-[0.6rem] font-mono uppercase tracking-wider text-slate-600 mr-1">
+                Còn lại
+              </span>
+              {others.map((n) => {
+                const c = counts.get(n) ?? 0;
+                return (
+                  <span
+                    key={n}
+                    className="px-1.5 py-0.5 rounded text-[0.65rem] md:text-xs font-mono bg-white/[0.02] border border-white/[0.04] text-slate-500"
+                  >
+                    {n}
+                    {c > 1 && (
+                      <sup className="ml-0.5 text-[0.5rem] text-amber-500/80">×{c}</sup>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
