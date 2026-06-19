@@ -48,26 +48,39 @@ interface ApiResponse {
   data: DayBlock[];
 }
 
-function extractEndings(blocks: ProvinceBlock[], digits: Digits): Set<string> {
-  const set = new Set<string>();
+/**
+ * Count how many times each N-digit ending appears across all prize numbers
+ * in the given province blocks. Returns Map<ending, count> — count>1 when the
+ * same ending repeats across multiple prizes (or appears twice in one prize
+ * row, common in MN/MT G.7 / lô tail patterns).
+ *
+ * "nhớ làm cho chính xác" — every prize number contributes EXACTLY ONE event
+ * to its tail. No dedup at extraction time so we can render ×N in the UI.
+ */
+function extractEndingsCounts(blocks: ProvinceBlock[], digits: Digits): Map<string, number> {
+  const m = new Map<string, number>();
   for (const prov of blocks) {
     for (const prize of prov.prizes) {
       for (const num of prize.numbers) {
-        if (num.length >= digits) set.add(num.slice(-digits));
+        if (num.length >= digits) {
+          const tail = num.slice(-digits);
+          m.set(tail, (m.get(tail) ?? 0) + 1);
+        }
       }
     }
   }
-  return set;
+  return m;
 }
 
 interface DayPairRow {
-  date: string;             // target day D (yyyy-mm-dd)
-  candidates: string[];     // sorted endings carried over from D-K..D-1
-  appeared: string[];       // sorted endings observed on D
-  hits: string[];           // candidates ∩ appeared (= loại sai)
-  misses: string[];         // candidates \ appeared (= loại đúng)
-  overlapPct: number;       // hits.length / candidates.length
-  missPct: number;          // 1 - overlapPct
+  date: string;                          // target day D (yyyy-mm-dd)
+  prevDate: string;                      // immediate previous day (D-1) — for display
+  candidateCounts: Map<string, number>;  // counts aggregated over D-K..D-1
+  targetCounts: Map<string, number>;     // counts on D
+  hits: string[];                        // candidates ∩ target (= loại sai)
+  misses: string[];                      // candidates \ target (= loại đúng)
+  overlapPct: number;                    // hits.length / candidates.length
+  missPct: number;                       // 1 - overlapPct
 }
 
 const SPACE_SIZE: Record<Digits, number> = { 3: 1000, 4: 10000 };
@@ -84,7 +97,7 @@ export default function RollingPage({ region: _region }: { region: Region }) {
   const [backtestDays, setBacktestDays] = useState(30);
   const [carryK, setCarryK] = useState(1);
   const [regions, setRegions] = useState({ xsmn: true, xsmb: true, xsmt: true });
-  const [expanded, setExpanded] = useState<string | null>(null);
+  // (no expanded state — each pair card renders inline now)
 
   // Data state
   const [cache, setCache] = useState<Partial<Record<Region, ApiResponse>>>({});
@@ -113,11 +126,9 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Per-date endings (3 digits + 4 digits) honoring the active region toggles.
-  // Recomputes when regions or cached payload change — cheap because cache
-  // is JSON already in memory.
+  // Per-date endings (3 digits + 4 digits) — with counts so we can render ×N.
   const perDateEndings = useMemo(() => {
-    const map = new Map<string, { d3: Set<string>; d4: Set<string> }>();
+    const map = new Map<string, { d3: Map<string, number>; d4: Map<string, number> }>();
     const datesSet = new Set<string>();
     for (const r of ["xsmn", "xsmb", "xsmt"] as const) {
       if (!regions[r]) continue;
@@ -130,7 +141,10 @@ export default function RollingPage({ region: _region }: { region: Region }) {
         const day = cache[r]?.data.find((d) => d.date === date);
         if (day) blocks.push(...day.provinces);
       }
-      map.set(date, { d3: extractEndings(blocks, 3), d4: extractEndings(blocks, 4) });
+      map.set(date, {
+        d3: extractEndingsCounts(blocks, 3),
+        d4: extractEndingsCounts(blocks, 4),
+      });
     }
     return map;
   }, [cache, regions]);
@@ -144,32 +158,39 @@ export default function RollingPage({ region: _region }: { region: Region }) {
 
     for (let i = carryK; i < sortedDates.length; i++) {
       const targetDate = sortedDates[i];
-      const candidateSet = new Set<string>();
+
+      // Aggregate counts across D-1..D-K. When same ending appears on multiple
+      // carry days, sum its occurrences (so a number that hit twice on D-1 AND
+      // once on D-2 shows ×3 on the candidate strip — true to source).
+      const candidateCounts = new Map<string, number>();
       for (let k = 1; k <= carryK; k++) {
         const prev = perDateEndings.get(sortedDates[i - k]);
         if (!prev) continue;
         const src = digits === 3 ? prev.d3 : prev.d4;
-        for (const s of src) candidateSet.add(s);
+        for (const [tail, c] of src) {
+          candidateCounts.set(tail, (candidateCounts.get(tail) ?? 0) + c);
+        }
       }
       const target = perDateEndings.get(targetDate)!;
-      const appeared = digits === 3 ? target.d3 : target.d4;
+      const targetCounts = digits === 3 ? target.d3 : target.d4;
 
       const hits: string[] = [];
       const misses: string[] = [];
-      for (const c of candidateSet) {
-        if (appeared.has(c)) hits.push(c);
+      for (const c of candidateCounts.keys()) {
+        if (targetCounts.has(c)) hits.push(c);
         else misses.push(c);
       }
       hits.sort();
       misses.sort();
 
-      const candidates = Array.from(candidateSet).sort();
-      const overlapPct = candidates.length === 0 ? 0 : hits.length / candidates.length;
+      const candNum = candidateCounts.size;
+      const overlapPct = candNum === 0 ? 0 : hits.length / candNum;
 
       out.push({
         date: targetDate,
-        candidates,
-        appeared: Array.from(appeared).sort(),
+        prevDate: sortedDates[i - 1],
+        candidateCounts,
+        targetCounts,
         hits,
         misses,
         overlapPct,
@@ -188,10 +209,8 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     const variance = overlaps.reduce((s, n) => s + (n - avg) ** 2, 0) / overlaps.length;
     const std = Math.sqrt(variance);
 
-    // Baseline: if you pick a random candidate set of size = avg(|candidates|)
-    // from the space, expected overlap % = (avg|appeared|) / SPACE_SIZE.
-    const avgAppeared = rows.reduce((s, r) => s + r.appeared.length, 0) / rows.length;
-    const avgCand = rows.reduce((s, r) => s + r.candidates.length, 0) / rows.length;
+    const avgAppeared = rows.reduce((s, r) => s + r.targetCounts.size, 0) / rows.length;
+    const avgCand = rows.reduce((s, r) => s + r.candidateCounts.size, 0) / rows.length;
     const baselineOverlap = avgAppeared / SPACE_SIZE[digits];
 
     return {
@@ -202,7 +221,6 @@ export default function RollingPage({ region: _region }: { region: Region }) {
       avgCandidates: avgCand,
       avgAppeared,
       baselineOverlap,
-      // lift > 1 → eliminating these is BETTER than random; < 1 → worse
       missLift: baselineOverlap > 0 ? (1 - avg) / (1 - baselineOverlap) : 0,
     };
   }, [rows, digits]);
@@ -392,52 +410,24 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           {/* ─── Sparkline ───────────────────────────────────────────────── */}
           <Sparkline rows={rows} baselineOverlap={kpi.baselineOverlap} />
 
-          {/* ─── Day pair table ─────────────────────────────────────────── */}
-          <section className="rounded-2xl bg-[#111827] border border-white/[0.06] overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center justify-between">
-              <h2 className="text-sm font-bold">📋 Bảng Cuốn Chiếu — Mỗi Hàng = 1 Cặp Ngày</h2>
+          {/* ─── Day pair cards ─────────────────────────────────────────── */}
+          <section className="space-y-3 md:space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-sm font-bold">📋 Đối Chiếu Theo Cặp Ngày — D-{carryK}..D-1 → D</h2>
               <span className="text-[0.62rem] text-slate-500 font-mono">
-                D-{carryK}..D-1 → D
+                {rows.length} cặp · {digits} số cuối
               </span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs md:text-sm">
-                <thead className="bg-white/[0.02] text-[0.62rem] uppercase tracking-wider text-slate-500">
-                  <tr>
-                    <th className="text-left px-4 py-2 font-semibold">Ngày D</th>
-                    <th className="text-right px-3 py-2 font-semibold">#Cand</th>
-                    <th className="text-right px-3 py-2 font-semibold">#Đuôi D</th>
-                    <th className="text-right px-3 py-2 font-semibold">Trùng</th>
-                    <th className="text-right px-3 py-2 font-semibold">% Trùng</th>
-                    <th className="text-right px-3 py-2 font-semibold">Loại đúng</th>
-                    <th className="text-center px-3 py-2 font-semibold">⏵</th>
-                    <th className="text-center px-3 py-2 font-semibold">Copy</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => {
-                    const isOpen = expanded === r.date;
-                    const overlapColor =
-                      r.overlapPct > kpi.baselineOverlap * 1.5
-                        ? "text-red-400"
-                        : r.overlapPct > kpi.baselineOverlap * 1.05
-                        ? "text-amber-400"
-                        : "text-emerald-400";
-                    return (
-                      <FragmentRow
-                        key={r.date}
-                        row={r}
-                        isOpen={isOpen}
-                        overlapColor={overlapColor}
-                        digits={digits}
-                        onToggle={() => setExpanded(isOpen ? null : r.date)}
-                        onCopy={(text, label) => copyText(text, label)}
-                      />
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {rows.map((r) => (
+              <DayPairCard
+                key={r.date}
+                row={r}
+                digits={digits}
+                carryK={carryK}
+                baselineOverlap={kpi.baselineOverlap}
+                onCopy={copyText}
+              />
+            ))}
           </section>
         </>
       )}
@@ -548,132 +538,161 @@ function Sparkline({
   );
 }
 
-function FragmentRow({
+/**
+ * Card per day pair — shows hôm-qua chips above hôm-nay chips.
+ * Numbers that appear on BOTH days get red highlight on BOTH strips so the
+ * user can see the overlap at a glance. ×N suffix when count > 1 on that day.
+ */
+function DayPairCard({
   row,
-  isOpen,
-  overlapColor,
   digits,
-  onToggle,
+  carryK,
+  baselineOverlap,
   onCopy,
 }: {
   row: DayPairRow;
-  isOpen: boolean;
-  overlapColor: string;
   digits: Digits;
-  onToggle: () => void;
+  carryK: number;
+  baselineOverlap: number;
   onCopy: (text: string, label: string) => void;
 }) {
+  const overlapColor =
+    row.overlapPct > baselineOverlap * 1.5
+      ? "text-red-400"
+      : row.overlapPct > baselineOverlap * 1.05
+      ? "text-amber-400"
+      : "text-emerald-400";
+
+  const candList = Array.from(row.candidateCounts.keys()).sort();
+  const targetList = Array.from(row.targetCounts.keys()).sort();
+  const overlap = new Set(row.hits);
+
+  const prevLabel = carryK === 1 ? `Hôm qua (${row.prevDate})` : `Gộp ${carryK} ngày trước → D-1 = ${row.prevDate}`;
+
   return (
-    <>
-      <tr className="border-t border-white/[0.04] hover:bg-white/[0.02]">
-        <td className="px-4 py-2.5 font-mono">
-          <div className="font-semibold text-slate-200">{formatDate(row.date)}</div>
-          <div className="text-[0.62rem] text-slate-500">{row.date}</div>
-        </td>
-        <td className="px-3 py-2.5 text-right font-mono text-slate-400">{row.candidates.length}</td>
-        <td className="px-3 py-2.5 text-right font-mono text-slate-400">{row.appeared.length}</td>
-        <td className={`px-3 py-2.5 text-right font-mono font-bold ${overlapColor}`}>
-          {row.hits.length}
-        </td>
-        <td className={`px-3 py-2.5 text-right font-mono font-bold ${overlapColor}`}>
-          {(row.overlapPct * 100).toFixed(1)}%
-        </td>
-        <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-400">
-          {row.misses.length}
-        </td>
-        <td className="px-3 py-2.5 text-center">
+    <div className="rounded-2xl bg-[#111827] border border-white/[0.06] overflow-hidden">
+      {/* Header bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 md:px-5 py-3 bg-white/[0.02] border-b border-white/[0.06]">
+        <div className="flex items-center gap-2 md:gap-3 flex-wrap">
+          <span className="font-mono text-sm font-bold text-slate-200">
+            {formatDate(row.prevDate)} → {formatDate(row.date)}
+          </span>
+          <span className="text-[0.6rem] font-mono text-slate-500">
+            {row.prevDate} → {row.date}
+          </span>
+        </div>
+        <div className="flex items-center gap-3 text-xs md:text-sm font-mono">
+          <span className="text-slate-400">
+            Trùng <b className={overlapColor}>{row.hits.length}</b>
+            <span className="text-slate-600"> / {candList.length}</span>
+            <span className={`ml-1 ${overlapColor}`}>({(row.overlapPct * 100).toFixed(1)}%)</span>
+          </span>
+          <span className="text-emerald-400">
+            Loại đúng <b>{row.misses.length}</b>
+          </span>
+        </div>
+      </div>
+
+      <div className="p-4 md:p-5 space-y-3 md:space-y-4">
+        {/* Hôm qua strip */}
+        <ChipStrip
+          title={prevLabel}
+          count={candList.length}
+          counts={row.candidateCounts}
+          overlap={overlap}
+          onCopyAll={() => onCopy(candList.join(", "), `${candList.length} đuôi hôm qua`)}
+        />
+        {/* Hôm nay strip */}
+        <ChipStrip
+          title={`Hôm nay (${row.date})`}
+          count={targetList.length}
+          counts={row.targetCounts}
+          overlap={overlap}
+          onCopyAll={() => onCopy(targetList.join(", "), `${targetList.length} đuôi hôm nay`)}
+        />
+        {/* Footer — quick copy row */}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/[0.04]">
           <button
-            onClick={onToggle}
-            className="px-2 py-0.5 rounded text-[0.65rem] font-semibold bg-white/[0.04] hover:bg-white/[0.08] text-slate-300"
+            onClick={() => onCopy(row.misses.join(", "), `${row.misses.length} số loại đúng`)}
+            className="px-3 py-1 rounded-lg text-[0.65rem] md:text-xs font-semibold bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-400 border border-emerald-500/20"
           >
-            {isOpen ? "▾" : "▸"}
+            ✅ Copy {row.misses.length} số "loại đúng"
           </button>
-        </td>
-        <td className="px-3 py-2.5 text-center">
           <button
-            onClick={() => onCopy(row.misses.join(", "), `${row.misses.length} số "loại đúng"`)}
-            className="px-2 py-0.5 rounded text-[0.65rem] font-semibold bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-400"
-            title="Copy danh sách 'loại đúng' (= candidate không trùng)"
+            onClick={() => onCopy(row.hits.join(", "), `${row.hits.length} số trùng`)}
+            className="px-3 py-1 rounded-lg text-[0.65rem] md:text-xs font-semibold bg-red-600/15 hover:bg-red-600/25 text-red-400 border border-red-500/20"
+            disabled={row.hits.length === 0}
           >
-            ✅ {row.misses.length}
+            🔴 Copy {row.hits.length} số trùng
           </button>
-        </td>
-      </tr>
-      {isOpen && (
-        <tr className="bg-black/20">
-          <td colSpan={8} className="px-4 py-3 space-y-3">
-            <DetailBlock
-              title={`Candidate (D-${1}..D-${row.candidates.length === 0 ? "?" : "K"})`}
-              numbers={row.candidates}
-              color="text-slate-300"
-              onCopy={() => onCopy(row.candidates.join(", "), "candidate")}
-            />
-            <DetailBlock
-              title={`Trùng (loại SAI) — ${row.hits.length} số`}
-              numbers={row.hits}
-              color="text-red-400"
-              onCopy={() => onCopy(row.hits.join(", "), "số trùng")}
-            />
-            <DetailBlock
-              title={`Loại ĐÚNG — ${row.misses.length} số (= candidate không xuất hiện trên D)`}
-              numbers={row.misses}
-              color="text-emerald-400"
-              onCopy={() => onCopy(row.misses.join(", "), "số loại đúng")}
-            />
-            <DetailBlock
-              title={`Tất cả đuôi xuất hiện trên D — ${row.appeared.length} số`}
-              numbers={row.appeared}
-              color="text-cyan-400"
-              onCopy={() => onCopy(row.appeared.join(", "), "đuôi D")}
-            />
-            <div className="text-[0.62rem] text-slate-500 italic">
-              Mode {digits} số cuối · Space {SPACE_SIZE[digits].toLocaleString()} ·{" "}
-              Loại đúng = {row.misses.length}/{row.candidates.length} ={" "}
-              <b className="text-emerald-400">{(row.missPct * 100).toFixed(1)}%</b>
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
+          <span className="ml-auto text-[0.62rem] text-slate-500 italic">
+            {digits} số cuối · space {SPACE_SIZE[digits].toLocaleString()}
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
-function DetailBlock({
+/**
+ * Horizontal strip of ending chips for one day.
+ * Numbers in `overlap` get red highlight (= appeared on both days of the pair).
+ * Count > 1 shows ×N suffix.
+ */
+function ChipStrip({
   title,
-  numbers,
-  color,
-  onCopy,
+  count,
+  counts,
+  overlap,
+  onCopyAll,
 }: {
   title: string;
-  numbers: string[];
-  color: string;
-  onCopy: () => void;
+  count: number;
+  counts: Map<string, number>;
+  overlap: Set<string>;
+  onCopyAll: () => void;
 }) {
+  const sorted = Array.from(counts.keys()).sort();
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <div className={`text-[0.65rem] uppercase tracking-wider font-semibold ${color}`}>{title}</div>
-        {numbers.length > 0 && (
+        <div className="text-[0.65rem] md:text-xs uppercase tracking-wider font-semibold text-slate-400">
+          {title} <span className="text-slate-600">— {count} số</span>
+        </div>
+        {sorted.length > 0 && (
           <button
-            onClick={onCopy}
+            onClick={onCopyAll}
             className="px-2 py-0.5 rounded text-[0.6rem] font-semibold bg-white/[0.04] hover:bg-white/[0.08] text-slate-300"
           >
             Copy
           </button>
         )}
       </div>
-      {numbers.length === 0 ? (
-        <div className="text-xs text-slate-600 italic">— Không có —</div>
+      {sorted.length === 0 ? (
+        <div className="text-xs text-slate-600 italic">— Không có dữ liệu —</div>
       ) : (
         <div className="flex flex-wrap gap-1">
-          {numbers.map((n) => (
-            <span
-              key={n}
-              className={`px-1.5 py-0.5 rounded text-[0.65rem] font-mono font-semibold bg-white/[0.03] border border-white/[0.06] ${color}`}
-            >
-              {n}
-            </span>
-          ))}
+          {sorted.map((n) => {
+            const c = counts.get(n) ?? 0;
+            const isHit = overlap.has(n);
+            return (
+              <span
+                key={n}
+                className={`px-1.5 py-0.5 rounded text-[0.65rem] md:text-xs font-mono font-semibold border ${
+                  isHit
+                    ? "bg-red-500/15 border-red-500/40 text-red-300"
+                    : "bg-white/[0.03] border-white/[0.06] text-slate-300"
+                }`}
+              >
+                {n}
+                {c > 1 && (
+                  <span className={`ml-0.5 text-[0.55rem] ${isHit ? "text-red-400" : "text-amber-400"}`}>
+                    ×{c}
+                  </span>
+                )}
+              </span>
+            );
+          })}
         </div>
       )}
     </div>
