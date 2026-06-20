@@ -358,7 +358,12 @@ export default function RollingPage({ region: _region }: { region: Region }) {
             </div>
           )}
 
-          {/* ─── 3. Thống kê theo ngày ──────────────────────────────── */}
+          {/* ─── 3. Sparkline Tỉ Lệ Trùng Theo Ngày ───────────────── */}
+          {kpi && backtestRows.length >= 2 && (
+            <Sparkline rows={backtestRows} baselineTrung={kpi.baselineTrung} />
+          )}
+
+          {/* ─── 4. Thống kê theo ngày ──────────────────────────────── */}
           {backtestRows.length > 0 && (
             <DayStatsList rows={backtestRows} />
           )}
@@ -375,6 +380,88 @@ function KPI({ label, value, hint, tone }: { label: string; value: string; hint?
       <div className="text-[0.6rem] uppercase tracking-wider text-slate-500 font-semibold">{label}</div>
       <div className={`text-base md:text-xl font-bold font-mono mt-0.5 ${valueColor}`}>{value}</div>
       {hint && <div className="text-[0.58rem] text-slate-500 mt-0.5">{hint}</div>}
+    </div>
+  );
+}
+
+function Sparkline({
+  rows,
+  baselineTrung,
+}: {
+  rows: { date: string; trungPct: number }[];
+  baselineTrung: number;
+}) {
+  // rows là mới → cũ; reverse để chronological X-axis
+  const series = [...rows].reverse();
+  const W = 800;
+  const H = 110;
+  const padX = 10;
+  const padY = 12;
+  const maxY = Math.max(...series.map((s) => s.trungPct), baselineTrung * 1.5, 0.05);
+  const step = (W - 2 * padX) / Math.max(series.length - 1, 1);
+
+  const points = series.map((s, i) => {
+    const x = padX + i * step;
+    const y = H - padY - (s.trungPct / maxY) * (H - 2 * padY);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const baselineY = H - padY - (baselineTrung / maxY) * (H - 2 * padY);
+  // Polygon fill under the line — gentle gradient
+  const fillPath =
+    `M ${padX},${H - padY} ` +
+    points.map((p, i) => (i === 0 ? `L ${p}` : `L ${p}`)).join(" ") +
+    ` L ${(padX + (series.length - 1) * step).toFixed(1)},${H - padY} Z`;
+
+  return (
+    <div className="rounded-2xl bg-[#111827] border border-white/[0.06] px-4 md:px-5 py-3">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs md:text-sm font-bold text-slate-200">📈 Tỉ Lệ Trùng Theo Ngày</h3>
+        <div className="flex gap-3 text-[0.6rem] md:text-[0.65rem] text-slate-500">
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-3 h-0.5 bg-red-400" />
+            Thực tế
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-3 h-px border-t border-dashed border-slate-500" />
+            Baseline ngẫu nhiên
+          </span>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-20 md:h-28" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="rollingFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgb(239 68 68)" stopOpacity="0.32" />
+            <stop offset="100%" stopColor="rgb(239 68 68)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={fillPath} fill="url(#rollingFill)" />
+        <line
+          x1={padX}
+          y1={baselineY}
+          x2={W - padX}
+          y2={baselineY}
+          stroke="rgb(100 116 139)"
+          strokeWidth="1"
+          strokeDasharray="4 3"
+        />
+        <polyline
+          points={points.join(" ")}
+          fill="none"
+          stroke="rgb(248 113 113)"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        {series.map((s, i) => {
+          const x = padX + i * step;
+          const y = H - padY - (s.trungPct / maxY) * (H - 2 * padY);
+          return <circle key={i} cx={x} cy={y} r={1.8} fill="rgb(248 113 113)" />;
+        })}
+      </svg>
+      <div className="flex justify-between text-[0.55rem] md:text-[0.6rem] text-slate-600 mt-1 font-mono">
+        <span>{series[0]?.date}</span>
+        <span>{series[series.length - 1]?.date}</span>
+      </div>
     </div>
   );
 }
