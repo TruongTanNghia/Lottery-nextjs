@@ -77,6 +77,9 @@ export default function RollingPage({ region: _region }: { region: Region }) {
   const [digits, setDigits] = useState<Digits>(3);
   const [carryK, setCarryK] = useState(1);
   const [regions, setRegions] = useState({ xsmn: true, xsmb: true, xsmt: true });
+  // "recurring" — chỉ số ra ≥2 lần (xổ đi xổ lại)
+  // "all"       — toàn bộ số đuôi (dedup) trong K ngày, không lọc
+  const [mode, setMode] = useState<"recurring" | "all">("recurring");
 
   // Data state
   const [cache, setCache] = useState<Partial<Record<Region, ApiResponse>>>({});
@@ -151,17 +154,19 @@ export default function RollingPage({ region: _region }: { region: Region }) {
       }
     }
 
-    // Filter to recurring only (count ≥ 2). Sort by count desc, then ending asc.
+    // Filter depends on mode:
+    //   recurring → chỉ count ≥ 2 (xổ đi xổ lại)
+    //   all       → tất cả đuôi (deduped — count ≥ 1)
     const endings: EndingHit[] = [];
     for (const [ending, count] of totals) {
-      if (count < 2) continue;
+      if (mode === "recurring" && count < 2) continue;
       const dateList = days.get(ending) ?? [];
       endings.push({ ending, count, days: dateList.length, dateList });
     }
     endings.sort((a, b) => b.count - a.count || a.ending.localeCompare(b.ending));
 
     return { windowDates, endings };
-  }, [perDateEndings, digits, carryK]);
+  }, [perDateEndings, digits, carryK, mode]);
 
   function copyText(text: string, label: string) {
     navigator.clipboard.writeText(text).then(
@@ -186,6 +191,14 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           options={[1, 2, 3, 5].map((k) => ({ v: k, label: `${k} ngày` }))}
           value={carryK}
           onChange={(v) => setCarryK(v as number)}
+        />
+        <SegPicker
+          options={[
+            { v: "recurring", label: "Xổ lại" },
+            { v: "all", label: "Toàn bộ" },
+          ]}
+          value={mode}
+          onChange={(v) => setMode(v as "recurring" | "all")}
         />
         <div className="inline-flex p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
           {(["xsmn", "xsmb", "xsmt"] as const).map((r) => (
@@ -220,6 +233,7 @@ export default function RollingPage({ region: _region }: { region: Region }) {
         <ResultBox
           digits={digits}
           carryK={carryK}
+          mode={mode}
           windowDates={result.windowDates}
           endings={result.endings}
           onCopy={copyText}
@@ -265,12 +279,14 @@ function shortDate(d: string): string {
 function ResultBox({
   digits,
   carryK,
+  mode,
   windowDates,
   endings,
   onCopy,
 }: {
   digits: Digits;
   carryK: number;
+  mode: "recurring" | "all";
   windowDates: string[];
   endings: EndingHit[];
   onCopy: (text: string, label: string) => void;
@@ -288,27 +304,45 @@ function ResultBox({
   const countGroups = Array.from(byCount.entries()).sort((a, b) => b[0] - a[0]);
 
   return (
-    <div className="rounded-2xl bg-gradient-to-br from-red-950/15 to-[#111827] border border-red-500/20 overflow-hidden">
+    <div
+      className={`rounded-2xl overflow-hidden ${
+        mode === "recurring"
+          ? "bg-gradient-to-br from-red-950/15 to-[#111827] border border-red-500/20"
+          : "bg-gradient-to-br from-cyan-950/15 to-[#111827] border border-cyan-500/20"
+      }`}
+    >
       {/* Header */}
       <div className="px-5 py-3.5 border-b border-white/[0.06] flex flex-wrap items-center gap-x-3 gap-y-1">
         <div>
           <h2 className="text-sm md:text-base font-bold text-slate-100">
-            🎯 Số Xổ Lại — {carryK} ngày {carryK === 1 ? "(hôm qua)" : "gần nhất"}
+            {mode === "recurring" ? "🎯 Số Xổ Lại" : "📋 Toàn Bộ Số Đuôi"} — {carryK} ngày {carryK === 1 ? "(hôm qua)" : "gần nhất"}
           </h2>
           <div className="text-[0.65rem] md:text-xs text-slate-500 font-mono mt-0.5">
             {windowLabel} · {digits} số cuối
+            {mode === "recurring" && (
+              <span className="text-slate-600"> · đuôi ra ≥2 lần</span>
+            )}
           </div>
         </div>
 
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs md:text-sm font-mono">
-            <b className="text-red-400 text-base md:text-lg">{endings.length}</b>
-            <span className="text-slate-500"> số xổ lại</span>
+            <b className={`text-base md:text-lg ${mode === "recurring" ? "text-red-400" : "text-cyan-400"}`}>
+              {endings.length}
+            </b>
+            <span className="text-slate-500"> {mode === "recurring" ? "số xổ lại" : "số đuôi"}</span>
           </span>
           <button
-            onClick={() => onCopy(copyList, `${endings.length} số xổ lại`)}
+            onClick={() =>
+              onCopy(
+                copyList,
+                `${endings.length} ${mode === "recurring" ? "số xổ lại" : "số đuôi"}`
+              )
+            }
             disabled={endings.length === 0}
-            className="px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed ${
+              mode === "recurring" ? "bg-red-600 hover:bg-red-500" : "bg-cyan-600 hover:bg-cyan-500"
+            }`}
           >
             📋 Copy {endings.length} số
           </button>
@@ -326,32 +360,40 @@ function ResultBox({
         </div>
       )}
 
-      {/* Numbers grid — chỉ chip đỏ, không gray. */}
+      {/* Numbers grid */}
       <div className="px-5 py-4">
         {endings.length === 0 ? (
           <div className="text-center py-6 text-slate-500 text-sm italic">
-            — Không có số nào xổ lại trong {carryK} ngày này —
+            — Không có dữ liệu trong {carryK} ngày này —
           </div>
         ) : (
           <div className="flex flex-wrap gap-1.5 md:gap-2">
-            {endings.map((e) => (
-              <span
-                key={e.ending}
-                className={`inline-flex items-baseline gap-0.5 px-2 py-1 rounded font-mono font-bold border ${
-                  e.count >= 5
-                    ? "text-base md:text-lg bg-red-500/30 border-red-400 text-red-100 shadow-[0_0_14px_-3px_rgba(239,68,68,0.6)]"
-                    : e.count === 4
-                    ? "text-base bg-red-500/22 border-red-400/80 text-red-200 shadow-[0_0_10px_-3px_rgba(239,68,68,0.4)]"
-                    : e.count === 3
-                    ? "text-sm md:text-base bg-red-500/16 border-red-500/55 text-red-300"
-                    : "text-sm md:text-[0.95rem] bg-red-500/10 border-red-500/40 text-red-300"
-                }`}
-                title={`${e.count} lần · ${e.days} ngày · ${e.dateList.join(", ")}`}
-              >
-                {e.ending}
-                <sup className="text-[0.55rem] font-bold text-red-200">×{e.count}</sup>
-              </span>
-            ))}
+            {endings.map((e) => {
+              // count=1 chip chỉ xuất hiện ở mode "all" — slate trung tính.
+              // count≥2 luôn đỏ, color theo bậc.
+              const cls =
+                e.count >= 5
+                  ? "text-base md:text-lg font-bold bg-red-500/30 border-red-400 text-red-100 shadow-[0_0_14px_-3px_rgba(239,68,68,0.6)]"
+                  : e.count === 4
+                  ? "text-base font-bold bg-red-500/22 border-red-400/80 text-red-200 shadow-[0_0_10px_-3px_rgba(239,68,68,0.4)]"
+                  : e.count === 3
+                  ? "text-sm md:text-base font-bold bg-red-500/16 border-red-500/55 text-red-300"
+                  : e.count === 2
+                  ? "text-sm md:text-[0.95rem] font-bold bg-red-500/10 border-red-500/40 text-red-300"
+                  : "text-[0.78rem] md:text-[0.85rem] bg-white/[0.03] border-white/[0.08] text-slate-400";
+              return (
+                <span
+                  key={e.ending}
+                  className={`inline-flex items-baseline gap-0.5 px-2 py-1 rounded font-mono border ${cls}`}
+                  title={`${e.count} lần · ${e.days} ngày · ${e.dateList.join(", ")}`}
+                >
+                  {e.ending}
+                  {e.count >= 2 && (
+                    <sup className="text-[0.55rem] font-bold text-red-200">×{e.count}</sup>
+                  )}
+                </span>
+              );
+            })}
           </div>
         )}
       </div>
