@@ -82,18 +82,20 @@ export default function RollingPage({ region: _region }: { region: Region }) {
   // "recurring" — chỉ số ra ≥2 lần (xổ đi xổ lại)
   // "all"       — toàn bộ số đuôi (dedup) trong K ngày, không lọc
   const [mode, setMode] = useState<"recurring" | "all">("recurring");
+  // Số ngày backtest cho khối thống kê theo ngày (theo yêu cầu khách)
+  const [backtestDays, setBacktestDays] = useState(30);
 
   // Data state
   const [cache, setCache] = useState<Partial<Record<Region, ApiResponse>>>({});
   const [loading, setLoading] = useState(true);
 
-  async function loadAll() {
+  async function loadAll(daysWanted?: number) {
     setLoading(true);
     try {
-      // K up to 5 → need 6 days of data minimum; fetch a generous 14 for buffer.
+      const fetchN = Math.max(daysWanted ?? backtestDays, 14) + 5;
       const [a, b, c] = await Promise.all(
         (["xsmn", "xsmb", "xsmt"] as const).map((r) =>
-          fetch(`/api/results/history-full?region=${r}&days=14`).then((res) => res.json())
+          fetch(`/api/results/history-full?region=${r}&days=${fetchN}`).then((res) => res.json())
         )
       );
       setCache({ xsmn: a, xsmb: b, xsmt: c });
@@ -108,6 +110,17 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Re-fetch khi user tăng backtestDays vượt qua cache hiện có.
+  useEffect(() => {
+    const have = Math.max(
+      cache.xsmn?.data.length ?? 0,
+      cache.xsmb?.data.length ?? 0,
+      cache.xsmt?.data.length ?? 0
+    );
+    if (have > 0 && have < backtestDays + carryK) loadAll(backtestDays);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backtestDays, carryK]);
 
   // Per-date endings WITH counts (so we can sum totals across the window).
   const perDateEndings = useMemo(() => {
@@ -173,6 +186,76 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     return { windowDates, endings, totalDistinct };
   }, [perDateEndings, digits, carryK, mode]);
 
+  // Per-day backtest rows — mỗi ngày D check vs cửa sổ D-K..D-1 (cũ "Đối Chiếu").
+  // Customer yêu cầu list 1 dòng/ngày, không chip số.
+  const backtestRows = useMemo(() => {
+    if (perDateEndings.size === 0) return [];
+    const sortedDates = Array.from(perDateEndings.keys()).sort(); // asc
+    const out: {
+      date: string;
+      trung: number;
+      total: number;
+      trungPct: number;
+      loaiDung: number;
+      loaiDungPct: number;
+      appearedOnD: number;
+    }[] = [];
+
+    for (let i = carryK; i < sortedDates.length; i++) {
+      const targetDate = sortedDates[i];
+
+      // Aggregate distinct endings across D-K..D-1
+      const candidateSet = new Set<string>();
+      for (let k = 1; k <= carryK; k++) {
+        const prev = perDateEndings.get(sortedDates[i - k]);
+        if (!prev) continue;
+        const src = digits === 3 ? prev.d3 : prev.d4;
+        for (const tail of src.keys()) candidateSet.add(tail);
+      }
+      const target = perDateEndings.get(targetDate)!;
+      const targetSet = digits === 3 ? target.d3 : target.d4;
+
+      let trung = 0;
+      for (const c of candidateSet) {
+        if (targetSet.has(c)) trung++;
+      }
+      const total = candidateSet.size;
+      const trungPct = total === 0 ? 0 : trung / total;
+
+      out.push({
+        date: targetDate,
+        trung,
+        total,
+        trungPct,
+        loaiDung: total - trung,
+        loaiDungPct: 1 - trungPct,
+        appearedOnD: targetSet.size,
+      });
+    }
+    // Lấy backtestDays ngày gần nhất, sort mới → cũ.
+    return out.slice(-backtestDays).reverse();
+  }, [perDateEndings, digits, carryK, backtestDays]);
+
+  // KPI tổng — trung bình tỉ lệ trùng / loại đúng / đuôi/ngày.
+  const kpi = useMemo(() => {
+    if (backtestRows.length === 0) return null;
+    const trungs = backtestRows.map((r) => r.trungPct);
+    const avgTrung = trungs.reduce((s, n) => s + n, 0) / trungs.length;
+    const variance = trungs.reduce((s, n) => s + (n - avgTrung) ** 2, 0) / trungs.length;
+    const stdTrung = Math.sqrt(variance);
+    const avgAppeared = backtestRows.reduce((s, r) => s + r.appearedOnD, 0) / backtestRows.length;
+    const baselineTrung = avgAppeared / SPACE_SIZE[digits];
+    return {
+      days: backtestRows.length,
+      avgTrung,
+      stdTrung,
+      avgLoaiDung: 1 - avgTrung,
+      avgAppeared,
+      baselineTrung,
+      baselineLoaiDung: 1 - baselineTrung,
+    };
+  }, [backtestRows, digits]);
+
   function copyText(text: string, label: string) {
     navigator.clipboard.writeText(text).then(
       () => toast.show("success", `Đã copy ${label}`),
@@ -205,6 +288,11 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           value={mode}
           onChange={(v) => setMode(v as "recurring" | "all")}
         />
+        <SegPicker
+          options={[30, 60, 90, 180].map((n) => ({ v: n, label: `${n}n` }))}
+          value={backtestDays}
+          onChange={(v) => setBacktestDays(v as number)}
+        />
         <div className="inline-flex p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
           {(["xsmn", "xsmb", "xsmt"] as const).map((r) => (
             <button
@@ -219,7 +307,7 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           ))}
         </div>
         <button
-          onClick={loadAll}
+          onClick={() => loadAll()}
           disabled={loading}
           className="ml-auto px-2.5 py-1 rounded text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-50"
         >
@@ -227,7 +315,7 @@ export default function RollingPage({ region: _region }: { region: Region }) {
         </button>
       </div>
 
-      {/* ─── Result box ──────────────────────────────────────────────── */}
+      {/* ─── 1. Số Xổ Lại (workflow chính - copy nhanh) ──────────────── */}
       {loading ? (
         <div className="px-3 py-12 text-center text-slate-500 text-sm">Đang tải…</div>
       ) : result === null || result.windowDates.length === 0 ? (
@@ -235,16 +323,112 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           Cần ít nhất {carryK} ngày data ở miền đã chọn.
         </div>
       ) : (
-        <ResultBox
-          digits={digits}
-          carryK={carryK}
-          mode={mode}
-          windowDates={result.windowDates}
-          endings={result.endings}
-          totalDistinct={result.totalDistinct ?? 0}
-          onCopy={copyText}
-        />
+        <>
+          <ResultBox
+            digits={digits}
+            carryK={carryK}
+            mode={mode}
+            windowDates={result.windowDates}
+            endings={result.endings}
+            totalDistinct={result.totalDistinct ?? 0}
+            onCopy={copyText}
+          />
+
+          {/* ─── 2. KPI strip ────────────────────────────────────────── */}
+          {kpi && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+              <KPI label="Ngày test" value={kpi.days.toString()} hint={`gộp ${carryK} ngày, ${digits} số`} />
+              <KPI
+                label="Đuôi/ngày TB"
+                value={kpi.avgAppeared.toFixed(1)}
+                hint={`/ ${SPACE_SIZE[digits].toLocaleString()} space`}
+              />
+              <KPI
+                label="Tỉ lệ trùng TB"
+                value={`${(kpi.avgTrung * 100).toFixed(1)}%`}
+                hint={`±${(kpi.stdTrung * 100).toFixed(1)}% std`}
+                tone="bad"
+              />
+              <KPI
+                label="Tỉ lệ loại đúng"
+                value={`${(kpi.avgLoaiDung * 100).toFixed(1)}%`}
+                hint={`baseline random ${(kpi.baselineLoaiDung * 100).toFixed(2)}%`}
+                tone="good"
+              />
+            </div>
+          )}
+
+          {/* ─── 3. Thống kê theo ngày ──────────────────────────────── */}
+          {backtestRows.length > 0 && (
+            <DayStatsList rows={backtestRows} />
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+function KPI({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: "good" | "bad" }) {
+  const valueColor = tone === "good" ? "text-emerald-400" : tone === "bad" ? "text-red-400" : "text-slate-100";
+  return (
+    <div className="rounded-xl bg-[#111827] border border-white/[0.06] px-3 md:px-4 py-2.5 md:py-3">
+      <div className="text-[0.6rem] uppercase tracking-wider text-slate-500 font-semibold">{label}</div>
+      <div className={`text-base md:text-xl font-bold font-mono mt-0.5 ${valueColor}`}>{value}</div>
+      {hint && <div className="text-[0.58rem] text-slate-500 mt-0.5">{hint}</div>}
+    </div>
+  );
+}
+
+function DayStatsList({
+  rows,
+}: {
+  rows: {
+    date: string;
+    trung: number;
+    total: number;
+    trungPct: number;
+    loaiDung: number;
+    loaiDungPct: number;
+  }[];
+}) {
+  return (
+    <div className="rounded-2xl bg-[#111827] border border-white/[0.06] overflow-hidden">
+      <div className="px-5 py-3 border-b border-white/[0.06] flex items-center justify-between">
+        <h2 className="text-sm font-bold">📊 Thống Kê Theo Ngày</h2>
+        <span className="text-[0.65rem] text-slate-500 font-mono">{rows.length} ngày · mới → cũ</span>
+      </div>
+      <div className="divide-y divide-white/[0.04]">
+        {rows.map((r) => (
+          <div
+            key={r.date}
+            className="px-5 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs md:text-sm hover:bg-white/[0.02]"
+          >
+            <span className="font-mono font-bold text-slate-200 min-w-[5.5rem]">{shortDate(r.date)}</span>
+
+            <span className="font-mono">
+              <span className="text-slate-500">Trùng</span>
+              <b className="ml-1 text-red-400">
+                {r.trung}/{r.total}
+              </b>
+              <span className="ml-1 text-red-400/80">({(r.trungPct * 100).toFixed(1)}%)</span>
+            </span>
+
+            <span className="font-mono">
+              <span className="text-slate-500">Loại đúng</span>
+              <b className="ml-1 text-emerald-400">{r.loaiDung}</b>
+              <span className="ml-1 text-emerald-400/80">({(r.loaiDungPct * 100).toFixed(1)}%)</span>
+            </span>
+
+            {/* Mini bar — green base, red overlay = trùng% */}
+            <div className="ml-auto w-28 md:w-40 h-1.5 rounded-full bg-emerald-500/15 overflow-hidden">
+              <div
+                className="h-full bg-red-500/75"
+                style={{ width: `${Math.min(r.trungPct * 100, 100)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
