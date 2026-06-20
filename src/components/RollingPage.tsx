@@ -22,6 +22,8 @@ import { useToast } from "./Toast";
 
 type Digits = 3 | 4;
 
+const SPACE_SIZE: Record<Digits, number> = { 3: 1000, 4: 10000 };
+
 interface ProvinceBlock {
   name: string;
   prizes: { prize_type: string; numbers: string[] }[];
@@ -154,6 +156,9 @@ export default function RollingPage({ region: _region }: { region: Region }) {
       }
     }
 
+    // totalDistinct = số đuôi khác nhau trong cửa sổ (pre-filter, dùng để tính %)
+    const totalDistinct = totals.size;
+
     // Filter depends on mode:
     //   recurring → chỉ count ≥ 2 (xổ đi xổ lại)
     //   all       → tất cả đuôi (deduped — count ≥ 1)
@@ -165,7 +170,7 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     }
     endings.sort((a, b) => b.count - a.count || a.ending.localeCompare(b.ending));
 
-    return { windowDates, endings };
+    return { windowDates, endings, totalDistinct };
   }, [perDateEndings, digits, carryK, mode]);
 
   function copyText(text: string, label: string) {
@@ -236,6 +241,7 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           mode={mode}
           windowDates={result.windowDates}
           endings={result.endings}
+          totalDistinct={result.totalDistinct ?? 0}
           onCopy={copyText}
         />
       )}
@@ -282,6 +288,7 @@ function ResultBox({
   mode,
   windowDates,
   endings,
+  totalDistinct,
   onCopy,
 }: {
   digits: Digits;
@@ -289,6 +296,7 @@ function ResultBox({
   mode: "recurring" | "all";
   windowDates: string[];
   endings: EndingHit[];
+  totalDistinct: number;
   onCopy: (text: string, label: string) => void;
 }) {
   const copyList = endings.map((e) => e.ending).join(", ");
@@ -326,11 +334,20 @@ function ResultBox({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs md:text-sm font-mono">
-            <b className={`text-base md:text-lg ${mode === "recurring" ? "text-red-400" : "text-cyan-400"}`}>
-              {endings.length}
-            </b>
-            <span className="text-slate-500"> {mode === "recurring" ? "số xổ lại" : "số đuôi"}</span>
+          <span className="text-xs md:text-sm font-mono text-right">
+            <span className="block">
+              <b className={`text-base md:text-lg ${mode === "recurring" ? "text-red-400" : "text-cyan-400"}`}>
+                {endings.length}
+              </b>
+              <span className="text-slate-500"> {mode === "recurring" ? "số xổ lại" : "số đuôi"}</span>
+            </span>
+            <span className="block text-[0.62rem] md:text-[0.65rem] text-slate-500">
+              {mode === "recurring"
+                ? totalDistinct > 0
+                  ? `${((endings.length / totalDistinct) * 100).toFixed(1)}% (${endings.length}/${totalDistinct} đuôi)`
+                  : "—"
+                : `${((endings.length / SPACE_SIZE[digits]) * 100).toFixed(1)}% / ${SPACE_SIZE[digits].toLocaleString()} space`}
+            </span>
           </span>
           <button
             onClick={() =>
