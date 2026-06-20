@@ -97,7 +97,22 @@ export default function RollingPage({ region: _region }: { region: Region }) {
   const [backtestDays, setBacktestDays] = useState(30);
   const [carryK, setCarryK] = useState(1);
   const [regions, setRegions] = useState({ xsmn: true, xsmb: true, xsmt: true });
-  // (no expanded state — each pair card renders inline now)
+  const [showMuted, setShowMuted] = useState(false);
+
+  // Multi-select: clicking a card toggles it; the sticky bar at top
+  // unions the `hits` (số trùng) across all selected days and exposes a Copy.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  function toggleSelect(date: string) {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  }
+  function clearSelect() {
+    setSelected(new Set());
+  }
 
   // Data state
   const [cache, setCache] = useState<Partial<Record<Region, ApiResponse>>>({});
@@ -201,6 +216,17 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     return out.slice(-backtestDays).reverse();
   }, [perDateEndings, digits, carryK, backtestDays]);
 
+  // Union of trùng across selected day cards — auto-dedup, sorted asc.
+  const selectedUnion = useMemo(() => {
+    if (selected.size === 0) return [] as string[];
+    const set = new Set<string>();
+    for (const r of rows) {
+      if (!selected.has(r.date)) continue;
+      for (const h of r.hits) set.add(h);
+    }
+    return Array.from(set).sort();
+  }, [rows, selected]);
+
   // Aggregate KPIs
   const kpi = useMemo(() => {
     if (rows.length === 0) return null;
@@ -256,7 +282,7 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           onChange={(v) => setDigits(v as Digits)}
         />
         <SegPicker
-          options={[10, 20, 30, 45].map((n) => ({ v: n, label: `${n}n` }))}
+          options={[30, 60, 90, 180].map((n) => ({ v: n, label: `${n}n` }))}
           value={backtestDays}
           onChange={(v) => setBacktestDays(v as number)}
         />
@@ -265,6 +291,17 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           value={carryK}
           onChange={(v) => setCarryK(v as number)}
         />
+        <button
+          onClick={() => setShowMuted((s) => !s)}
+          className={`px-2 py-0.5 rounded text-xs font-semibold border ${
+            showMuted
+              ? "bg-slate-700 text-slate-200 border-slate-600"
+              : "bg-white/[0.03] text-slate-500 border-white/[0.06] hover:text-slate-300"
+          }`}
+          title={showMuted ? "Ẩn dòng còn lại" : "Hiện dòng còn lại (mờ)"}
+        >
+          {showMuted ? "Ẩn còn lại" : "+ Còn lại"}
+        </button>
         <div className="inline-flex p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
           {(["xsmn", "xsmb", "xsmt"] as const).map((r) => (
             <button
@@ -309,10 +346,45 @@ export default function RollingPage({ region: _region }: { region: Region }) {
             </span>
           </div>
 
+          {/* ─── Sticky union bar — shown only when user selects ──── */}
+          {selected.size > 0 && (
+            <div className="sticky top-[100px] md:top-[112px] z-30 flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-cyan-950/95 border border-cyan-500/40 backdrop-blur shadow-lg">
+              <span className="text-xs font-semibold text-cyan-200">
+                ✓ {selected.size} ngày
+              </span>
+              <span className="text-xs font-mono text-cyan-300">
+                {selectedUnion.length} số trùng (gộp)
+              </span>
+              <button
+                onClick={() =>
+                  copyText(selectedUnion.join(", "), `${selectedUnion.length} số trùng từ ${selected.size} ngày`)
+                }
+                className="ml-auto px-2.5 py-1 rounded text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white"
+                disabled={selectedUnion.length === 0}
+              >
+                Copy {selectedUnion.length} số
+              </button>
+              <button
+                onClick={clearSelect}
+                className="px-2 py-1 rounded text-xs font-semibold text-slate-400 hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           {/* ─── Day pair cards ─────────────────────────────────────── */}
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {rows.map((r) => (
-              <DayPairCard key={r.date} row={r} carryK={carryK} onCopy={copyText} />
+              <DayPairCard
+                key={r.date}
+                row={r}
+                carryK={carryK}
+                showMuted={showMuted}
+                isSelected={selected.has(r.date)}
+                onToggleSelect={() => toggleSelect(r.date)}
+                onCopy={copyText}
+              />
             ))}
           </div>
         </>
@@ -351,98 +423,92 @@ function SegPicker<T extends string | number>({
 // Sub-components
 // ──────────────────────────────────────────────────────────────────────────
 
+function shortDate(d: string): string {
+  const [, m, day] = d.split("-").map(Number);
+  const dt = new Date(d + "T00:00:00Z");
+  const dow = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][dt.getUTCDay()];
+  return `${dow} ${day}/${m}`;
+}
+
+/**
+ * Minimal card — header line + the red "trùng" row only by default.
+ * Click anywhere on the card body to toggle multi-select.
+ * "showMuted" prop adds a dim "Qua" row of non-overlapping ones from D-1
+ * (the user's "+Còn lại" toggle).
+ */
 function DayPairCard({
   row,
   carryK,
+  showMuted,
+  isSelected,
+  onToggleSelect,
   onCopy,
 }: {
   row: DayPairRow;
   carryK: number;
+  showMuted: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
   onCopy: (text: string, label: string) => void;
 }) {
   const overlap = new Set(row.hits);
-  const todayList = Array.from(row.targetCounts.keys()).sort();
   const prevList = Array.from(row.candidateCounts.keys()).sort();
-
-  // Compact 2-letter day-of-week + d/m label, e.g. "T6 19/6"
-  function shortDate(d: string): string {
-    const [, m, day] = d.split("-").map(Number);
-    const dt = new Date(d + "T00:00:00Z");
-    const dow = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][dt.getUTCDay()];
-    return `${dow} ${day}/${m}`;
-  }
+  const nonHits = prevList.filter((n) => !overlap.has(n));
 
   return (
-    <div className="rounded-lg bg-[#111827] border border-white/[0.05] px-3 py-2.5">
-      {/* Top line: date pair + counts. No "card header" bar — just one line. */}
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-2">
+    <div
+      onClick={onToggleSelect}
+      className={`rounded-lg px-3 py-2 cursor-pointer transition-colors ${
+        isSelected
+          ? "bg-cyan-950/40 border border-cyan-500/60"
+          : "bg-[#111827] border border-white/[0.05] hover:border-white/[0.12]"
+      }`}
+    >
+      {/* Header line — minimal: dates + count + percentage */}
+      <div className="flex items-baseline gap-2 mb-1">
         <span className="font-mono text-sm font-bold text-slate-200">
           {shortDate(row.prevDate)} → {shortDate(row.date)}
         </span>
-        <span className="text-[0.7rem] text-slate-500 font-mono">
-          trùng <b className="text-red-400">{row.hits.length}</b>/{prevList.length}
+        <span className="text-[0.7rem] font-mono text-slate-500">
+          {row.hits.length}/{prevList.length} ({(row.overlapPct * 100).toFixed(1)}%)
         </span>
-        <button
-          onClick={() => onCopy(row.misses.join(", "), `${row.misses.length} số loại đúng`)}
-          className="ml-auto text-[0.65rem] font-semibold text-emerald-400 hover:text-emerald-300"
-          title="Copy số loại đúng (= số hôm qua không trùng hôm nay)"
-        >
-          Copy {row.misses.length} loại đúng ↗
-        </button>
       </div>
 
-      {/* Two clean chip rows — minimal label, no decorations. */}
-      <div className="space-y-1.5">
-        <ChipRow label="Nay" counts={row.targetCounts} list={todayList} overlap={overlap} />
-        <ChipRow
-          label={carryK === 1 ? "Qua" : `−${carryK}n`}
-          counts={row.candidateCounts}
-          list={prevList}
-          overlap={overlap}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ChipRow({
-  label,
-  list,
-  counts,
-  overlap,
-}: {
-  label: string;
-  list: string[];
-  counts: Map<string, number>;
-  overlap: Set<string>;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1 items-baseline leading-relaxed">
-      <span className="text-[0.6rem] font-mono uppercase text-slate-600 w-7 shrink-0">
-        {label}
-      </span>
-      {list.length === 0 ? (
-        <span className="text-[0.65rem] text-slate-600 italic">—</span>
+      {/* RED row — số trùng. The whole point. */}
+      {row.hits.length === 0 ? (
+        <div className="text-[0.7rem] text-slate-600 italic">— không trùng số nào —</div>
       ) : (
-        list.map((n) => {
-          const c = counts.get(n) ?? 0;
-          const isHit = overlap.has(n);
-          return (
-            <span
-              key={n}
-              className={`font-mono text-[0.72rem] md:text-xs px-1 ${
-                isHit ? "text-red-400 font-bold" : "text-slate-500"
-              }`}
-            >
-              {n}
-              {c > 1 && (
-                <sup className={`ml-0.5 text-[0.5rem] ${isHit ? "text-red-300" : "text-slate-600"}`}>
-                  ×{c}
-                </sup>
-              )}
-            </span>
-          );
-        })
+        <div className="flex flex-wrap gap-x-2 gap-y-0.5 font-mono text-sm md:text-base font-bold text-red-400 leading-relaxed">
+          {row.hits.map((n) => {
+            const cToday = row.targetCounts.get(n) ?? 0;
+            const cPrev = row.candidateCounts.get(n) ?? 0;
+            const maxC = Math.max(cToday, cPrev);
+            return (
+              <span key={n}>
+                {n}
+                {maxC > 1 && <sup className="ml-0.5 text-[0.55rem] text-red-300">×{maxC}</sup>}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Optional muted row — only when user explicitly toggles it on */}
+      {showMuted && nonHits.length > 0 && (
+        <div className="mt-1.5 pt-1.5 border-t border-white/[0.04] flex flex-wrap gap-x-1.5 gap-y-0.5 font-mono text-[0.7rem] text-slate-600 leading-relaxed">
+          <span className="text-[0.55rem] uppercase mr-0.5 text-slate-700">
+            {carryK === 1 ? "Qua" : `−${carryK}n`}
+          </span>
+          {nonHits.map((n) => {
+            const c = row.candidateCounts.get(n) ?? 0;
+            return (
+              <span key={n}>
+                {n}
+                {c > 1 && <sup className="ml-0.5 text-[0.5rem] text-slate-700">×{c}</sup>}
+              </span>
+            );
+          })}
+        </div>
       )}
     </div>
   );
