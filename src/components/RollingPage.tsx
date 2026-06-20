@@ -97,7 +97,6 @@ export default function RollingPage({ region: _region }: { region: Region }) {
   const [backtestDays, setBacktestDays] = useState(30);
   const [carryK, setCarryK] = useState(1);
   const [regions, setRegions] = useState({ xsmn: true, xsmb: true, xsmt: true });
-  const [showMuted, setShowMuted] = useState(false);
 
   // Multi-select: clicking a card toggles it; the sticky bar at top
   // unions the `hits` (số trùng) across all selected days and exposes a Copy.
@@ -291,17 +290,6 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           value={carryK}
           onChange={(v) => setCarryK(v as number)}
         />
-        <button
-          onClick={() => setShowMuted((s) => !s)}
-          className={`px-2 py-0.5 rounded text-xs font-semibold border ${
-            showMuted
-              ? "bg-slate-700 text-slate-200 border-slate-600"
-              : "bg-white/[0.03] text-slate-500 border-white/[0.06] hover:text-slate-300"
-          }`}
-          title={showMuted ? "Ẩn dòng còn lại" : "Hiện dòng còn lại (mờ)"}
-        >
-          {showMuted ? "Ẩn còn lại" : "+ Còn lại"}
-        </button>
         <div className="inline-flex p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
           {(["xsmn", "xsmb", "xsmt"] as const).map((r) => (
             <button
@@ -379,8 +367,6 @@ export default function RollingPage({ region: _region }: { region: Region }) {
               <DayPairCard
                 key={r.date}
                 row={r}
-                carryK={carryK}
-                showMuted={showMuted}
                 isSelected={selected.has(r.date)}
                 onToggleSelect={() => toggleSelect(r.date)}
                 onCopy={copyText}
@@ -431,85 +417,110 @@ function shortDate(d: string): string {
 }
 
 /**
- * Minimal card — header line + the red "trùng" row only by default.
- * Click anywhere on the card body to toggle multi-select.
- * "showMuted" prop adds a dim "Qua" row of non-overlapping ones from D-1
- * (the user's "+Còn lại" toggle).
+ * Card design — ONE row of hôm-qua numbers per card.
+ *   • Header: date pair + trùng/total + percentage + per-card copy
+ *   • Body: full hôm-qua list, sorted asc; overlap (trùng) chips glow red
+ *   • Click card body to multi-select; the sticky bar at top unions trùng
+ *
+ * No "Nay" row, no "Còn lại" toggle — the single hôm-qua row IS the copy
+ * target. Overlap is highlighted in-place by color (red = also ra hôm nay).
  */
 function DayPairCard({
   row,
-  carryK,
-  showMuted,
   isSelected,
   onToggleSelect,
   onCopy,
 }: {
   row: DayPairRow;
-  carryK: number;
-  showMuted: boolean;
   isSelected: boolean;
   onToggleSelect: () => void;
   onCopy: (text: string, label: string) => void;
 }) {
   const overlap = new Set(row.hits);
   const prevList = Array.from(row.candidateCounts.keys()).sort();
-  const nonHits = prevList.filter((n) => !overlap.has(n));
 
   return (
     <div
       onClick={onToggleSelect}
-      className={`rounded-lg px-3 py-2 cursor-pointer transition-colors ${
+      className={`rounded-xl cursor-pointer transition-all ${
         isSelected
-          ? "bg-cyan-950/40 border border-cyan-500/60"
-          : "bg-[#111827] border border-white/[0.05] hover:border-white/[0.12]"
+          ? "bg-cyan-950/30 border border-cyan-400/60 shadow-[0_0_0_3px_rgba(34,211,238,0.08)]"
+          : "bg-[#111827] border border-white/[0.06] hover:border-white/[0.15]"
       }`}
     >
-      {/* Header line — minimal: dates + count + percentage */}
-      <div className="flex items-baseline gap-2 mb-1">
-        <span className="font-mono text-sm font-bold text-slate-200">
-          {shortDate(row.prevDate)} → {shortDate(row.date)}
-        </span>
-        <span className="text-[0.7rem] font-mono text-slate-500">
-          {row.hits.length}/{prevList.length} ({(row.overlapPct * 100).toFixed(1)}%)
-        </span>
+      {/* Header bar */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 border-b border-white/[0.04]">
+        <div className="flex items-center gap-2">
+          {/* Visual select indicator */}
+          <span
+            className={`inline-flex items-center justify-center w-4 h-4 rounded border ${
+              isSelected
+                ? "bg-cyan-500 border-cyan-400 text-white"
+                : "border-white/[0.15] text-transparent"
+            } text-[0.55rem] font-bold`}
+          >
+            ✓
+          </span>
+          <span className="font-mono text-sm md:text-[0.95rem] font-bold text-slate-100">
+            {shortDate(row.prevDate)}
+            <span className="mx-1.5 text-slate-500">→</span>
+            {shortDate(row.date)}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 text-[0.7rem] md:text-xs font-mono">
+          <span className="px-1.5 py-0.5 rounded bg-red-500/12 text-red-300 border border-red-500/25">
+            trùng <b>{row.hits.length}</b>
+            <span className="text-red-400/70">/{prevList.length}</span>
+            <span className="ml-1 text-red-400/80">({(row.overlapPct * 100).toFixed(1)}%)</span>
+          </span>
+          <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+            loại đúng <b>{row.misses.length}</b>
+          </span>
+        </div>
+
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onCopy(prevList.join(", "), `${prevList.length} số hôm qua`);
+          }}
+          className="ml-auto px-2.5 py-1 rounded text-[0.7rem] font-semibold bg-white/[0.04] hover:bg-cyan-600 hover:text-white text-slate-300 border border-white/[0.06]"
+          title="Copy toàn bộ số hôm qua (1 dòng dưới)"
+        >
+          📋 Copy {prevList.length}
+        </button>
       </div>
 
-      {/* RED row — số trùng. The whole point. */}
-      {row.hits.length === 0 ? (
-        <div className="text-[0.7rem] text-slate-600 italic">— không trùng số nào —</div>
-      ) : (
-        <div className="flex flex-wrap gap-x-2 gap-y-0.5 font-mono text-sm md:text-base font-bold text-red-400 leading-relaxed">
-          {row.hits.map((n) => {
-            const cToday = row.targetCounts.get(n) ?? 0;
-            const cPrev = row.candidateCounts.get(n) ?? 0;
-            const maxC = Math.max(cToday, cPrev);
-            return (
-              <span key={n}>
-                {n}
-                {maxC > 1 && <sup className="ml-0.5 text-[0.55rem] text-red-300">×{maxC}</sup>}
-              </span>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Optional muted row — only when user explicitly toggles it on */}
-      {showMuted && nonHits.length > 0 && (
-        <div className="mt-1.5 pt-1.5 border-t border-white/[0.04] flex flex-wrap gap-x-1.5 gap-y-0.5 font-mono text-[0.7rem] text-slate-600 leading-relaxed">
-          <span className="text-[0.55rem] uppercase mr-0.5 text-slate-700">
-            {carryK === 1 ? "Qua" : `−${carryK}n`}
-          </span>
-          {nonHits.map((n) => {
-            const c = row.candidateCounts.get(n) ?? 0;
-            return (
-              <span key={n}>
-                {n}
-                {c > 1 && <sup className="ml-0.5 text-[0.5rem] text-slate-700">×{c}</sup>}
-              </span>
-            );
-          })}
-        </div>
-      )}
+      {/* Body — 1 row of hôm qua numbers (sorted asc), trùng = red */}
+      <div className="px-4 py-3">
+        {prevList.length === 0 ? (
+          <div className="text-xs text-slate-600 italic">— không có dữ liệu hôm qua —</div>
+        ) : (
+          <div className="flex flex-wrap gap-x-2.5 gap-y-1 font-mono leading-relaxed">
+            {prevList.map((n) => {
+              const c = row.candidateCounts.get(n) ?? 0;
+              const isHit = overlap.has(n);
+              return (
+                <span
+                  key={n}
+                  className={
+                    isHit
+                      ? "text-sm md:text-[0.95rem] font-bold text-red-400"
+                      : "text-[0.78rem] md:text-[0.85rem] text-slate-500"
+                  }
+                >
+                  {n}
+                  {c > 1 && (
+                    <sup className={`ml-0.5 text-[0.55rem] ${isHit ? "text-red-300" : "text-slate-600"}`}>
+                      ×{c}
+                    </sup>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
