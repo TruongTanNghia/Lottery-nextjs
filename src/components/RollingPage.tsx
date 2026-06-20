@@ -174,7 +174,7 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           onChange={(v) => setDigits(v as Digits)}
         />
         <SegPicker
-          options={[1, 2, 3, 5].map((k) => ({ v: k, label: `K=${k}` }))}
+          options={[1, 2, 3, 5].map((k) => ({ v: k, label: `${k} ngày` }))}
           value={carryK}
           onChange={(v) => setCarryK(v as number)}
         />
