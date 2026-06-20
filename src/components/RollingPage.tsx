@@ -1,20 +1,19 @@
 "use client";
 
 /**
- * "Cuốn Chiếu" page — Past K-day endings dump.
+ * "Cuốn Chiếu" page — Số Xổ Lại in past K days.
  *
  * Latest scraped date D = "hôm nay" (excluded from output).
  * Window = K days BEFORE today: {D-K, ..., D-1}.
- *   K=1 → just hôm qua (D-1)
- *   K=2 → hôm qua + hôm kia (D-1 + D-2)
- *   K=3 → 3 ngày trước
  *
- * Output is the UNION of all distinct 3/4-digit endings from those K days,
- * with each ending tagged by how many of the K days it appeared in. Sorted
- * by day-count desc so numbers that recurred across the window come first.
+ * "Số xổ lại" = ending appearing ≥ 2 times TOTAL across all prizes in the
+ * window. Works uniformly for any K:
+ *   K=1 → "xổ lại" within hôm qua (đuôi ra ≥2 lần trong cùng ngày)
+ *   K=2 → "xổ lại" across hôm qua + hôm kia (any combination of days/prizes)
+ *   K=N → "xổ lại" anywhere in the N-day window
  *
- * Copy = full distinct list. The day-count coloring is for visual scanning
- * ("số xổ đi xổ lại" pops out) but does NOT filter the output.
+ * Singles (count=1) are filtered out — user explicitly wanted only the
+ * recurring red chips, no gray context noise.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -42,22 +41,30 @@ interface ApiResponse {
   data: DayBlock[];
 }
 
-/** Distinct endings (set, no count) — we only need presence-per-day here. */
-function extractEndingsSet(blocks: ProvinceBlock[], digits: Digits): Set<string> {
-  const s = new Set<string>();
+/**
+ * Count appearances of each N-digit ending across all prize numbers in the
+ * given province blocks. Multi-count when ending repeats (within or across
+ * provinces). Customer wants ×N badge to be accurate.
+ */
+function extractEndingsCounts(blocks: ProvinceBlock[], digits: Digits): Map<string, number> {
+  const m = new Map<string, number>();
   for (const prov of blocks) {
     for (const prize of prov.prizes) {
       for (const num of prize.numbers) {
-        if (num.length >= digits) s.add(num.slice(-digits));
+        if (num.length >= digits) {
+          const tail = num.slice(-digits);
+          m.set(tail, (m.get(tail) ?? 0) + 1);
+        }
       }
     }
   }
-  return s;
+  return m;
 }
 
 interface EndingHit {
   ending: string;
-  days: number;       // # of distinct days the ending appeared in (within window)
+  count: number;      // total times this ending appeared across all prizes in window
+  days: number;       // # of distinct days within window it appeared in
   dateList: string[]; // sorted asc dates — for tooltip
 }
 
@@ -97,9 +104,9 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Per-date endings sets (separate for 3-digit and 4-digit modes).
+  // Per-date endings WITH counts (so we can sum totals across the window).
   const perDateEndings = useMemo(() => {
-    const map = new Map<string, { d3: Set<string>; d4: Set<string> }>();
+    const map = new Map<string, { d3: Map<string, number>; d4: Map<string, number> }>();
     const datesSet = new Set<string>();
     for (const r of ["xsmn", "xsmb", "xsmt"] as const) {
       if (!regions[r]) continue;
@@ -113,43 +120,46 @@ export default function RollingPage({ region: _region }: { region: Region }) {
         if (day) blocks.push(...day.provinces);
       }
       map.set(date, {
-        d3: extractEndingsSet(blocks, 3),
-        d4: extractEndingsSet(blocks, 4),
+        d3: extractEndingsCounts(blocks, 3),
+        d4: extractEndingsCounts(blocks, 4),
       });
     }
     return map;
   }, [cache, regions]);
 
-  // Past K days (EXCLUDING the latest scraped day = "hôm nay").
-  // Customer's exact ask: K=1 → hôm qua only, K=2 → hôm qua + hôm kia, etc.
+  // "Số xổ lại" = ending with total count ≥ 2 across the K-day window
+  // (window = K days BEFORE the latest scraped date).
   const result = useMemo(() => {
     if (perDateEndings.size === 0) return null;
     const sortedDates = Array.from(perDateEndings.keys()).sort(); // asc
     if (sortedDates.length < 2) return { latestDate: null, windowDates: [], endings: [] as EndingHit[] };
 
     const latestDate = sortedDates[sortedDates.length - 1];
-    // Take K days BEFORE the latest. slice(-(K+1), -1) handles edge of short history.
     const windowDates = sortedDates.slice(-(carryK + 1), -1);
     if (windowDates.length === 0) return { latestDate, windowDates, endings: [] as EndingHit[] };
 
-    // For each ending, collect the days in the window it appeared on.
-    const appearances = new Map<string, string[]>();
+    // For each ending: sum total count + collect distinct days within window.
+    const totals = new Map<string, number>();
+    const days = new Map<string, string[]>();
     for (const date of windowDates) {
       const e = perDateEndings.get(date);
       if (!e) continue;
       const src = digits === 3 ? e.d3 : e.d4;
-      for (const tail of src) {
-        if (!appearances.has(tail)) appearances.set(tail, []);
-        appearances.get(tail)!.push(date);
+      for (const [tail, c] of src) {
+        totals.set(tail, (totals.get(tail) ?? 0) + c);
+        if (!days.has(tail)) days.set(tail, []);
+        days.get(tail)!.push(date);
       }
     }
 
+    // Filter to recurring only (count ≥ 2). Sort by count desc, then ending asc.
     const endings: EndingHit[] = [];
-    for (const [ending, dateList] of appearances) {
-      endings.push({ ending, days: dateList.length, dateList });
+    for (const [ending, count] of totals) {
+      if (count < 2) continue;
+      const dateList = days.get(ending) ?? [];
+      endings.push({ ending, count, days: dateList.length, dateList });
     }
-    // Sort: most-recurring first (số xổ đi xổ lại lên đầu), then ending asc
-    endings.sort((a, b) => b.days - a.days || a.ending.localeCompare(b.ending));
+    endings.sort((a, b) => b.count - a.count || a.ending.localeCompare(b.ending));
 
     return { latestDate, windowDates, endings };
   }, [perDateEndings, digits, carryK]);
@@ -271,33 +281,24 @@ function ResultBox({
 }) {
   const copyList = endings.map((e) => e.ending).join(", ");
 
-  // Window label: "T4 17/6 → T5 18/6" (multi-day) or just "T5 18/6" (K=1)
   const windowLabel =
     windowDates.length === 1
       ? shortDate(windowDates[0])
       : `${shortDate(windowDates[0])} → ${shortDate(windowDates[windowDates.length - 1])}`;
 
-  const titleByK: Record<number, string> = {
-    1: "Số Đuôi Hôm Qua",
-    2: "Số Đuôi 2 Ngày Trước (hôm qua + hôm kia)",
-    3: "Số Đuôi 3 Ngày Trước",
-    5: "Số Đuôi 5 Ngày Trước",
-  };
-  const title = titleByK[carryK] ?? `Số Đuôi ${carryK} Ngày Trước`;
-
-  // Legend: how many endings appeared in N days within the window.
-  // Only meaningful when K ≥ 2 (otherwise all are "×1 ngày").
-  const byDays = new Map<number, number>();
-  for (const e of endings) byDays.set(e.days, (byDays.get(e.days) ?? 0) + 1);
-  const dayCountGroups = Array.from(byDays.entries()).sort((a, b) => b[0] - a[0]);
-  const recurringCount = endings.filter((e) => e.days >= 2).length;
+  // Legend by total count — bucket the ×N badges so user sees distribution.
+  const byCount = new Map<number, number>();
+  for (const e of endings) byCount.set(e.count, (byCount.get(e.count) ?? 0) + 1);
+  const countGroups = Array.from(byCount.entries()).sort((a, b) => b[0] - a[0]);
 
   return (
     <div className="rounded-2xl bg-gradient-to-br from-red-950/15 to-[#111827] border border-red-500/20 overflow-hidden">
       {/* Header */}
       <div className="px-5 py-3.5 border-b border-white/[0.06] flex flex-wrap items-center gap-x-3 gap-y-1">
         <div>
-          <h2 className="text-sm md:text-base font-bold text-slate-100">🎯 {title}</h2>
+          <h2 className="text-sm md:text-base font-bold text-slate-100">
+            🎯 Số Xổ Lại — {carryK} ngày {carryK === 1 ? "(hôm qua)" : "gần nhất"}
+          </h2>
           <div className="text-[0.65rem] md:text-xs text-slate-500 font-mono mt-0.5">
             {windowLabel} · {digits} số cuối
             {latestDate && (
@@ -309,10 +310,10 @@ function ResultBox({
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs md:text-sm font-mono">
             <b className="text-red-400 text-base md:text-lg">{endings.length}</b>
-            <span className="text-slate-500"> số</span>
+            <span className="text-slate-500"> số xổ lại</span>
           </span>
           <button
-            onClick={() => onCopy(copyList, `${endings.length} số đuôi`)}
+            onClick={() => onCopy(copyList, `${endings.length} số xổ lại`)}
             disabled={endings.length === 0}
             className="px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -321,48 +322,41 @@ function ResultBox({
         </div>
       </div>
 
-      {/* Legend strip — only when K ≥ 2 so there's day-count variety */}
-      {carryK >= 2 && dayCountGroups.length > 0 && (
+      {/* Legend — distribution of recur counts */}
+      {countGroups.length > 0 && (
         <div className="px-5 py-2 border-b border-white/[0.04] flex flex-wrap gap-3 text-[0.65rem] md:text-xs font-mono text-slate-400">
-          {dayCountGroups.map(([days, count]) => (
-            <span key={days}>
-              <b className={days >= 2 ? "text-red-400" : "text-slate-500"}>×{days}</b> ngày: {count} số
+          {countGroups.map(([count, num]) => (
+            <span key={count}>
+              <b className="text-red-400">×{count}</b>: {num} số
             </span>
           ))}
-          {recurringCount > 0 && (
-            <span className="ml-auto text-red-400">
-              ✨ <b>{recurringCount}</b> số xổ ≥2 ngày (xổ đi xổ lại)
-            </span>
-          )}
         </div>
       )}
 
-      {/* Numbers grid */}
+      {/* Numbers grid — chỉ chip đỏ, không gray. */}
       <div className="px-5 py-4">
         {endings.length === 0 ? (
           <div className="text-center py-6 text-slate-500 text-sm italic">
-            — Không có dữ liệu trong {carryK} ngày này —
+            — Không có số nào xổ lại trong {carryK} ngày này —
           </div>
         ) : (
           <div className="flex flex-wrap gap-1.5 md:gap-2">
             {endings.map((e) => (
               <span
                 key={e.ending}
-                className={`inline-flex items-baseline gap-0.5 px-2 py-1 rounded font-mono border ${
-                  e.days >= 4
-                    ? "text-base md:text-lg font-bold bg-red-500/25 border-red-400 text-red-200 shadow-[0_0_12px_-3px_rgba(239,68,68,0.5)]"
-                    : e.days === 3
-                    ? "text-sm md:text-base font-bold bg-red-500/18 border-red-500/55 text-red-300"
-                    : e.days === 2
-                    ? "text-sm md:text-[0.95rem] font-bold bg-red-500/10 border-red-500/35 text-red-300"
-                    : "text-[0.78rem] md:text-[0.85rem] bg-white/[0.02] border-white/[0.06] text-slate-400"
+                className={`inline-flex items-baseline gap-0.5 px-2 py-1 rounded font-mono font-bold border ${
+                  e.count >= 5
+                    ? "text-base md:text-lg bg-red-500/30 border-red-400 text-red-100 shadow-[0_0_14px_-3px_rgba(239,68,68,0.6)]"
+                    : e.count === 4
+                    ? "text-base bg-red-500/22 border-red-400/80 text-red-200 shadow-[0_0_10px_-3px_rgba(239,68,68,0.4)]"
+                    : e.count === 3
+                    ? "text-sm md:text-base bg-red-500/16 border-red-500/55 text-red-300"
+                    : "text-sm md:text-[0.95rem] bg-red-500/10 border-red-500/40 text-red-300"
                 }`}
-                title={e.dateList.join(", ")}
+                title={`${e.count} lần · ${e.days} ngày · ${e.dateList.join(", ")}`}
               >
                 {e.ending}
-                {e.days >= 2 && (
-                  <sup className="text-[0.55rem] font-bold text-red-200">×{e.days}</sup>
-                )}
+                <sup className="text-[0.55rem] font-bold text-red-200">×{e.count}</sup>
               </span>
             ))}
           </div>
