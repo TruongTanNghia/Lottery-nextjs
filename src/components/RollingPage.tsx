@@ -1,29 +1,21 @@
 "use client";
 
 /**
- * "Cuốn Chiếu" page — Rolling overlap analysis between consecutive draw days.
+ * "Cuốn Chiếu" page — Recurring endings analysis.
  *
- * For each consecutive day pair (D-K..D-1 → D):
- *   - Candidate set = distinct 3/4-digit endings from the previous K days
- *   - Hit set      = candidates that DID appear on D (eliminating them = miss)
- *   - Miss set     = candidates that did NOT appear on D (eliminating them = good)
+ * Anchor at the latest scraped date D. Window = K+1 days {D-K, ..., D-1, D}.
+ * For each 3 or 4-digit ending, count how many DISTINCT days in the window it
+ * appeared in. An ending that appeared in ≥ 2 distinct days = "số xổ lại"
+ * (recurring number).
  *
- * KPIs over the N-day backtest:
- *   - Avg overlap %       (= % of yesterday's endings that repeated today)
- *   - Avg elimination %   (= 1 - overlap, the "loại đúng" rate)
- *   - Baseline expectation (random) for comparison
- *   - Lift                (actual elimination rate ÷ baseline)
+ * Output is a single box: the list of recurring endings, sorted by day-count
+ * (most recurring first), with ×N badge when N > 2.
  *
- * Default K=1 (D-1 → D, true "cuốn chiếu") with optional K=2/3/5 to test
- * carrying multi-day candidate pools.
- *
- * Region toggle (MN/MB/MT) controls which prize blocks contribute to BOTH
- * the candidate set and the appeared set. Defaults to all 3 miền on, matching
- * the customer's "gộp 3 đài" workflow.
+ * Region toggle (MN/MB/MT) controls which province blocks contribute. Defaults
+ * to all 3 miền on, matching the customer's cross-region workflow.
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { formatDate } from "@/lib/format";
 import type { Region } from "@/lib/types";
 import { useToast } from "./Toast";
 
@@ -48,70 +40,34 @@ interface ApiResponse {
   data: DayBlock[];
 }
 
-/**
- * Count how many times each N-digit ending appears across all prize numbers
- * in the given province blocks. Returns Map<ending, count> — count>1 when the
- * same ending repeats across multiple prizes (or appears twice in one prize
- * row, common in MN/MT G.7 / lô tail patterns).
- *
- * "nhớ làm cho chính xác" — every prize number contributes EXACTLY ONE event
- * to its tail. No dedup at extraction time so we can render ×N in the UI.
- */
-function extractEndingsCounts(blocks: ProvinceBlock[], digits: Digits): Map<string, number> {
-  const m = new Map<string, number>();
+/** Distinct endings (set, no count) — we only need presence-per-day here. */
+function extractEndingsSet(blocks: ProvinceBlock[], digits: Digits): Set<string> {
+  const s = new Set<string>();
   for (const prov of blocks) {
     for (const prize of prov.prizes) {
       for (const num of prize.numbers) {
-        if (num.length >= digits) {
-          const tail = num.slice(-digits);
-          m.set(tail, (m.get(tail) ?? 0) + 1);
-        }
+        if (num.length >= digits) s.add(num.slice(-digits));
       }
     }
   }
-  return m;
+  return s;
 }
 
-interface DayPairRow {
-  date: string;                          // target day D (yyyy-mm-dd)
-  prevDate: string;                      // immediate previous day (D-1) — for display
-  candidateCounts: Map<string, number>;  // counts aggregated over D-K..D-1
-  targetCounts: Map<string, number>;     // counts on D
-  hits: string[];                        // candidates ∩ target (= loại sai)
-  misses: string[];                      // candidates \ target (= loại đúng)
-  overlapPct: number;                    // hits.length / candidates.length
-  missPct: number;                       // 1 - overlapPct
+interface Recurring {
+  ending: string;
+  days: number;      // distinct days the ending appeared in (within window)
+  dateList: string[]; // sorted asc dates it appeared on — for tooltip / future use
 }
-
-const SPACE_SIZE: Record<Digits, number> = { 3: 1000, 4: 10000 };
 
 export default function RollingPage({ region: _region }: { region: Region }) {
-  // We use `_region` only to match the standard page signature — this view
-  // always loads all 3 miền (the customer's workflow is cross-region).
-  void _region;
+  void _region; // page always uses 3 miền regardless of nav region
 
   const toast = useToast();
 
   // Controls
   const [digits, setDigits] = useState<Digits>(3);
-  const [backtestDays, setBacktestDays] = useState(30);
   const [carryK, setCarryK] = useState(1);
   const [regions, setRegions] = useState({ xsmn: true, xsmb: true, xsmt: true });
-
-  // Multi-select: clicking a card toggles it; the sticky bar at top
-  // unions the `hits` (số trùng) across all selected days and exposes a Copy.
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  function toggleSelect(date: string) {
-    setSelected((s) => {
-      const next = new Set(s);
-      if (next.has(date)) next.delete(date);
-      else next.add(date);
-      return next;
-    });
-  }
-  function clearSelect() {
-    setSelected(new Set());
-  }
 
   // Data state
   const [cache, setCache] = useState<Partial<Record<Region, ApiResponse>>>({});
@@ -120,11 +76,10 @@ export default function RollingPage({ region: _region }: { region: Region }) {
   async function loadAll() {
     setLoading(true);
     try {
-      // We need backtestDays + carryK (max 5) days of history to compute every row.
-      const fetchN = Math.max(backtestDays + 5, 45);
+      // K up to 5 → need 6 days of data minimum; fetch a generous 14 for buffer.
       const [a, b, c] = await Promise.all(
         (["xsmn", "xsmb", "xsmt"] as const).map((r) =>
-          fetch(`/api/results/history-full?region=${r}&days=${fetchN}`).then((res) => res.json())
+          fetch(`/api/results/history-full?region=${r}&days=14`).then((res) => res.json())
         )
       );
       setCache({ xsmn: a, xsmb: b, xsmt: c });
@@ -140,9 +95,9 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Per-date endings (3 digits + 4 digits) — with counts so we can render ×N.
+  // Per-date endings sets (separate for 3-digit and 4-digit modes).
   const perDateEndings = useMemo(() => {
-    const map = new Map<string, { d3: Map<string, number>; d4: Map<string, number> }>();
+    const map = new Map<string, { d3: Set<string>; d4: Set<string> }>();
     const datesSet = new Set<string>();
     for (const r of ["xsmn", "xsmb", "xsmt"] as const) {
       if (!regions[r]) continue;
@@ -156,110 +111,46 @@ export default function RollingPage({ region: _region }: { region: Region }) {
         if (day) blocks.push(...day.provinces);
       }
       map.set(date, {
-        d3: extractEndingsCounts(blocks, 3),
-        d4: extractEndingsCounts(blocks, 4),
+        d3: extractEndingsSet(blocks, 3),
+        d4: extractEndingsSet(blocks, 4),
       });
     }
     return map;
   }, [cache, regions]);
 
-  // Build the rolling rows: for each day D (newest backtestDays), gather endings
-  // from D-K..D-1 as candidates, then check against D.
-  const rows = useMemo<DayPairRow[]>(() => {
-    if (perDateEndings.size === 0) return [];
+  // Recurring endings within the K+1 day window ending at the latest scraped date.
+  const result = useMemo(() => {
+    if (perDateEndings.size === 0) return null;
     const sortedDates = Array.from(perDateEndings.keys()).sort(); // asc
-    const out: DayPairRow[] = [];
 
-    for (let i = carryK; i < sortedDates.length; i++) {
-      const targetDate = sortedDates[i];
+    // Window = last (K+1) dates of the sorted list. If fewer dates exist, use what we have.
+    const windowSize = carryK + 1;
+    const windowDates = sortedDates.slice(-windowSize);
+    if (windowDates.length < 2) return { windowDates, recurring: [] as Recurring[] };
 
-      // Aggregate counts across D-1..D-K. When same ending appears on multiple
-      // carry days, sum its occurrences (so a number that hit twice on D-1 AND
-      // once on D-2 shows ×3 on the candidate strip — true to source).
-      const candidateCounts = new Map<string, number>();
-      for (let k = 1; k <= carryK; k++) {
-        const prev = perDateEndings.get(sortedDates[i - k]);
-        if (!prev) continue;
-        const src = digits === 3 ? prev.d3 : prev.d4;
-        for (const [tail, c] of src) {
-          candidateCounts.set(tail, (candidateCounts.get(tail) ?? 0) + c);
-        }
+    // Count distinct-day appearance per ending across the window.
+    const appearances = new Map<string, string[]>(); // ending -> dates
+    for (const date of windowDates) {
+      const e = perDateEndings.get(date);
+      if (!e) continue;
+      const src = digits === 3 ? e.d3 : e.d4;
+      for (const tail of src) {
+        if (!appearances.has(tail)) appearances.set(tail, []);
+        appearances.get(tail)!.push(date);
       }
-      const target = perDateEndings.get(targetDate)!;
-      const targetCounts = digits === 3 ? target.d3 : target.d4;
+    }
 
-      const hits: string[] = [];
-      const misses: string[] = [];
-      for (const c of candidateCounts.keys()) {
-        if (targetCounts.has(c)) hits.push(c);
-        else misses.push(c);
+    const recurring: Recurring[] = [];
+    for (const [ending, dateList] of appearances) {
+      if (dateList.length >= 2) {
+        recurring.push({ ending, days: dateList.length, dateList });
       }
-      hits.sort();
-      misses.sort();
-
-      const candNum = candidateCounts.size;
-      const overlapPct = candNum === 0 ? 0 : hits.length / candNum;
-
-      out.push({
-        date: targetDate,
-        prevDate: sortedDates[i - 1],
-        candidateCounts,
-        targetCounts,
-        hits,
-        misses,
-        overlapPct,
-        missPct: 1 - overlapPct,
-      });
     }
-    // Take the most recent backtestDays rows
-    return out.slice(-backtestDays).reverse();
-  }, [perDateEndings, digits, carryK, backtestDays]);
+    // Sort: most-recurring first, then ending asc
+    recurring.sort((a, b) => b.days - a.days || a.ending.localeCompare(b.ending));
 
-  // Union of trùng across selected day cards — auto-dedup, sorted asc.
-  const selectedUnion = useMemo(() => {
-    if (selected.size === 0) return [] as string[];
-    const set = new Set<string>();
-    for (const r of rows) {
-      if (!selected.has(r.date)) continue;
-      for (const h of r.hits) set.add(h);
-    }
-    return Array.from(set).sort();
-  }, [rows, selected]);
-
-  // Aggregate KPIs
-  const kpi = useMemo(() => {
-    if (rows.length === 0) return null;
-    const overlaps = rows.map((r) => r.overlapPct);
-    const avg = overlaps.reduce((s, n) => s + n, 0) / overlaps.length;
-    const variance = overlaps.reduce((s, n) => s + (n - avg) ** 2, 0) / overlaps.length;
-    const std = Math.sqrt(variance);
-
-    const avgAppeared = rows.reduce((s, r) => s + r.targetCounts.size, 0) / rows.length;
-    const avgCand = rows.reduce((s, r) => s + r.candidateCounts.size, 0) / rows.length;
-    const baselineOverlap = avgAppeared / SPACE_SIZE[digits];
-
-    return {
-      days: rows.length,
-      avgOverlap: avg,
-      stdOverlap: std,
-      avgMiss: 1 - avg,
-      avgCandidates: avgCand,
-      avgAppeared,
-      baselineOverlap,
-      missLift: baselineOverlap > 0 ? (1 - avg) / (1 - baselineOverlap) : 0,
-    };
-  }, [rows, digits]);
-
-  // ── Reload when fetch window changes (backtestDays grew) ─────────────────
-  useEffect(() => {
-    const haveDays = Math.max(
-      cache.xsmn?.data.length ?? 0,
-      cache.xsmb?.data.length ?? 0,
-      cache.xsmt?.data.length ?? 0
-    );
-    if (haveDays > 0 && haveDays < backtestDays + carryK) loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [backtestDays, carryK]);
+    return { windowDates, recurring };
+  }, [perDateEndings, digits, carryK]);
 
   function copyText(text: string, label: string) {
     navigator.clipboard.writeText(text).then(
@@ -269,8 +160,8 @@ export default function RollingPage({ region: _region }: { region: Region }) {
   }
 
   return (
-    <div className="space-y-3">
-      {/* ─── Single compact control bar ─────────────────────────────── */}
+    <div className="space-y-3 md:space-y-4">
+      {/* ─── Control bar ─────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-[#111827] border border-white/[0.06]">
         <SegPicker
           options={[
@@ -279,11 +170,6 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           ]}
           value={digits}
           onChange={(v) => setDigits(v as Digits)}
-        />
-        <SegPicker
-          options={[30, 60, 90, 180].map((n) => ({ v: n, label: `${n}n` }))}
-          value={backtestDays}
-          onChange={(v) => setBacktestDays(v as number)}
         />
         <SegPicker
           options={[1, 2, 3, 5].map((k) => ({ v: k, label: `K=${k}` }))}
@@ -312,68 +198,21 @@ export default function RollingPage({ region: _region }: { region: Region }) {
         </button>
       </div>
 
-      {/* ─── Single-line KPI summary ────────────────────────────────── */}
+      {/* ─── Result box ──────────────────────────────────────────────── */}
       {loading ? (
-        <div className="px-3 py-8 text-center text-slate-500 text-sm">Đang tải...</div>
-      ) : kpi === null ? (
-        <div className="px-3 py-8 text-center text-slate-500 text-sm">
-          Chưa đủ dữ liệu ({carryK + 1}+ ngày).
+        <div className="px-3 py-12 text-center text-slate-500 text-sm">Đang tải…</div>
+      ) : result === null || result.windowDates.length < 2 ? (
+        <div className="px-3 py-12 text-center text-slate-500 text-sm">
+          Cần ít nhất {carryK + 1} ngày data ở miền đã chọn.
         </div>
       ) : (
-        <>
-          <div className="px-3 py-2 text-[0.7rem] md:text-xs text-slate-400 font-mono flex flex-wrap gap-x-4 gap-y-1">
-            <span>{kpi.days} ngày</span>
-            <span>
-              Trùng TB <b className="text-red-400">{(kpi.avgOverlap * 100).toFixed(1)}%</b>
-            </span>
-            <span>
-              Loại đúng <b className="text-emerald-400">{(kpi.avgMiss * 100).toFixed(1)}%</b>
-            </span>
-            <span className="text-slate-500">
-              (random {((1 - kpi.baselineOverlap) * 100).toFixed(1)}%)
-            </span>
-          </div>
-
-          {/* ─── Sticky union bar — shown only when user selects ──── */}
-          {selected.size > 0 && (
-            <div className="sticky top-[100px] md:top-[112px] z-30 flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-cyan-950/95 border border-cyan-500/40 backdrop-blur shadow-lg">
-              <span className="text-xs font-semibold text-cyan-200">
-                ✓ {selected.size} ngày
-              </span>
-              <span className="text-xs font-mono text-cyan-300">
-                {selectedUnion.length} số trùng (gộp)
-              </span>
-              <button
-                onClick={() =>
-                  copyText(selectedUnion.join(", "), `${selectedUnion.length} số trùng từ ${selected.size} ngày`)
-                }
-                className="ml-auto px-2.5 py-1 rounded text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white"
-                disabled={selectedUnion.length === 0}
-              >
-                Copy {selectedUnion.length} số
-              </button>
-              <button
-                onClick={clearSelect}
-                className="px-2 py-1 rounded text-xs font-semibold text-slate-400 hover:text-slate-200"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {/* ─── Day pair cards ─────────────────────────────────────── */}
-          <div className="space-y-2">
-            {rows.map((r) => (
-              <DayPairCard
-                key={r.date}
-                row={r}
-                isSelected={selected.has(r.date)}
-                onToggleSelect={() => toggleSelect(r.date)}
-                onCopy={copyText}
-              />
-            ))}
-          </div>
-        </>
+        <ResultBox
+          digits={digits}
+          carryK={carryK}
+          windowDates={result.windowDates}
+          recurring={result.recurring}
+          onCopy={copyText}
+        />
       )}
     </div>
   );
@@ -405,10 +244,6 @@ function SegPicker<T extends string | number>({
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Sub-components
-// ──────────────────────────────────────────────────────────────────────────
-
 function shortDate(d: string): string {
   const [, m, day] = d.split("-").map(Number);
   const dt = new Date(d + "T00:00:00Z");
@@ -416,108 +251,95 @@ function shortDate(d: string): string {
   return `${dow} ${day}/${m}`;
 }
 
-/**
- * Card design — ONE row of hôm-qua numbers per card.
- *   • Header: date pair + trùng/total + percentage + per-card copy
- *   • Body: full hôm-qua list, sorted asc; overlap (trùng) chips glow red
- *   • Click card body to multi-select; the sticky bar at top unions trùng
- *
- * No "Nay" row, no "Còn lại" toggle — the single hôm-qua row IS the copy
- * target. Overlap is highlighted in-place by color (red = also ra hôm nay).
- */
-function DayPairCard({
-  row,
-  isSelected,
-  onToggleSelect,
+function ResultBox({
+  digits,
+  carryK,
+  windowDates,
+  recurring,
   onCopy,
 }: {
-  row: DayPairRow;
-  isSelected: boolean;
-  onToggleSelect: () => void;
+  digits: Digits;
+  carryK: number;
+  windowDates: string[];
+  recurring: Recurring[];
   onCopy: (text: string, label: string) => void;
 }) {
-  const overlap = new Set(row.hits);
-  const prevList = Array.from(row.candidateCounts.keys()).sort();
+  const copyList = recurring.map((r) => r.ending).join(", ");
+  const windowLabel = windowDates.length
+    ? `${shortDate(windowDates[0])} → ${shortDate(windowDates[windowDates.length - 1])}`
+    : "—";
+
+  // Group by day-count for the legend strip (helps user see "wow, 3 numbers
+  // appeared in all 4 days").
+  const byDays = new Map<number, number>();
+  for (const r of recurring) byDays.set(r.days, (byDays.get(r.days) ?? 0) + 1);
+  const dayCountGroups = Array.from(byDays.entries()).sort((a, b) => b[0] - a[0]);
 
   return (
-    <div
-      onClick={onToggleSelect}
-      className={`rounded-xl cursor-pointer transition-all ${
-        isSelected
-          ? "bg-cyan-950/30 border border-cyan-400/60 shadow-[0_0_0_3px_rgba(34,211,238,0.08)]"
-          : "bg-[#111827] border border-white/[0.06] hover:border-white/[0.15]"
-      }`}
-    >
-      {/* Header bar */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 border-b border-white/[0.04]">
-        <div className="flex items-center gap-2">
-          {/* Visual select indicator */}
-          <span
-            className={`inline-flex items-center justify-center w-4 h-4 rounded border ${
-              isSelected
-                ? "bg-cyan-500 border-cyan-400 text-white"
-                : "border-white/[0.15] text-transparent"
-            } text-[0.55rem] font-bold`}
+    <div className="rounded-2xl bg-gradient-to-br from-red-950/20 to-[#111827] border border-red-500/25 overflow-hidden">
+      {/* Header */}
+      <div className="px-5 py-3.5 border-b border-white/[0.06] flex flex-wrap items-center gap-x-3 gap-y-1">
+        <div>
+          <h2 className="text-sm md:text-base font-bold text-slate-100">
+            🎯 Số Xổ Lại — {carryK + 1} ngày gần nhất
+          </h2>
+          <div className="text-[0.65rem] md:text-xs text-slate-500 font-mono mt-0.5">
+            {windowLabel} · {digits} số cuối
+          </div>
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs md:text-sm font-mono">
+            <b className="text-red-400 text-base md:text-lg">{recurring.length}</b>
+            <span className="text-slate-500"> số xổ lại</span>
+          </span>
+          <button
+            onClick={() => onCopy(copyList, `${recurring.length} số xổ lại`)}
+            disabled={recurring.length === 0}
+            className="px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            ✓
-          </span>
-          <span className="font-mono text-sm md:text-[0.95rem] font-bold text-slate-100">
-            {shortDate(row.prevDate)}
-            <span className="mx-1.5 text-slate-500">→</span>
-            {shortDate(row.date)}
-          </span>
+            📋 Copy {recurring.length} số
+          </button>
         </div>
-
-        <div className="flex items-center gap-2 text-[0.7rem] md:text-xs font-mono">
-          <span className="px-1.5 py-0.5 rounded bg-red-500/12 text-red-300 border border-red-500/25">
-            trùng <b>{row.hits.length}</b>
-            <span className="text-red-400/70">/{prevList.length}</span>
-            <span className="ml-1 text-red-400/80">({(row.overlapPct * 100).toFixed(1)}%)</span>
-          </span>
-          <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-            loại đúng <b>{row.misses.length}</b>
-          </span>
-        </div>
-
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onCopy(prevList.join(", "), `${prevList.length} số hôm qua`);
-          }}
-          className="ml-auto px-2.5 py-1 rounded text-[0.7rem] font-semibold bg-white/[0.04] hover:bg-cyan-600 hover:text-white text-slate-300 border border-white/[0.06]"
-          title="Copy toàn bộ số hôm qua (1 dòng dưới)"
-        >
-          📋 Copy {prevList.length}
-        </button>
       </div>
 
-      {/* Body — 1 row of hôm qua numbers (sorted asc), trùng = red */}
-      <div className="px-4 py-3">
-        {prevList.length === 0 ? (
-          <div className="text-xs text-slate-600 italic">— không có dữ liệu hôm qua —</div>
+      {/* Legend strip — only shown when there's variety in day-counts */}
+      {dayCountGroups.length > 1 && (
+        <div className="px-5 py-2 border-b border-white/[0.04] flex flex-wrap gap-3 text-[0.65rem] md:text-xs font-mono text-slate-400">
+          {dayCountGroups.map(([days, count]) => (
+            <span key={days}>
+              <b className="text-red-400">×{days}</b> ngày: {count} số
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Numbers grid */}
+      <div className="px-5 py-4">
+        {recurring.length === 0 ? (
+          <div className="text-center py-6 text-slate-500 text-sm italic">
+            — Không có số nào xổ lại trong {carryK + 1} ngày này —
+          </div>
         ) : (
-          <div className="flex flex-wrap gap-x-2.5 gap-y-1 font-mono leading-relaxed">
-            {prevList.map((n) => {
-              const c = row.candidateCounts.get(n) ?? 0;
-              const isHit = overlap.has(n);
-              return (
-                <span
-                  key={n}
-                  className={
-                    isHit
-                      ? "text-sm md:text-[0.95rem] font-bold text-red-400"
-                      : "text-[0.78rem] md:text-[0.85rem] text-slate-500"
-                  }
-                >
-                  {n}
-                  {c > 1 && (
-                    <sup className={`ml-0.5 text-[0.55rem] ${isHit ? "text-red-300" : "text-slate-600"}`}>
-                      ×{c}
-                    </sup>
-                  )}
-                </span>
-              );
-            })}
+          <div className="flex flex-wrap gap-1.5 md:gap-2">
+            {recurring.map((r) => (
+              <span
+                key={r.ending}
+                className={`inline-flex items-baseline gap-0.5 px-2 py-1 rounded font-mono font-bold border ${
+                  r.days >= 4
+                    ? "text-base md:text-lg bg-red-500/25 border-red-400 text-red-200 shadow-[0_0_12px_-3px_rgba(239,68,68,0.5)]"
+                    : r.days === 3
+                    ? "text-sm md:text-base bg-red-500/18 border-red-500/55 text-red-300"
+                    : "text-sm md:text-[0.95rem] bg-red-500/10 border-red-500/35 text-red-300"
+                }`}
+                title={r.dateList.join(", ")}
+              >
+                {r.ending}
+                {r.days > 2 && (
+                  <sup className="text-[0.6rem] font-bold text-red-200">×{r.days}</sup>
+                )}
+              </span>
+            ))}
           </div>
         )}
       </div>
