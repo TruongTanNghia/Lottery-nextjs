@@ -3,17 +3,17 @@
 /**
  * "Cuốn Chiếu" page — Số Xổ Lại in past K days.
  *
- * Latest scraped date D = "hôm nay" (excluded from output).
- * Window = K days BEFORE today: {D-K, ..., D-1}.
+ * Window = K MOST RECENT scraped days (typically yesterday and back).
+ *   K=1 → hôm qua (latest scraped — current "today" usually hasn't drawn yet)
+ *   K=2 → hôm qua + hôm kia
+ *   K=N → N ngày gần nhất
  *
- * "Số xổ lại" = ending appearing ≥ 2 times TOTAL across all prizes in the
- * window. Works uniformly for any K:
- *   K=1 → "xổ lại" within hôm qua (đuôi ra ≥2 lần trong cùng ngày)
- *   K=2 → "xổ lại" across hôm qua + hôm kia (any combination of days/prizes)
- *   K=N → "xổ lại" anywhere in the N-day window
+ * "Số xổ lại" = ending appearing ≥ 2 times TOTAL across all prizes in window.
  *
- * Singles (count=1) are filtered out — user explicitly wanted only the
- * recurring red chips, no gray context noise.
+ * Note on "hôm nay": at time of viewing, today's draw typically hasn't run
+ * yet — so the latest scraped date IS effectively yesterday's data. We do
+ * NOT exclude it. Earlier rev wrongly excluded latest, making K=1 show the
+ * date 2 days back. Fixed.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -128,15 +128,14 @@ export default function RollingPage({ region: _region }: { region: Region }) {
   }, [cache, regions]);
 
   // "Số xổ lại" = ending with total count ≥ 2 across the K-day window
-  // (window = K days BEFORE the latest scraped date).
+  // (window = K MOST RECENT scraped days, INCLUDING the latest).
   const result = useMemo(() => {
     if (perDateEndings.size === 0) return null;
     const sortedDates = Array.from(perDateEndings.keys()).sort(); // asc
-    if (sortedDates.length < 2) return { latestDate: null, windowDates: [], endings: [] as EndingHit[] };
+    if (sortedDates.length < 1) return { windowDates: [], endings: [] as EndingHit[] };
 
-    const latestDate = sortedDates[sortedDates.length - 1];
-    const windowDates = sortedDates.slice(-(carryK + 1), -1);
-    if (windowDates.length === 0) return { latestDate, windowDates, endings: [] as EndingHit[] };
+    const windowDates = sortedDates.slice(-carryK);
+    if (windowDates.length === 0) return { windowDates, endings: [] as EndingHit[] };
 
     // For each ending: sum total count + collect distinct days within window.
     const totals = new Map<string, number>();
@@ -161,7 +160,7 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     }
     endings.sort((a, b) => b.count - a.count || a.ending.localeCompare(b.ending));
 
-    return { latestDate, windowDates, endings };
+    return { windowDates, endings };
   }, [perDateEndings, digits, carryK]);
 
   function copyText(text: string, label: string) {
@@ -215,13 +214,12 @@ export default function RollingPage({ region: _region }: { region: Region }) {
         <div className="px-3 py-12 text-center text-slate-500 text-sm">Đang tải…</div>
       ) : result === null || result.windowDates.length === 0 ? (
         <div className="px-3 py-12 text-center text-slate-500 text-sm">
-          Cần ít nhất {carryK + 1} ngày data ở miền đã chọn (hôm nay + {carryK} ngày trước).
+          Cần ít nhất {carryK} ngày data ở miền đã chọn.
         </div>
       ) : (
         <ResultBox
           digits={digits}
           carryK={carryK}
-          latestDate={result.latestDate}
           windowDates={result.windowDates}
           endings={result.endings}
           onCopy={copyText}
@@ -267,14 +265,12 @@ function shortDate(d: string): string {
 function ResultBox({
   digits,
   carryK,
-  latestDate,
   windowDates,
   endings,
   onCopy,
 }: {
   digits: Digits;
   carryK: number;
-  latestDate: string | null;
   windowDates: string[];
   endings: EndingHit[];
   onCopy: (text: string, label: string) => void;
@@ -301,9 +297,6 @@ function ResultBox({
           </h2>
           <div className="text-[0.65rem] md:text-xs text-slate-500 font-mono mt-0.5">
             {windowLabel} · {digits} số cuối
-            {latestDate && (
-              <span className="text-slate-600"> · (hôm nay {shortDate(latestDate)} không tính)</span>
-            )}
           </div>
         </div>
 
