@@ -244,193 +244,105 @@ export default function RollingPage({ region: _region }: { region: Region }) {
   }
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      {/* ─── Header / Intro ─────────────────────────────────────────────── */}
-      <section className="rounded-2xl bg-gradient-to-br from-cyan-950/60 to-[#111827] border border-cyan-500/20 px-5 md:px-7 py-4 md:py-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-lg md:text-xl font-bold flex items-center gap-2">
-              🌀 Cuốn Chiếu — Đối Chiếu Hôm Qua vs Hôm Nay
-            </h1>
-            <p className="text-xs md:text-sm text-slate-400 mt-1">
-              Lấy đuôi {digits === 3 ? "3" : "4"} chữ của <b>{carryK} ngày trước</b> làm tập "loại bỏ" → check trên ngày hiện tại có bao nhiêu số <b>trùng (loại sai)</b> vs <b>không trùng (loại đúng)</b>.
-            </p>
-          </div>
-          <button
-            onClick={loadAll}
-            disabled={loading}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-700 hover:bg-cyan-600 text-white disabled:opacity-50"
-          >
-            {loading ? "Đang tải..." : "🔄 Tải lại"}
-          </button>
+    <div className="space-y-3">
+      {/* ─── Single compact control bar ─────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-[#111827] border border-white/[0.06]">
+        <SegPicker
+          options={[
+            { v: 3, label: "3 số" },
+            { v: 4, label: "4 số" },
+          ]}
+          value={digits}
+          onChange={(v) => setDigits(v as Digits)}
+        />
+        <SegPicker
+          options={[10, 20, 30, 45].map((n) => ({ v: n, label: `${n}n` }))}
+          value={backtestDays}
+          onChange={(v) => setBacktestDays(v as number)}
+        />
+        <SegPicker
+          options={[1, 2, 3, 5].map((k) => ({ v: k, label: `K=${k}` }))}
+          value={carryK}
+          onChange={(v) => setCarryK(v as number)}
+        />
+        <div className="inline-flex p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+          {(["xsmn", "xsmb", "xsmt"] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => setRegions((s) => ({ ...s, [r]: !s[r] }))}
+              className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                regions[r] ? "bg-cyan-600 text-white" : "text-slate-500"
+              }`}
+            >
+              {{ xsmn: "MN", xsmb: "MB", xsmt: "MT" }[r]}
+            </button>
+          ))}
         </div>
-      </section>
+        <button
+          onClick={loadAll}
+          disabled={loading}
+          className="ml-auto px-2.5 py-1 rounded text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-50"
+        >
+          {loading ? "…" : "↻"}
+        </button>
+      </div>
 
-      {/* ─── Controls ───────────────────────────────────────────────────── */}
-      <section className="rounded-2xl bg-[#111827] border border-white/[0.06] p-4 md:p-5">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-5">
-          {/* Mode */}
-          <div>
-            <div className="text-[0.62rem] uppercase tracking-wider text-slate-500 font-semibold mb-1.5">
-              Chế độ
-            </div>
-            <div className="inline-flex p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-              {([3, 4] as const).map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setDigits(d)}
-                  className={`px-3 py-1 rounded text-xs font-semibold ${
-                    digits === d
-                      ? "bg-cyan-600 text-white"
-                      : "text-slate-400 hover:text-slate-100"
-                  }`}
-                >
-                  {d} số cuối
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Backtest days */}
-          <div>
-            <div className="text-[0.62rem] uppercase tracking-wider text-slate-500 font-semibold mb-1.5">
-              N ngày backtest
-            </div>
-            <div className="inline-flex p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-              {[10, 20, 30, 45].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setBacktestDays(n)}
-                  className={`px-2.5 py-1 rounded text-xs font-semibold ${
-                    backtestDays === n
-                      ? "bg-cyan-600 text-white"
-                      : "text-slate-400 hover:text-slate-100"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Carry K */}
-          <div>
-            <div className="text-[0.62rem] uppercase tracking-wider text-slate-500 font-semibold mb-1.5">
-              Gộp K ngày trước
-            </div>
-            <div className="inline-flex p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-              {[1, 2, 3, 5].map((k) => (
-                <button
-                  key={k}
-                  onClick={() => setCarryK(k)}
-                  className={`px-2.5 py-1 rounded text-xs font-semibold ${
-                    carryK === k
-                      ? "bg-cyan-600 text-white"
-                      : "text-slate-400 hover:text-slate-100"
-                  }`}
-                >
-                  {k}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Region toggles */}
-          <div>
-            <div className="text-[0.62rem] uppercase tracking-wider text-slate-500 font-semibold mb-1.5">
-              Miền (cộng dồn)
-            </div>
-            <div className="inline-flex p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06] gap-0.5">
-              {(["xsmn", "xsmb", "xsmt"] as const).map((r) => {
-                const labels = { xsmn: "MN", xsmb: "MB", xsmt: "MT" };
-                const colors = {
-                  xsmn: "bg-blue-600 text-white",
-                  xsmb: "bg-rose-600 text-white",
-                  xsmt: "bg-amber-600 text-white",
-                };
-                return (
-                  <button
-                    key={r}
-                    onClick={() => setRegions((s) => ({ ...s, [r]: !s[r] }))}
-                    className={`px-2.5 py-1 rounded text-xs font-semibold ${
-                      regions[r] ? colors[r] : "text-slate-400 hover:text-slate-100"
-                    }`}
-                  >
-                    {labels[r]}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ─── KPI strip ──────────────────────────────────────────────────── */}
+      {/* ─── Single-line KPI summary ────────────────────────────────── */}
       {loading ? (
-        <section className="rounded-2xl bg-[#111827] border border-white/[0.06] p-8 text-center text-slate-400 text-sm">
-          Đang tải dữ liệu 3 miền...
-        </section>
+        <div className="px-3 py-8 text-center text-slate-500 text-sm">Đang tải...</div>
       ) : kpi === null ? (
-        <section className="rounded-2xl bg-[#111827] border border-white/[0.06] p-8 text-center text-slate-400 text-sm">
-          Chưa đủ dữ liệu. Cần ít nhất {carryK + 1} ngày có data ở miền đã chọn.
-        </section>
+        <div className="px-3 py-8 text-center text-slate-500 text-sm">
+          Chưa đủ dữ liệu ({carryK + 1}+ ngày).
+        </div>
       ) : (
         <>
-          <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <KPI
-              label="Ngày test"
-              value={kpi.days.toString()}
-              hint={`Gộp K=${carryK} ngày, ${digits} số cuối`}
-            />
-            <KPI
-              label="Đuôi/ngày TB"
-              value={kpi.avgAppeared.toFixed(1)}
-              hint={`/${SPACE_SIZE[digits].toLocaleString()} space`}
-            />
-            <KPI
-              label="Tỉ lệ trùng (loại sai)"
-              value={`${(kpi.avgOverlap * 100).toFixed(1)}%`}
-              hint={`±${(kpi.stdOverlap * 100).toFixed(1)}% std`}
-              tone="bad"
-            />
-            <KPI
-              label="Tỉ lệ loại đúng"
-              value={`${(kpi.avgMiss * 100).toFixed(1)}%`}
-              hint={`Baseline ngẫu nhiên: ${((1 - kpi.baselineOverlap) * 100).toFixed(2)}%`}
-              tone="good"
-            />
-            <KPI
-              label="Lift vs random"
-              value={kpi.missLift === 0 ? "—" : `×${kpi.missLift.toFixed(3)}`}
-              hint={kpi.missLift > 1.02 ? "Tốt hơn ngẫu nhiên" : kpi.missLift < 0.98 ? "Tệ hơn ngẫu nhiên" : "Ngang ngẫu nhiên"}
-              tone={kpi.missLift > 1.02 ? "good" : kpi.missLift < 0.98 ? "bad" : undefined}
-            />
-          </section>
+          <div className="px-3 py-2 text-[0.7rem] md:text-xs text-slate-400 font-mono flex flex-wrap gap-x-4 gap-y-1">
+            <span>{kpi.days} ngày</span>
+            <span>
+              Trùng TB <b className="text-red-400">{(kpi.avgOverlap * 100).toFixed(1)}%</b>
+            </span>
+            <span>
+              Loại đúng <b className="text-emerald-400">{(kpi.avgMiss * 100).toFixed(1)}%</b>
+            </span>
+            <span className="text-slate-500">
+              (random {((1 - kpi.baselineOverlap) * 100).toFixed(1)}%)
+            </span>
+          </div>
 
-          {/* ─── Sparkline ───────────────────────────────────────────────── */}
-          <Sparkline rows={rows} baselineOverlap={kpi.baselineOverlap} />
-
-          {/* ─── Day pair cards ─────────────────────────────────────────── */}
-          <section className="space-y-3 md:space-y-4">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-sm font-bold">📋 Đối Chiếu Theo Cặp Ngày — D-{carryK}..D-1 → D</h2>
-              <span className="text-[0.62rem] text-slate-500 font-mono">
-                {rows.length} cặp · {digits} số cuối
-              </span>
-            </div>
+          {/* ─── Day pair cards ─────────────────────────────────────── */}
+          <div className="space-y-2.5">
             {rows.map((r) => (
-              <DayPairCard
-                key={r.date}
-                row={r}
-                digits={digits}
-                carryK={carryK}
-                baselineOverlap={kpi.baselineOverlap}
-                onCopy={copyText}
-              />
+              <DayPairCard key={r.date} row={r} carryK={carryK} onCopy={copyText} />
             ))}
-          </section>
+          </div>
         </>
       )}
+    </div>
+  );
+}
+
+function SegPicker<T extends string | number>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { v: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="inline-flex p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+      {options.map((o) => (
+        <button
+          key={String(o.v)}
+          onClick={() => onChange(o.v)}
+          className={`px-2 py-0.5 rounded text-xs font-semibold ${
+            o.v === value ? "bg-cyan-600 text-white" : "text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -439,296 +351,98 @@ export default function RollingPage({ region: _region }: { region: Region }) {
 // Sub-components
 // ──────────────────────────────────────────────────────────────────────────
 
-function KPI({
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  tone?: "good" | "bad";
-}) {
-  const valueColor =
-    tone === "good" ? "text-emerald-400" : tone === "bad" ? "text-red-400" : "text-white";
-  return (
-    <div className="rounded-2xl bg-[#111827] border border-white/[0.06] p-3 md:p-4">
-      <div className="text-[0.62rem] uppercase tracking-wider text-slate-500 font-semibold">
-        {label}
-      </div>
-      <div className={`text-lg md:text-2xl font-bold font-mono mt-1 ${valueColor}`}>
-        {value}
-      </div>
-      {hint && <div className="text-[0.62rem] text-slate-500 mt-0.5">{hint}</div>}
-    </div>
-  );
-}
-
-function Sparkline({
-  rows,
-  baselineOverlap,
-}: {
-  rows: DayPairRow[];
-  baselineOverlap: number;
-}) {
-  // rows are newest-first; reverse for chronological X-axis
-  const series = [...rows].reverse();
-  if (series.length < 2) return null;
-
-  const W = 800;
-  const H = 80;
-  const padX = 8;
-  const padY = 10;
-  const maxY = Math.max(...series.map((s) => s.overlapPct), baselineOverlap * 2, 0.01);
-  const step = (W - 2 * padX) / Math.max(series.length - 1, 1);
-
-  const points = series.map((s, i) => {
-    const x = padX + i * step;
-    const y = H - padY - (s.overlapPct / maxY) * (H - 2 * padY);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-
-  const baselineY = H - padY - (baselineOverlap / maxY) * (H - 2 * padY);
-
-  return (
-    <section className="rounded-2xl bg-[#111827] border border-white/[0.06] px-4 md:px-5 py-3">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-bold text-slate-300">📈 Tỉ Lệ Trùng Theo Ngày</h3>
-        <div className="flex gap-3 text-[0.62rem] text-slate-500">
-          <span className="flex items-center gap-1">
-            <span className="inline-block w-2.5 h-0.5 bg-cyan-400" />
-            Thực tế
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block w-2.5 h-0.5 bg-slate-500 border-t border-dashed" />
-            Baseline ngẫu nhiên
-          </span>
-        </div>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-16 md:h-20" preserveAspectRatio="none">
-        <line
-          x1={padX}
-          y1={baselineY}
-          x2={W - padX}
-          y2={baselineY}
-          stroke="rgb(100 116 139)"
-          strokeWidth="1"
-          strokeDasharray="3 3"
-        />
-        <polyline
-          points={points.join(" ")}
-          fill="none"
-          stroke="rgb(34 211 238)"
-          strokeWidth="1.5"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-        {series.map((s, i) => {
-          const x = padX + i * step;
-          const y = H - padY - (s.overlapPct / maxY) * (H - 2 * padY);
-          return <circle key={i} cx={x} cy={y} r={1.5} fill="rgb(34 211 238)" />;
-        })}
-      </svg>
-      <div className="flex justify-between text-[0.55rem] text-slate-600 mt-1">
-        <span>{series[0]?.date}</span>
-        <span>{series[series.length - 1]?.date}</span>
-      </div>
-    </section>
-  );
-}
-
-/**
- * Card per day pair — shows hôm-qua chips above hôm-nay chips.
- * Numbers that appear on BOTH days get red highlight on BOTH strips so the
- * user can see the overlap at a glance. ×N suffix when count > 1 on that day.
- */
 function DayPairCard({
   row,
-  digits,
   carryK,
-  baselineOverlap,
   onCopy,
 }: {
   row: DayPairRow;
-  digits: Digits;
   carryK: number;
-  baselineOverlap: number;
   onCopy: (text: string, label: string) => void;
 }) {
-  const overlapColor =
-    row.overlapPct > baselineOverlap * 1.5
-      ? "text-red-400"
-      : row.overlapPct > baselineOverlap * 1.05
-      ? "text-amber-400"
-      : "text-emerald-400";
-
-  const candList = Array.from(row.candidateCounts.keys()).sort();
-  const targetList = Array.from(row.targetCounts.keys()).sort();
   const overlap = new Set(row.hits);
+  const todayList = Array.from(row.targetCounts.keys()).sort();
+  const prevList = Array.from(row.candidateCounts.keys()).sort();
 
-  const prevLabel = carryK === 1 ? `Hôm qua (${row.prevDate})` : `Gộp ${carryK} ngày trước → D-1 = ${row.prevDate}`;
+  // Compact 2-letter day-of-week + d/m label, e.g. "T6 19/6"
+  function shortDate(d: string): string {
+    const [, m, day] = d.split("-").map(Number);
+    const dt = new Date(d + "T00:00:00Z");
+    const dow = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][dt.getUTCDay()];
+    return `${dow} ${day}/${m}`;
+  }
 
   return (
-    <div className="rounded-2xl bg-[#111827] border border-white/[0.06] overflow-hidden">
-      {/* Header bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 md:px-5 py-3 bg-white/[0.02] border-b border-white/[0.06]">
-        <div className="flex items-center gap-2 md:gap-3 flex-wrap">
-          <span className="font-mono text-sm font-bold text-slate-200">
-            {formatDate(row.prevDate)} → {formatDate(row.date)}
-          </span>
-          <span className="text-[0.6rem] font-mono text-slate-500">
-            {row.prevDate} → {row.date}
-          </span>
-        </div>
-        <div className="flex items-center gap-3 text-xs md:text-sm font-mono">
-          <span className="text-slate-400">
-            Trùng <b className={overlapColor}>{row.hits.length}</b>
-            <span className="text-slate-600"> / {candList.length}</span>
-            <span className={`ml-1 ${overlapColor}`}>({(row.overlapPct * 100).toFixed(1)}%)</span>
-          </span>
-          <span className="text-emerald-400">
-            Loại đúng <b>{row.misses.length}</b>
-          </span>
-        </div>
+    <div className="rounded-lg bg-[#111827] border border-white/[0.05] px-3 py-2.5">
+      {/* Top line: date pair + counts. No "card header" bar — just one line. */}
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-2">
+        <span className="font-mono text-sm font-bold text-slate-200">
+          {shortDate(row.prevDate)} → {shortDate(row.date)}
+        </span>
+        <span className="text-[0.7rem] text-slate-500 font-mono">
+          trùng <b className="text-red-400">{row.hits.length}</b>/{prevList.length}
+        </span>
+        <button
+          onClick={() => onCopy(row.misses.join(", "), `${row.misses.length} số loại đúng`)}
+          className="ml-auto text-[0.65rem] font-semibold text-emerald-400 hover:text-emerald-300"
+          title="Copy số loại đúng (= số hôm qua không trùng hôm nay)"
+        >
+          Copy {row.misses.length} loại đúng ↗
+        </button>
       </div>
 
-      <div className="p-4 md:p-5 space-y-3 md:space-y-4">
-        {/* Hôm nay strip — đặt trên theo yêu cầu khách */}
-        <ChipStrip
-          title={`Hôm nay (${row.date})`}
-          count={targetList.length}
-          counts={row.targetCounts}
-          overlap={overlap}
-          onCopyAll={() => onCopy(targetList.join(", "), `${targetList.length} đuôi hôm nay`)}
-        />
-        {/* Hôm qua strip — đặt dưới */}
-        <ChipStrip
-          title={prevLabel}
-          count={candList.length}
+      {/* Two clean chip rows — minimal label, no decorations. */}
+      <div className="space-y-1.5">
+        <ChipRow label="Nay" counts={row.targetCounts} list={todayList} overlap={overlap} />
+        <ChipRow
+          label={carryK === 1 ? "Qua" : `−${carryK}n`}
           counts={row.candidateCounts}
+          list={prevList}
           overlap={overlap}
-          onCopyAll={() => onCopy(candList.join(", "), `${candList.length} đuôi hôm qua`)}
         />
-        {/* Footer — quick copy row */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/[0.04]">
-          <button
-            onClick={() => onCopy(row.misses.join(", "), `${row.misses.length} số loại đúng`)}
-            className="px-3 py-1 rounded-lg text-[0.65rem] md:text-xs font-semibold bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-400 border border-emerald-500/20"
-          >
-            ✅ Copy {row.misses.length} số "loại đúng"
-          </button>
-          <button
-            onClick={() => onCopy(row.hits.join(", "), `${row.hits.length} số trùng`)}
-            className="px-3 py-1 rounded-lg text-[0.65rem] md:text-xs font-semibold bg-red-600/15 hover:bg-red-600/25 text-red-400 border border-red-500/20"
-            disabled={row.hits.length === 0}
-          >
-            🔴 Copy {row.hits.length} số trùng
-          </button>
-          <span className="ml-auto text-[0.62rem] text-slate-500 italic">
-            {digits} số cuối · space {SPACE_SIZE[digits].toLocaleString()}
-          </span>
-        </div>
       </div>
     </div>
   );
 }
 
-/**
- * Strip for one day — splits chips into TWO sub-rows:
- *   1. "Trùng" — big bold red chips (only the overlapping numbers)
- *   2. "Còn lại" — dimmed chips (everything else)
- * Layout is denser horizontally but FAR easier to scan because the eye
- * locks onto the bright red row first.
- */
-function ChipStrip({
-  title,
-  count,
+function ChipRow({
+  label,
+  list,
   counts,
   overlap,
-  onCopyAll,
 }: {
-  title: string;
-  count: number;
+  label: string;
+  list: string[];
   counts: Map<string, number>;
   overlap: Set<string>;
-  onCopyAll: () => void;
 }) {
-  const sorted = Array.from(counts.keys()).sort();
-  const hits = sorted.filter((n) => overlap.has(n));
-  const others = sorted.filter((n) => !overlap.has(n));
-
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-xs md:text-sm font-bold text-slate-200">
-          {title}
-          <span className="ml-2 text-[0.65rem] font-mono font-normal text-slate-500">
-            {count} số · {hits.length} trùng
-          </span>
-        </div>
-        {sorted.length > 0 && (
-          <button
-            onClick={onCopyAll}
-            className="px-2 py-0.5 rounded text-[0.6rem] font-semibold bg-white/[0.04] hover:bg-white/[0.08] text-slate-400"
-          >
-            Copy tất cả
-          </button>
-        )}
-      </div>
-
-      {sorted.length === 0 ? (
-        <div className="text-xs text-slate-600 italic">— Không có dữ liệu —</div>
+    <div className="flex flex-wrap gap-1 items-baseline leading-relaxed">
+      <span className="text-[0.6rem] font-mono uppercase text-slate-600 w-7 shrink-0">
+        {label}
+      </span>
+      {list.length === 0 ? (
+        <span className="text-[0.65rem] text-slate-600 italic">—</span>
       ) : (
-        <div className="space-y-2.5">
-          {/* Hits row — bright, bold, breathing */}
-          {hits.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 items-center">
-              <span className="text-[0.6rem] font-mono uppercase tracking-wider text-red-400/70 mr-1">
-                Trùng
-              </span>
-              {hits.map((n) => {
-                const c = counts.get(n) ?? 0;
-                return (
-                  <span
-                    key={n}
-                    className="relative px-2 py-1 rounded text-sm md:text-base font-mono font-bold bg-red-500/20 border border-red-500/50 text-red-300 shadow-[0_0_10px_-3px_rgba(239,68,68,0.35)]"
-                  >
-                    {n}
-                    {c > 1 && (
-                      <sup className="ml-0.5 text-[0.55rem] font-bold text-red-200/90">
-                        ×{c}
-                      </sup>
-                    )}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Others row — muted */}
-          {others.length > 0 && (
-            <div className="flex flex-wrap gap-1 items-center">
-              <span className="text-[0.6rem] font-mono uppercase tracking-wider text-slate-600 mr-1">
-                Còn lại
-              </span>
-              {others.map((n) => {
-                const c = counts.get(n) ?? 0;
-                return (
-                  <span
-                    key={n}
-                    className="px-1.5 py-0.5 rounded text-[0.65rem] md:text-xs font-mono bg-white/[0.02] border border-white/[0.04] text-slate-500"
-                  >
-                    {n}
-                    {c > 1 && (
-                      <sup className="ml-0.5 text-[0.5rem] text-amber-500/80">×{c}</sup>
-                    )}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        list.map((n) => {
+          const c = counts.get(n) ?? 0;
+          const isHit = overlap.has(n);
+          return (
+            <span
+              key={n}
+              className={`font-mono text-[0.72rem] md:text-xs px-1 ${
+                isHit ? "text-red-400 font-bold" : "text-slate-500"
+              }`}
+            >
+              {n}
+              {c > 1 && (
+                <sup className={`ml-0.5 text-[0.5rem] ${isHit ? "text-red-300" : "text-slate-600"}`}>
+                  ×{c}
+                </sup>
+              )}
+            </span>
+          );
+        })
       )}
     </div>
   );
