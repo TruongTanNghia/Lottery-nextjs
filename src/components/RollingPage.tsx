@@ -186,8 +186,10 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     return { windowDates, endings, totalDistinct };
   }, [perDateEndings, digits, carryK, mode]);
 
-  // Per-day backtest rows — mỗi ngày D check vs cửa sổ D-K..D-1 (cũ "Đối Chiếu").
-  // Customer yêu cầu list 1 dòng/ngày, không chip số.
+  // Per-day backtest rows — mỗi ngày D check vs cửa sổ D-K..D-1.
+  // Tracks BOTH metrics per day:
+  //   • Full endings: candidate = all distinct đuôi trong window (cũ)
+  //   • Số xổ lại:    candidate = đuôi count ≥ 2 trong window (mới - theo yêu cầu khách)
   const backtestRows = useMemo(() => {
     if (perDateEndings.size === 0) return [];
     const sortedDates = Array.from(perDateEndings.keys()).sort(); // asc
@@ -199,28 +201,48 @@ export default function RollingPage({ region: _region }: { region: Region }) {
       loaiDung: number;
       loaiDungPct: number;
       appearedOnD: number;
+      // Số xổ lại metrics
+      recurringSize: number;
+      recurringHits: number;
+      recurringTrungPct: number;
+      xoLaiRate: number;       // recurring / total (% đuôi là xổ lại)
     }[] = [];
 
     for (let i = carryK; i < sortedDates.length; i++) {
       const targetDate = sortedDates[i];
 
-      // Aggregate distinct endings across D-K..D-1
-      const candidateSet = new Set<string>();
+      // Aggregate counts across D-K..D-1 (need counts to detect recurring).
+      const totals = new Map<string, number>();
       for (let k = 1; k <= carryK; k++) {
         const prev = perDateEndings.get(sortedDates[i - k]);
         if (!prev) continue;
         const src = digits === 3 ? prev.d3 : prev.d4;
-        for (const tail of src.keys()) candidateSet.add(tail);
+        for (const [tail, c] of src) {
+          totals.set(tail, (totals.get(tail) ?? 0) + c);
+        }
       }
       const target = perDateEndings.get(targetDate)!;
       const targetSet = digits === 3 ? target.d3 : target.d4;
 
+      // Full endings stat (cũ)
+      const candidateSet = new Set(totals.keys());
       let trung = 0;
       for (const c of candidateSet) {
         if (targetSet.has(c)) trung++;
       }
       const total = candidateSet.size;
       const trungPct = total === 0 ? 0 : trung / total;
+
+      // Số xổ lại stat (mới) — đuôi count ≥ 2 trong window → dự đoán cho D
+      let recurringSize = 0;
+      let recurringHits = 0;
+      for (const [tail, c] of totals) {
+        if (c < 2) continue;
+        recurringSize++;
+        if (targetSet.has(tail)) recurringHits++;
+      }
+      const recurringTrungPct = recurringSize === 0 ? 0 : recurringHits / recurringSize;
+      const xoLaiRate = total === 0 ? 0 : recurringSize / total;
 
       out.push({
         date: targetDate,
@@ -230,6 +252,10 @@ export default function RollingPage({ region: _region }: { region: Region }) {
         loaiDung: total - trung,
         loaiDungPct: 1 - trungPct,
         appearedOnD: targetSet.size,
+        recurringSize,
+        recurringHits,
+        recurringTrungPct,
+        xoLaiRate,
       });
     }
     // Lấy backtestDays ngày gần nhất, sort mới → cũ.
@@ -256,6 +282,43 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     };
   }, [backtestRows, digits]);
 
+  // KPI cho Số Xổ Lại — theo yêu cầu khách: % tỉ lệ xổ lại, % trúng TB, ngày cao nhất.
+  const recurringKpi = useMemo(() => {
+    if (backtestRows.length === 0) return null;
+    // Chỉ tính trên ngày có dự đoán (recurringSize > 0). Skip ngày rỗng.
+    const valid = backtestRows.filter((r) => r.recurringSize > 0);
+    if (valid.length === 0) return null;
+
+    const trungs = valid.map((r) => r.recurringTrungPct);
+    const avgTrung = trungs.reduce((s, n) => s + n, 0) / trungs.length;
+    const variance = trungs.reduce((s, n) => s + (n - avgTrung) ** 2, 0) / trungs.length;
+    const stdTrung = Math.sqrt(variance);
+
+    const avgRecurringSize = valid.reduce((s, r) => s + r.recurringSize, 0) / valid.length;
+    const avgXoLaiRate = valid.reduce((s, r) => s + r.xoLaiRate, 0) / valid.length;
+    const avgAppeared = valid.reduce((s, r) => s + r.appearedOnD, 0) / valid.length;
+    const baselineTrung = avgAppeared / SPACE_SIZE[digits];
+
+    // Best day = ngày có % trúng cao nhất
+    let bestDay = valid[0];
+    for (const r of valid) if (r.recurringTrungPct > bestDay.recurringTrungPct) bestDay = r;
+    // Worst day cho cân
+    let worstDay = valid[0];
+    for (const r of valid) if (r.recurringTrungPct < worstDay.recurringTrungPct) worstDay = r;
+
+    return {
+      days: valid.length,
+      avgXoLaiRate,
+      avgRecurringSize,
+      avgTrung,
+      stdTrung,
+      baselineTrung,
+      lift: baselineTrung > 0 ? avgTrung / baselineTrung : 0,
+      bestDay,
+      worstDay,
+    };
+  }, [backtestRows, digits]);
+
   function copyText(text: string, label: string) {
     navigator.clipboard.writeText(text).then(
       () => toast.show("success", `Đã copy ${label}`),
@@ -276,7 +339,7 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           onChange={(v) => setDigits(v as Digits)}
         />
         <SegPicker
-          options={[1, 2, 3, 5].map((k) => ({ v: k, label: `${k} ngày` }))}
+          options={[1, 2, 3, 5, 7].map((k) => ({ v: k, label: `${k} ngày` }))}
           value={carryK}
           onChange={(v) => setCarryK(v as number)}
         />
@@ -363,10 +426,11 @@ export default function RollingPage({ region: _region }: { region: Region }) {
             <Sparkline rows={backtestRows} baselineTrung={kpi.baselineTrung} />
           )}
 
-          {/* ─── 4. Thống kê theo ngày ──────────────────────────────── */}
-          {backtestRows.length > 0 && (
-            <DayStatsList rows={backtestRows} />
-          )}
+          {/* ─── 4. Thống Kê Số Xổ Lại (khách yêu cầu) ────────────── */}
+          {recurringKpi && <RecurringKpiBox kpi={recurringKpi} carryK={carryK} />}
+
+          {/* ─── 5. Thống kê theo ngày ──────────────────────────────── */}
+          {backtestRows.length > 0 && <DayStatsList rows={backtestRows} />}
         </>
       )}
     </div>
@@ -466,6 +530,63 @@ function Sparkline({
   );
 }
 
+function RecurringKpiBox({
+  kpi,
+  carryK,
+}: {
+  kpi: {
+    days: number;
+    avgXoLaiRate: number;
+    avgRecurringSize: number;
+    avgTrung: number;
+    stdTrung: number;
+    baselineTrung: number;
+    lift: number;
+    bestDay: { date: string; recurringHits: number; recurringSize: number; recurringTrungPct: number };
+    worstDay: { date: string; recurringHits: number; recurringSize: number; recurringTrungPct: number };
+  };
+  carryK: number;
+}) {
+  const tone = kpi.lift > 1.1 ? "good" : kpi.lift < 0.9 ? "bad" : undefined;
+  return (
+    <div className="rounded-2xl bg-gradient-to-br from-red-950/25 to-[#111827] border border-red-500/30 overflow-hidden">
+      <div className="px-5 py-3 border-b border-white/[0.08]">
+        <h2 className="text-sm md:text-base font-bold text-slate-100">
+          🎯 Thống Kê Số Xổ Lại — Backtest {kpi.days} ngày
+        </h2>
+        <div className="text-[0.65rem] md:text-xs text-slate-500 font-mono mt-0.5">
+          Mỗi ngày D: số xổ lại trong {carryK} ngày trước (D-{carryK}..D-1) → dự đoán → check vs D
+        </div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 p-3">
+        <KPI
+          label="Tỉ lệ xổ lại TB"
+          value={`${(kpi.avgXoLaiRate * 100).toFixed(1)}%`}
+          hint={`~${kpi.avgRecurringSize.toFixed(1)} số/ngày`}
+        />
+        <KPI
+          label="% Trúng TB"
+          value={`${(kpi.avgTrung * 100).toFixed(1)}%`}
+          hint={`±${(kpi.stdTrung * 100).toFixed(1)}% std · baseline ${(kpi.baselineTrung * 100).toFixed(1)}%`}
+          tone={tone}
+        />
+        <KPI
+          label="Ngày trúng cao nhất"
+          value={shortDate(kpi.bestDay.date)}
+          hint={`${kpi.bestDay.recurringHits}/${kpi.bestDay.recurringSize} = ${(kpi.bestDay.recurringTrungPct * 100).toFixed(1)}%`}
+          tone="good"
+        />
+        <KPI
+          label="Ngày trúng thấp nhất"
+          value={shortDate(kpi.worstDay.date)}
+          hint={`${kpi.worstDay.recurringHits}/${kpi.worstDay.recurringSize} = ${(kpi.worstDay.recurringTrungPct * 100).toFixed(1)}%`}
+          tone="bad"
+        />
+      </div>
+    </div>
+  );
+}
+
 function DayStatsList({
   rows,
 }: {
@@ -476,6 +597,9 @@ function DayStatsList({
     trungPct: number;
     loaiDung: number;
     loaiDungPct: number;
+    recurringSize: number;
+    recurringHits: number;
+    recurringTrungPct: number;
   }[];
 }) {
   return (
@@ -505,6 +629,17 @@ function DayStatsList({
               <b className="ml-1 text-emerald-400">{r.loaiDung}</b>
               <span className="ml-1 text-emerald-400/80">({(r.loaiDungPct * 100).toFixed(1)}%)</span>
             </span>
+
+            {/* Xổ lại stat — only when there were predictions that day */}
+            {r.recurringSize > 0 && (
+              <span className="font-mono px-1.5 py-0.5 rounded bg-red-500/10 border border-red-500/30">
+                <span className="text-slate-500">Xổ lại</span>
+                <b className="ml-1 text-red-300">
+                  {r.recurringHits}/{r.recurringSize}
+                </b>
+                <span className="ml-1 text-red-300/80">({(r.recurringTrungPct * 100).toFixed(1)}%)</span>
+              </span>
+            )}
 
             {/* Mini bar — green base, red overlay = trùng% */}
             <div className="ml-auto w-28 md:w-40 h-1.5 rounded-full bg-emerald-500/15 overflow-hidden">
