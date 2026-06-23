@@ -65,9 +65,11 @@ function extractEndingsCounts(blocks: ProvinceBlock[], digits: Digits): Map<stri
 
 interface EndingHit {
   ending: string;
-  count: number;      // total times this ending appeared across all prizes in window
-  days: number;       // # of distinct days within window it appeared in
-  dateList: string[]; // sorted asc dates — for tooltip
+  count: number;       // total times this ending appeared across all prizes in window
+  days: number;        // # of distinct days within window it appeared in
+  dateList: string[];  // sorted asc dates — for tooltip
+  hitOnLatest: boolean; // did this ending also appear on the LATEST day of the window?
+                       // (= dùng để check model trúng trên ngày mới nhất)
 }
 
 export default function RollingPage({ region: _region }: { region: Region }) {
@@ -172,18 +174,36 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     // totalDistinct = số đuôi khác nhau trong cửa sổ (pre-filter, dùng để tính %)
     const totalDistinct = totals.size;
 
+    // Ngày mới nhất trong cửa sổ — dùng làm "kết quả thực tế" để check.
+    // Khách hỏi: "trong số xổ lại này, model trúng được bao nhiêu con?"
+    // → coi mỗi recurring ending có "trúng" nếu nó cũng xuất hiện trên ngày
+    // mới nhất (= chứng tỏ pattern xổ lại vẫn còn active ở ngày gần đây nhất).
+    const latestDate = windowDates[windowDates.length - 1];
+    const latestEndings = perDateEndings.get(latestDate);
+    const latestSet =
+      latestEndings ? (digits === 3 ? latestEndings.d3 : latestEndings.d4) : new Map<string, number>();
+
     // Filter depends on mode:
     //   recurring → chỉ count ≥ 2 (xổ đi xổ lại)
     //   all       → tất cả đuôi (deduped — count ≥ 1)
     const endings: EndingHit[] = [];
+    let hitsOnLatest = 0;
     for (const [ending, count] of totals) {
       if (mode === "recurring" && count < 2) continue;
       const dateList = days.get(ending) ?? [];
-      endings.push({ ending, count, days: dateList.length, dateList });
+      const hit = latestSet.has(ending);
+      if (hit) hitsOnLatest++;
+      endings.push({ ending, count, days: dateList.length, dateList, hitOnLatest: hit });
     }
-    endings.sort((a, b) => b.count - a.count || a.ending.localeCompare(b.ending));
+    // Sort: trúng trên latest lên đầu, sau đó count desc, ending asc
+    endings.sort(
+      (a, b) =>
+        Number(b.hitOnLatest) - Number(a.hitOnLatest) ||
+        b.count - a.count ||
+        a.ending.localeCompare(b.ending)
+    );
 
-    return { windowDates, endings, totalDistinct };
+    return { windowDates, endings, totalDistinct, latestDate, hitsOnLatest };
   }, [perDateEndings, digits, carryK, mode]);
 
   // Per-day backtest rows — mỗi ngày D check vs cửa sổ D-K..D-1.
@@ -394,6 +414,8 @@ export default function RollingPage({ region: _region }: { region: Region }) {
             windowDates={result.windowDates}
             endings={result.endings}
             totalDistinct={result.totalDistinct ?? 0}
+            latestDate={result.latestDate ?? null}
+            hitsOnLatest={result.hitsOnLatest ?? 0}
             onCopy={copyText}
           />
 
@@ -695,6 +717,8 @@ function ResultBox({
   windowDates,
   endings,
   totalDistinct,
+  latestDate,
+  hitsOnLatest,
   onCopy,
 }: {
   digits: Digits;
@@ -703,6 +727,8 @@ function ResultBox({
   windowDates: string[];
   endings: EndingHit[];
   totalDistinct: number;
+  latestDate: string | null;
+  hitsOnLatest: number;
   onCopy: (text: string, label: string) => void;
 }) {
   const copyList = endings.map((e) => e.ending).join(", ");
@@ -772,11 +798,25 @@ function ResultBox({
         </div>
       </div>
 
-      {/* Legend — distribution of recur counts */}
-      {countGroups.length > 0 && (
-        <div className="px-5 py-2 border-b border-white/[0.04] flex flex-wrap gap-3 text-[0.65rem] md:text-xs font-mono text-slate-400">
+      {/* Trúng on latest day + legend ngắn */}
+      {(latestDate || countGroups.length > 0) && (
+        <div className="px-5 py-2 border-b border-white/[0.04] flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.65rem] md:text-xs font-mono">
+          {latestDate && endings.length > 0 && (
+            <span
+              className={`px-2 py-0.5 rounded border font-bold ${
+                hitsOnLatest > 0
+                  ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                  : "bg-slate-500/10 border-slate-500/30 text-slate-400"
+              }`}
+            >
+              ✓ Trên {shortDate(latestDate)}: trúng {hitsOnLatest}/{endings.length}
+              <span className="ml-1 opacity-80">
+                ({((hitsOnLatest / Math.max(endings.length, 1)) * 100).toFixed(1)}%)
+              </span>
+            </span>
+          )}
           {countGroups.map(([count, num]) => (
-            <span key={count}>
+            <span key={count} className="text-slate-400">
               <b className="text-red-400">×{count}</b>: {num} số
             </span>
           ))}
@@ -804,16 +844,22 @@ function ResultBox({
                   : e.count === 2
                   ? "text-sm md:text-[0.95rem] font-bold bg-red-500/10 border-red-500/40 text-red-300"
                   : "text-[0.78rem] md:text-[0.85rem] bg-white/[0.03] border-white/[0.08] text-slate-400";
+              const ringCls = e.hitOnLatest
+                ? "ring-2 ring-emerald-400/70 ring-offset-1 ring-offset-[#111827]"
+                : "";
               return (
                 <span
                   key={e.ending}
-                  className={`inline-flex items-baseline gap-0.5 px-2 py-1 rounded font-mono border ${cls}`}
-                  title={`${e.count} lần · ${e.days} ngày · ${e.dateList.join(", ")}`}
+                  className={`inline-flex items-baseline gap-0.5 px-2 py-1 rounded font-mono border ${cls} ${ringCls}`}
+                  title={`${e.count} lần · ${e.days} ngày · ${
+                    e.hitOnLatest ? "✓ trúng trên ngày mới nhất" : "không trúng trên ngày mới nhất"
+                  } · ${e.dateList.join(", ")}`}
                 >
                   {e.ending}
                   {e.count >= 2 && (
                     <sup className="text-[0.55rem] font-bold text-red-200">×{e.count}</sup>
                   )}
+                  {e.hitOnLatest && <span className="ml-0.5 text-emerald-300 text-[0.6rem]">✓</span>}
                 </span>
               );
             })}
