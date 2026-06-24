@@ -302,65 +302,106 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     };
   }, [backtestRows, digits]);
 
-  // Per-region backtest aggregates — để hiển thị breakdown MN/MB/MT bên dưới KPI.
-  // Chạy lại logic backtest cho TỪNG miền độc lập, không depend on selected regions.
-  const perRegionStats = useMemo(() => {
-    function runForRegion(region: Region): { avgTrung: number; avgRecurringTrung: number } | null {
-      const data = cache[region]?.data ?? [];
-      if (data.length === 0) return null;
-
-      // Build perDate map riêng cho region này
-      const map = new Map<string, { d3: Map<string, number>; d4: Map<string, number> }>();
-      for (const day of data) {
-        map.set(day.date, {
+  // Per-region perDate maps (mỗi miền tách riêng) — dùng làm "verify target" theo miền
+  const perRegionDateEndings = useMemo(() => {
+    const out: Record<Region, Map<string, { d3: Map<string, number>; d4: Map<string, number> }>> = {
+      xsmn: new Map(),
+      xsmb: new Map(),
+      xsmt: new Map(),
+    };
+    for (const region of ["xsmn", "xsmb", "xsmt"] as const) {
+      for (const day of cache[region]?.data ?? []) {
+        out[region].set(day.date, {
           d3: extractEndingsCounts(day.provinces, 3),
           d4: extractEndingsCounts(day.provinces, 4),
         });
       }
-      const sortedDates = Array.from(map.keys()).sort();
-      if (sortedDates.length < carryK + 1) return null;
-
-      const rows: { trungPct: number; recurringTrungPct: number; recurringSize: number }[] = [];
-      for (let i = carryK; i < sortedDates.length; i++) {
-        const totals = new Map<string, number>();
-        for (let k = 1; k <= carryK; k++) {
-          const prev = map.get(sortedDates[i - k]);
-          if (!prev) continue;
-          const src = digits === 3 ? prev.d3 : prev.d4;
-          for (const [t, c] of src) totals.set(t, (totals.get(t) ?? 0) + c);
-        }
-        const target = map.get(sortedDates[i])!;
-        const targetSet = digits === 3 ? target.d3 : target.d4;
-        let trung = 0;
-        for (const t of totals.keys()) if (targetSet.has(t)) trung++;
-        const total = totals.size;
-        const trungPct = total === 0 ? 0 : trung / total;
-
-        let recurringSize = 0;
-        let recurringHits = 0;
-        for (const [t, c] of totals) {
-          if (c < 2) continue;
-          recurringSize++;
-          if (targetSet.has(t)) recurringHits++;
-        }
-        const recurringTrungPct = recurringSize === 0 ? 0 : recurringHits / recurringSize;
-        rows.push({ trungPct, recurringTrungPct, recurringSize });
-      }
-      const slice = rows.slice(-backtestDays);
-      if (slice.length === 0) return null;
-
-      const avgTrung = slice.reduce((s, r) => s + r.trungPct, 0) / slice.length;
-      const valid = slice.filter((r) => r.recurringSize > 0);
-      const avgRecurringTrung =
-        valid.length === 0 ? 0 : valid.reduce((s, r) => s + r.recurringTrungPct, 0) / valid.length;
-      return { avgTrung, avgRecurringTrung };
     }
+    return out;
+  }, [cache]);
+
+  // Per-region breakdown — dùng MODEL COMBINED (recurring set tính trên cả 3 miền),
+  // chỉ thay đổi "verify day": check trên D của TỪNG miền riêng.
+  //
+  // Tại sao đổi từ "per-region độc lập":
+  //   • Per-region độc lập: recurring set tính trên data MN-only / MB-only / MT-only
+  //     → sample mỗi miền quá nhỏ (MB chỉ ~27 prize/ngày) → recurring set ~5-10 số
+  //     → % trúng noisy, lệch nhiều so với combined → khách thấy "ảo"
+  //   • Combined-model + per-region verify: recurring set lớn (~26 số như screenshot)
+  //     check vs MN/MB/MT's D → numbers comparable to combined, semantically rõ
+  //     ("model combined trúng được bao nhiêu % trên từng miền")
+  const perRegionStats = useMemo(() => {
+    if (perDateEndings.size === 0) {
+      return { xsmn: null, xsmb: null, xsmt: null } as Record<
+        Region,
+        { avgTrung: number; avgRecurringTrung: number } | null
+      >;
+    }
+    const sortedDates = Array.from(perDateEndings.keys()).sort();
+    if (sortedDates.length < carryK + 1) {
+      return { xsmn: null, xsmb: null, xsmt: null } as Record<
+        Region,
+        { avgTrung: number; avgRecurringTrung: number } | null
+      >;
+    }
+
+    const fullPcts: Record<Region, number[]> = { xsmn: [], xsmb: [], xsmt: [] };
+    const recurringPcts: Record<Region, number[]> = { xsmn: [], xsmb: [], xsmt: [] };
+
+    for (let i = carryK; i < sortedDates.length; i++) {
+      // Combined totals từ D-K..D-1
+      const totals = new Map<string, number>();
+      for (let k = 1; k <= carryK; k++) {
+        const prev = perDateEndings.get(sortedDates[i - k]);
+        if (!prev) continue;
+        const src = digits === 3 ? prev.d3 : prev.d4;
+        for (const [t, c] of src) totals.set(t, (totals.get(t) ?? 0) + c);
+      }
+      const candidateSet = new Set(totals.keys());
+      const recurringSet = new Set<string>();
+      for (const [t, c] of totals) if (c >= 2) recurringSet.add(t);
+
+      // Verify trên D của từng miền
+      for (const region of ["xsmn", "xsmb", "xsmt"] as const) {
+        const regionDay = perRegionDateEndings[region].get(sortedDates[i]);
+        if (!regionDay) continue;
+        const regionSet = digits === 3 ? regionDay.d3 : regionDay.d4;
+
+        // Full % — combined candidate ∩ region's D
+        if (candidateSet.size > 0) {
+          let hits = 0;
+          for (const t of candidateSet) if (regionSet.has(t)) hits++;
+          fullPcts[region].push(hits / candidateSet.size);
+        }
+
+        // Recurring % — combined recurring ∩ region's D
+        if (recurringSet.size > 0) {
+          let hits = 0;
+          for (const t of recurringSet) if (regionSet.has(t)) hits++;
+          recurringPcts[region].push(hits / recurringSet.size);
+        }
+      }
+    }
+
+    function avgOf(arr: number[]): number | null {
+      const slice = arr.slice(-backtestDays);
+      if (slice.length === 0) return null;
+      return slice.reduce((s, n) => s + n, 0) / slice.length;
+    }
+
+    function build(region: Region): { avgTrung: number; avgRecurringTrung: number } | null {
+      const t = avgOf(fullPcts[region]);
+      const r = avgOf(recurringPcts[region]);
+      if (t === null && r === null) return null;
+      return { avgTrung: t ?? 0, avgRecurringTrung: r ?? 0 };
+    }
+
     return {
-      xsmn: runForRegion("xsmn"),
-      xsmb: runForRegion("xsmb"),
-      xsmt: runForRegion("xsmt"),
+      xsmn: build("xsmn"),
+      xsmb: build("xsmb"),
+      xsmt: build("xsmt"),
     };
-  }, [cache, digits, carryK, backtestDays]);
+  }, [perDateEndings, perRegionDateEndings, digits, carryK, backtestDays]);
 
   // KPI cho Số Xổ Lại — theo yêu cầu khách: % tỉ lệ xổ lại, % trúng TB, ngày cao nhất.
   const recurringKpi = useMemo(() => {
