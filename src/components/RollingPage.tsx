@@ -302,6 +302,66 @@ export default function RollingPage({ region: _region }: { region: Region }) {
     };
   }, [backtestRows, digits]);
 
+  // Per-region backtest aggregates — để hiển thị breakdown MN/MB/MT bên dưới KPI.
+  // Chạy lại logic backtest cho TỪNG miền độc lập, không depend on selected regions.
+  const perRegionStats = useMemo(() => {
+    function runForRegion(region: Region): { avgTrung: number; avgRecurringTrung: number } | null {
+      const data = cache[region]?.data ?? [];
+      if (data.length === 0) return null;
+
+      // Build perDate map riêng cho region này
+      const map = new Map<string, { d3: Map<string, number>; d4: Map<string, number> }>();
+      for (const day of data) {
+        map.set(day.date, {
+          d3: extractEndingsCounts(day.provinces, 3),
+          d4: extractEndingsCounts(day.provinces, 4),
+        });
+      }
+      const sortedDates = Array.from(map.keys()).sort();
+      if (sortedDates.length < carryK + 1) return null;
+
+      const rows: { trungPct: number; recurringTrungPct: number; recurringSize: number }[] = [];
+      for (let i = carryK; i < sortedDates.length; i++) {
+        const totals = new Map<string, number>();
+        for (let k = 1; k <= carryK; k++) {
+          const prev = map.get(sortedDates[i - k]);
+          if (!prev) continue;
+          const src = digits === 3 ? prev.d3 : prev.d4;
+          for (const [t, c] of src) totals.set(t, (totals.get(t) ?? 0) + c);
+        }
+        const target = map.get(sortedDates[i])!;
+        const targetSet = digits === 3 ? target.d3 : target.d4;
+        let trung = 0;
+        for (const t of totals.keys()) if (targetSet.has(t)) trung++;
+        const total = totals.size;
+        const trungPct = total === 0 ? 0 : trung / total;
+
+        let recurringSize = 0;
+        let recurringHits = 0;
+        for (const [t, c] of totals) {
+          if (c < 2) continue;
+          recurringSize++;
+          if (targetSet.has(t)) recurringHits++;
+        }
+        const recurringTrungPct = recurringSize === 0 ? 0 : recurringHits / recurringSize;
+        rows.push({ trungPct, recurringTrungPct, recurringSize });
+      }
+      const slice = rows.slice(-backtestDays);
+      if (slice.length === 0) return null;
+
+      const avgTrung = slice.reduce((s, r) => s + r.trungPct, 0) / slice.length;
+      const valid = slice.filter((r) => r.recurringSize > 0);
+      const avgRecurringTrung =
+        valid.length === 0 ? 0 : valid.reduce((s, r) => s + r.recurringTrungPct, 0) / valid.length;
+      return { avgTrung, avgRecurringTrung };
+    }
+    return {
+      xsmn: runForRegion("xsmn"),
+      xsmb: runForRegion("xsmb"),
+      xsmt: runForRegion("xsmt"),
+    };
+  }, [cache, digits, carryK, backtestDays]);
+
   // KPI cho Số Xổ Lại — theo yêu cầu khách: % tỉ lệ xổ lại, % trúng TB, ngày cao nhất.
   const recurringKpi = useMemo(() => {
     if (backtestRows.length === 0) return null;
@@ -433,6 +493,11 @@ export default function RollingPage({ region: _region }: { region: Region }) {
                 value={`${(kpi.avgTrung * 100).toFixed(1)}%`}
                 hint={`±${(kpi.stdTrung * 100).toFixed(1)}% std`}
                 tone="bad"
+                breakdown={{
+                  xsmn: perRegionStats.xsmn?.avgTrung ?? null,
+                  xsmb: perRegionStats.xsmb?.avgTrung ?? null,
+                  xsmt: perRegionStats.xsmt?.avgTrung ?? null,
+                }}
               />
               <KPI
                 label="Tỉ lệ loại đúng"
@@ -449,7 +514,13 @@ export default function RollingPage({ region: _region }: { region: Region }) {
           )}
 
           {/* ─── 4. Thống Kê Số Xổ Lại (khách yêu cầu) ────────────── */}
-          {recurringKpi && <RecurringKpiBox kpi={recurringKpi} carryK={carryK} />}
+          {recurringKpi && (
+            <RecurringKpiBox
+              kpi={recurringKpi}
+              carryK={carryK}
+              perRegionStats={perRegionStats}
+            />
+          )}
 
           {/* ─── 5. Thống kê theo ngày ──────────────────────────────── */}
           {backtestRows.length > 0 && <DayStatsList rows={backtestRows} />}
@@ -459,13 +530,39 @@ export default function RollingPage({ region: _region }: { region: Region }) {
   );
 }
 
-function KPI({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: "good" | "bad" }) {
+function KPI({
+  label,
+  value,
+  hint,
+  tone,
+  breakdown,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: "good" | "bad";
+  // Per-region breakdown — hiển thị "MN xx% · MB xx% · MT xx%" dưới hint
+  breakdown?: { xsmn?: number | null; xsmb?: number | null; xsmt?: number | null };
+}) {
   const valueColor = tone === "good" ? "text-emerald-400" : tone === "bad" ? "text-red-400" : "text-slate-100";
+
+  function fmtPct(v: number | null | undefined): string {
+    if (v === null || v === undefined) return "—";
+    return `${(v * 100).toFixed(1)}%`;
+  }
+
   return (
     <div className="rounded-xl bg-[#111827] border border-white/[0.06] px-3 md:px-4 py-2.5 md:py-3">
       <div className="text-[0.6rem] uppercase tracking-wider text-slate-500 font-semibold">{label}</div>
       <div className={`text-base md:text-xl font-bold font-mono mt-0.5 ${valueColor}`}>{value}</div>
       {hint && <div className="text-[0.58rem] text-slate-500 mt-0.5">{hint}</div>}
+      {breakdown && (
+        <div className="text-[0.6rem] font-mono mt-1 flex flex-wrap gap-x-2">
+          <span className="text-blue-400">MN <b>{fmtPct(breakdown.xsmn)}</b></span>
+          <span className="text-rose-400">MB <b>{fmtPct(breakdown.xsmb)}</b></span>
+          <span className="text-amber-400">MT <b>{fmtPct(breakdown.xsmt)}</b></span>
+        </div>
+      )}
     </div>
   );
 }
@@ -555,6 +652,7 @@ function Sparkline({
 function RecurringKpiBox({
   kpi,
   carryK,
+  perRegionStats,
 }: {
   kpi: {
     days: number;
@@ -568,6 +666,11 @@ function RecurringKpiBox({
     worstDay: { date: string; recurringHits: number; recurringSize: number; recurringTrungPct: number };
   };
   carryK: number;
+  perRegionStats: {
+    xsmn: { avgTrung: number; avgRecurringTrung: number } | null;
+    xsmb: { avgTrung: number; avgRecurringTrung: number } | null;
+    xsmt: { avgTrung: number; avgRecurringTrung: number } | null;
+  };
 }) {
   const tone = kpi.lift > 1.1 ? "good" : kpi.lift < 0.9 ? "bad" : undefined;
   return (
@@ -591,6 +694,11 @@ function RecurringKpiBox({
           value={`${(kpi.avgTrung * 100).toFixed(1)}%`}
           hint={`±${(kpi.stdTrung * 100).toFixed(1)}% std · baseline ${(kpi.baselineTrung * 100).toFixed(1)}%`}
           tone={tone}
+          breakdown={{
+            xsmn: perRegionStats.xsmn?.avgRecurringTrung ?? null,
+            xsmb: perRegionStats.xsmb?.avgRecurringTrung ?? null,
+            xsmt: perRegionStats.xsmt?.avgRecurringTrung ?? null,
+          }}
         />
         <KPI
           label="Ngày trúng cao nhất"
