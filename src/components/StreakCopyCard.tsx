@@ -35,19 +35,35 @@ export default function StreakCopyCard({ limits }: Props) {
   const [filterMode, setFilterMode] = useState<Filter>("consecutive");
   const [optionKey, setOptionKey] = useState<string>("2");
   const [sep, setSep] = useState<CopySep>("space");
+  // Bet-string mode: emit "<lô>b<hạn mức>n" like the Theo Dõi tab, so the output
+  // can be pasted straight to a bookie. Separator is fixed to ", " there.
+  const [withAmount, setWithAmount] = useState(false);
+  const [skipZero, setSkipZero] = useState(false);
 
   const options = filterMode === "consecutive" ? STREAK_OPTIONS : COLD_OPTIONS;
   const currentOption = options.find((o) => o.key === optionKey) ?? options[0];
 
-  const filtered = useMemo(
-    () => limits.filter(currentOption.match).sort((a, b) => a.lo_number.localeCompare(b.lo_number)),
-    [limits, currentOption]
-  );
+  const filtered = useMemo(() => {
+    const base = limits
+      .filter(currentOption.match)
+      .sort((a, b) => a.lo_number.localeCompare(b.lo_number));
+    // limit 0 = "lô vừa về, không nhận cược" — keep by default so the string
+    // still lists every lô matching the filter.
+    return withAmount && skipZero ? base.filter((l) => l.current_limit > 0) : base;
+  }, [limits, currentOption, withAmount, skipZero]);
 
   const formatted = useMemo(() => {
+    if (withAmount) {
+      return filtered.map((l) => `${l.lo_number}b${l.current_limit}n`).join(", ");
+    }
     const sepChar = sep === "space" ? " " : sep === "comma" ? ", " : "\n";
     return filtered.map((l) => l.lo_number).join(sepChar);
-  }, [filtered, sep]);
+  }, [filtered, sep, withAmount]);
+
+  const totalPoints = useMemo(
+    () => filtered.reduce((s, l) => s + l.current_limit, 0),
+    [filtered]
+  );
 
   function switchMode(m: Filter) {
     setFilterMode(m);
@@ -61,7 +77,12 @@ export default function StreakCopyCard({ limits }: Props) {
     }
     try {
       await navigator.clipboard.writeText(formatted);
-      toast.show("success", `Đã copy ${filtered.length} lô vào clipboard`);
+      toast.show(
+        "success",
+        withAmount
+          ? `Đã copy chuỗi đánh ${filtered.length} lô • ${totalPoints}n`
+          : `Đã copy ${filtered.length} lô vào clipboard`
+      );
     } catch {
       toast.show("error", "Trình duyệt không cho phép copy. Bấm vào textbox để select rồi Ctrl+C.");
     }
@@ -138,31 +159,72 @@ export default function StreakCopyCard({ limits }: Props) {
           </div>
         </div>
 
-        {/* Format options */}
+        {/* Output mode: plain numbers vs bet string with amounts */}
         <div className="mb-3">
-          <div className="text-[0.7rem] text-slate-400 mb-1.5 font-semibold">Format:</div>
+          <div className="text-[0.7rem] text-slate-400 mb-1.5 font-semibold">Kiểu copy:</div>
           <div className="flex flex-wrap gap-1.5">
-            {(Object.keys(sepLabels) as CopySep[]).map((s) => (
-              <button
-                key={s}
-                onClick={() => setSep(s)}
-                className={`px-3 py-1.5 text-xs rounded transition-colors ${
-                  sep === s
-                    ? "bg-blue-500/30 border border-blue-400/50 text-blue-200"
-                    : "bg-white/[0.03] border border-white/[0.08] text-slate-400 hover:bg-white/[0.08]"
-                }`}
-              >
-                {sepLabels[s]}
-              </button>
-            ))}
+            <button
+              onClick={() => setWithAmount(false)}
+              className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${
+                !withAmount
+                  ? "bg-emerald-500 text-white"
+                  : "bg-white/[0.05] text-slate-300 hover:bg-white/[0.1]"
+              }`}
+            >
+              Chỉ số
+            </button>
+            <button
+              onClick={() => setWithAmount(true)}
+              className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${
+                withAmount
+                  ? "bg-emerald-500 text-white"
+                  : "bg-white/[0.05] text-slate-300 hover:bg-white/[0.1]"
+              }`}
+            >
+              💰 Số + tiền (chuỗi đánh)
+            </button>
           </div>
         </div>
+
+        {/* Format options — separator only matters for the plain-number mode */}
+        {withAmount ? (
+          <div className="mb-3">
+            <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={skipZero}
+                onChange={(e) => setSkipZero(e.target.checked)}
+                className="accent-emerald-500"
+              />
+              Bỏ lô hạn mức 0n (lô vừa về, không nhận cược)
+            </label>
+          </div>
+        ) : (
+          <div className="mb-3">
+            <div className="text-[0.7rem] text-slate-400 mb-1.5 font-semibold">Format:</div>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(sepLabels) as CopySep[]).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSep(s)}
+                  className={`px-3 py-1.5 text-xs rounded transition-colors ${
+                    sep === s
+                      ? "bg-blue-500/30 border border-blue-400/50 text-blue-200"
+                      : "bg-white/[0.03] border border-white/[0.08] text-slate-400 hover:bg-white/[0.08]"
+                  }`}
+                >
+                  {sepLabels[s]}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Preview */}
         <textarea
           readOnly
           value={formatted || "(không có lô nào)"}
-          rows={sep === "newline" ? Math.min(filtered.length, 8) || 2 : 3}
+          rows={!withAmount && sep === "newline" ? Math.min(filtered.length, 8) || 2 : 3}
           className="w-full px-3 py-2.5 rounded-lg bg-[#0f1623] border border-[#1f2937] text-slate-100 font-mono text-sm focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 resize-none"
           onClick={(e) => (e.target as HTMLTextAreaElement).select()}
         />
@@ -170,6 +232,7 @@ export default function StreakCopyCard({ limits }: Props) {
         <div className="mt-3 flex flex-wrap items-center gap-2 justify-between">
           <span className="text-[0.7rem] text-slate-500">
             {filtered.length} lô • {formatted.length} ký tự
+            {withAmount && <> • tổng <strong className="text-emerald-400">{totalPoints}n</strong></>}
           </span>
           <button
             onClick={handleCopy}
