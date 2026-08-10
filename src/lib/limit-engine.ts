@@ -196,28 +196,83 @@ export async function updateAllLoStatus(targetDate: string, region: Region): Pro
   if (updates.length > 0) await db.batch(updates, "write");
 }
 
+/**
+ * Full replay of lo_status from lo_daily.
+ *
+ * Runs the whole history in memory and touches the DB exactly twice per region
+ * (1 read + 1 batched write). The previous version called updateAllLoStatus per
+ * date — ~3 round-trips × ~180 dates × 3 regions — which blew past the 60s
+ * function limit and left whichever region it died on half-recalculated
+ * (observed: xsmb stuck 4 months behind while xsmt was never reached).
+ *
+ * Per-lô rules are identical to updateAllLoStatus.
+ */
 export async function recalculateAllFromHistory(region?: Region): Promise<void> {
   const regions: Region[] = region ? [region] : [...VALID_REGIONS];
-  const { query, exec } = await import("./db");
+  const { query, getDb } = await import("./db");
+
+  const schedule = await loadSchedule();
+  const resetAfter = schedule.consecutive_reset_after;
 
   for (const rgn of regions) {
-    const dates = await query<{ date: string }>(
-      "SELECT DISTINCT date FROM lo_daily WHERE region = ? ORDER BY date ASC",
+    const rows = await query<{ date: string; lo_number: string }>(
+      "SELECT date, lo_number FROM lo_daily WHERE region = ? ORDER BY date ASC",
       [rgn]
     );
-    if (dates.length === 0) continue;
+    if (rows.length === 0) continue;
 
-    // Reset all 100 lô statuses for this region in a single statement
-    await exec(
-      `UPDATE lo_status SET last_appeared_date = NULL, days_since_last = 0,
-       consecutive_days = 0, current_limit = 200 WHERE region = ?`,
-      [rgn]
-    );
-
-    // Process each historical date with batched updates (each call = 2 round-trips)
-    for (const { date } of dates) {
-      await updateAllLoStatus(date, rgn);
+    const appearedByDate = new Map<string, Set<string>>();
+    for (const r of rows) {
+      let set = appearedByDate.get(r.date);
+      if (!set) {
+        set = new Set<string>();
+        appearedByDate.set(r.date, set);
+      }
+      set.add(r.lo_number);
     }
+    const dates = [...appearedByDate.keys()].sort();
+
+    // Fresh state per region — equivalent to the old "reset to NULL" statement.
+    const state = new Map<string, { last: string | null; days: number; consec: number }>();
+    for (let i = 0; i < 100; i++) {
+      state.set(String(i).padStart(2, "0"), { last: null, days: 0, consec: 0 });
+    }
+
+    for (const date of dates) {
+      const appeared = appearedByDate.get(date)!;
+      const prevDate = previousDate(date);
+
+      for (const [lo, st] of state) {
+        if (st.last && st.last >= date) continue;   // same idempotency guard
+
+        if (appeared.has(lo)) {
+          st.consec = st.last === prevDate ? st.consec + 1 : 1;
+          if (st.consec > resetAfter) st.consec = 1;
+          st.days = 0;
+          st.last = date;
+        } else {
+          st.days = st.last ? daysBetween(date, st.last) : st.days + 1;
+        }
+      }
+    }
+
+    const db = getDb();
+    await db.batch(
+      [...state].map(([lo, st]) => ({
+        sql: `UPDATE lo_status SET last_appeared_date = ?, days_since_last = ?,
+              consecutive_days = ?, current_limit = ?, updated_at = CURRENT_TIMESTAMP
+              WHERE lo_number = ? AND region = ?`,
+        args: [
+          st.last,
+          st.days,
+          st.consec,
+          calculateEffectiveLimit(st.days, st.consec, schedule),
+          lo,
+          rgn,
+        ],
+      })),
+      "write"
+    );
   }
 }
 
