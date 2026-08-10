@@ -22,7 +22,11 @@ export async function GET(req: Request) {
     await ensureDb();
     const url = new URL(req.url);
     const region = validateRegion(url.searchParams.get("region"));
-    const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "14"), 1), 60);
+    const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "14"), 1), 180);
+    // Optional cutoff (YYYY-MM-DD): only replay dates <= end_date. Lets callers
+    // hold out a tail of history so config selection and evaluation use
+    // disjoint periods.
+    const endDate = url.searchParams.get("end_date");
     const topN = Math.min(Math.max(parseInt(url.searchParams.get("top_n") ?? "10"), 5), 50);
     const window = Math.min(Math.max(parseInt(url.searchParams.get("window") ?? "60"), 7), 180);
 
@@ -42,7 +46,9 @@ export async function GET(req: Request) {
     }
 
     // Pick the last `days` dates to replay (skip too-early dates without enough prior data)
-    const eligible = allDates.slice(7);   // need >= 7 days before each replay target
+    const eligible = allDates
+      .slice(7)   // need >= 7 days before each replay target
+      .filter((r) => !endDate || r.date <= endDate);
     const replayDates = eligible.slice(-days).map((r) => r.date);
 
     const results: Array<{
