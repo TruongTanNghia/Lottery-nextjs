@@ -12,6 +12,7 @@ import {
   getAppearanceCounts,
   getConfigValue,
   getLoAppearedOnDate,
+  query,
   setConfigValue,
   type LoStatus,
   type Region,
@@ -300,16 +301,30 @@ function categorize(consec: number, days: number): LimitSummaryItem["category"] 
 
 export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[]> {
   const allStatus = await getAllLoStatus(region);
-  const today = new Date().toISOString().slice(0, 10);
-  const todayDt = new Date(today + "T00:00:00");
-  const counts = await getAppearanceCounts(region, today, APPEARANCE_WINDOW_DAYS);
+
+  // Anchor on the latest draw we have, NOT the server clock. A bet is placed
+  // for the next draw, so "0 ngày" must mean "came out in the most recent
+  // draw" — that is also the anchor updateAllLoStatus used, so the numbers
+  // shown here match lo_status instead of drifting a day ahead of it.
+  //
+  // Anchoring on today() silently shifted every lô by one tier once the day
+  // rolled over before results were published: the "0 ngày (mới về)" bucket
+  // was always empty, schedule.base[0] never applied, and 21-26 lô per region
+  // got the wrong limit.
+  const latest = await query<{ date: string }>(
+    "SELECT MAX(date) AS date FROM lo_daily WHERE region = ?",
+    [region]
+  );
+  const anchor = latest[0]?.date ?? new Date().toISOString().slice(0, 10);
+  const anchorDt = new Date(anchor + "T00:00:00");
+  const counts = await getAppearanceCounts(region, anchor, APPEARANCE_WINDOW_DAYS);
   const schedule = await loadSchedule();
 
   return allStatus.map((status) => {
     const lastDate = status.last_appeared_date;
     let days: number;
     if (lastDate) {
-      const diffMs = todayDt.getTime() - new Date(lastDate + "T00:00:00").getTime();
+      const diffMs = anchorDt.getTime() - new Date(lastDate + "T00:00:00").getTime();
       days = Math.max(0, Math.floor(diffMs / 86_400_000));
     } else {
       days = APPEARANCE_WINDOW_DAYS;
