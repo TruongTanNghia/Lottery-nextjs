@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useToast } from "./Toast";
 import type { LimitItem } from "@/lib/types";
 
-type Filter = "consecutive" | "cold";
+type Filter = "all" | "consecutive" | "cold";
 type CopySep = "space" | "comma" | "newline";
 
 interface Props {
@@ -30,17 +30,34 @@ const COLD_OPTIONS: Array<{ key: string; label: string; match: (l: LimitItem) =>
   { key: "6+", label: "6+ ngày", match: (l) => l.days_since_last >= 6 },
 ];
 
+// "Cả bảng" — every lô, no filtering. The limit engine already decided each
+// amount, so this is the whole board as one paste-ready bet string.
+const ALL_OPTIONS: Array<{ key: string; label: string; match: (l: LimitItem) => boolean }> = [
+  { key: "all", label: "Cả 100 lô (00–99)", match: () => true },
+];
+
+const DEFAULT_OPTION_KEY: Record<Filter, string> = {
+  all: "all",
+  consecutive: "2",
+  cold: "0",
+};
+
 export default function StreakCopyCard({ limits }: Props) {
   const toast = useToast();
-  const [filterMode, setFilterMode] = useState<Filter>("consecutive");
-  const [optionKey, setOptionKey] = useState<string>("2");
+  const [filterMode, setFilterMode] = useState<Filter>("all");
+  const [optionKey, setOptionKey] = useState<string>("all");
   const [sep, setSep] = useState<CopySep>("space");
   // Bet-string mode: emit "<lô>b<hạn mức>n" like the Theo Dõi tab, so the output
   // can be pasted straight to a bookie. Separator is fixed to ", " there.
   const [withAmount, setWithAmount] = useState(false);
   const [skipZero, setSkipZero] = useState(false);
 
-  const options = filterMode === "consecutive" ? STREAK_OPTIONS : COLD_OPTIONS;
+  const options =
+    filterMode === "all"
+      ? ALL_OPTIONS
+      : filterMode === "consecutive"
+      ? STREAK_OPTIONS
+      : COLD_OPTIONS;
   const currentOption = options.find((o) => o.key === optionKey) ?? options[0];
 
   const filtered = useMemo(() => {
@@ -67,7 +84,7 @@ export default function StreakCopyCard({ limits }: Props) {
 
   function switchMode(m: Filter) {
     setFilterMode(m);
-    setOptionKey(m === "consecutive" ? "2" : "0");
+    setOptionKey(DEFAULT_OPTION_KEY[m]);
   }
 
   async function handleCopy() {
@@ -101,13 +118,23 @@ export default function StreakCopyCard({ limits }: Props) {
           🔥 Copy Lô Theo Tiêu Chí
         </h2>
         <p className="text-[0.7rem] md:text-xs text-slate-400 mt-0.5">
-          Lọc lô theo "ngày liên tiếp về" hoặc "ngày chưa về" → copy 1 phát.
+          Copy cả bảng 100 lô, hoặc lọc theo "ngày liên tiếp về" / "ngày chưa về" → copy 1 phát.
         </p>
       </div>
 
       <div className="p-4 md:p-5">
         {/* Mode toggle */}
-        <div className="mb-3 flex gap-1.5 p-1 rounded-full bg-[#0f1623] border border-[#1f2937] w-fit">
+        <div className="mb-3 flex flex-wrap gap-1.5 p-1 rounded-full bg-[#0f1623] border border-[#1f2937] w-fit">
+          <button
+            onClick={() => switchMode("all")}
+            className={`px-3 py-1.5 text-xs rounded-full font-semibold transition-colors ${
+              filterMode === "all"
+                ? "bg-emerald-500 text-white"
+                : "text-slate-400 hover:text-slate-100"
+            }`}
+          >
+            📋 Cả bảng
+          </button>
           <button
             onClick={() => switchMode("consecutive")}
             className={`px-3 py-1.5 text-xs rounded-full font-semibold transition-colors ${
@@ -130,8 +157,8 @@ export default function StreakCopyCard({ limits }: Props) {
           </button>
         </div>
 
-        {/* Filter options */}
-        <div className="mb-3">
+        {/* Filter options — "Cả bảng" has nothing to narrow down */}
+        <div className={`mb-3 ${filterMode === "all" ? "hidden" : ""}`}>
           <div className="text-[0.7rem] text-slate-400 mb-1.5 font-semibold">Tiêu chí lọc:</div>
           <div className="flex flex-wrap gap-1.5">
             {options.map((opt) => {
