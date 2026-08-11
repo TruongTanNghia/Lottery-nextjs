@@ -51,6 +51,12 @@ export default function StreakCopyCard({ limits }: Props) {
   // can be pasted straight to a bookie. Separator is fixed to ", " there.
   const [withAmount, setWithAmount] = useState(false);
   const [skipZero, setSkipZero] = useState(false);
+  // Đề rider: "<lô>b<tiền>dd<tiền>" — same stake on lô and đề, per the bookie's
+  // own example (85b200dd200, 86b15dd15). Some bookies want the "n" (nghìn)
+  // suffix kept on each amount, so that stays switchable — a wrong token gets
+  // the whole bet line rejected.
+  const [withDe, setWithDe] = useState(false);
+  const [keepNSuffix, setKeepNSuffix] = useState(false);
 
   const options =
     filterMode === "all"
@@ -71,11 +77,19 @@ export default function StreakCopyCard({ limits }: Props) {
 
   const formatted = useMemo(() => {
     if (withAmount) {
-      return filtered.map((l) => `${l.lo_number}b${l.current_limit}n`).join(", ");
+      // Plain lô keeps the "n" it always had; the đề variant follows the
+      // bookie's example, where the suffix is dropped unless asked for.
+      const unit = withDe && !keepNSuffix ? "" : "n";
+      return filtered
+        .map((l) => {
+          const lo = `${l.lo_number}b${l.current_limit}${unit}`;
+          return withDe ? `${lo}dd${l.current_limit}${unit}` : lo;
+        })
+        .join(", ");
     }
     const sepChar = sep === "space" ? " " : sep === "comma" ? ", " : "\n";
     return filtered.map((l) => l.lo_number).join(sepChar);
-  }, [filtered, sep, withAmount]);
+  }, [filtered, sep, withAmount, withDe, keepNSuffix]);
 
   const totalPoints = useMemo(
     () => filtered.reduce((s, l) => s + l.current_limit, 0),
@@ -97,7 +111,9 @@ export default function StreakCopyCard({ limits }: Props) {
       toast.show(
         "success",
         withAmount
-          ? `Đã copy chuỗi đánh ${filtered.length} lô • ${totalPoints}n`
+          ? `Đã copy chuỗi đánh ${filtered.length} lô • ${
+              withDe ? `lô ${totalPoints}n + đề ${totalPoints}n` : `${totalPoints}n`
+            }`
           : `Đã copy ${filtered.length} lô vào clipboard`
       );
     } catch {
@@ -215,8 +231,8 @@ export default function StreakCopyCard({ limits }: Props) {
 
         {/* Format options — separator only matters for the plain-number mode */}
         {withAmount ? (
-          <div className="mb-3">
-            <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+          <div className="mb-3 space-y-2">
+            <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={skipZero}
@@ -225,6 +241,31 @@ export default function StreakCopyCard({ limits }: Props) {
               />
               Bỏ lô hạn mức 0n (lô vừa về, không nhận cược)
             </label>
+
+            <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={withDe}
+                onChange={(e) => setWithDe(e.target.checked)}
+                className="accent-emerald-500"
+              />
+              Kèm đề <code className="text-emerald-400">dd</code> — đánh đề cùng mức tiền với lô
+            </label>
+
+            {withDe && (
+              <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none pl-6">
+                <input
+                  type="checkbox"
+                  checked={keepNSuffix}
+                  onChange={(e) => setKeepNSuffix(e.target.checked)}
+                  className="accent-emerald-500"
+                />
+                Giữ chữ <code className="text-slate-300">n</code> sau số tiền
+                <span className="text-slate-500">
+                  ({keepNSuffix ? "85b200ndd200n" : "85b200dd200"})
+                </span>
+              </label>
+            )}
           </div>
         ) : (
           <div className="mb-3">
@@ -259,7 +300,17 @@ export default function StreakCopyCard({ limits }: Props) {
         <div className="mt-3 flex flex-wrap items-center gap-2 justify-between">
           <span className="text-[0.7rem] text-slate-500">
             {filtered.length} lô • {formatted.length} ký tự
-            {withAmount && <> • tổng <strong className="text-emerald-400">{totalPoints}n</strong></>}
+            {withAmount && (
+              <>
+                {" "}• tổng lô <strong className="text-emerald-400">{totalPoints}n</strong>
+                {withDe && (
+                  <>
+                    {" "}+ đề <strong className="text-emerald-400">{totalPoints}n</strong> ={" "}
+                    <strong className="text-amber-400">{totalPoints * 2}n</strong>
+                  </>
+                )}
+              </>
+            )}
           </span>
           <button
             onClick={handleCopy}
