@@ -1,8 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useToast } from "./Toast";
 import type { LimitItem } from "@/lib/types";
+
+// Copy-format preferences. Defaults are what the bookie asked for — open the
+// card, hit Copy, get "00b15dd15, ..." with no clicks. Any change the user
+// makes is remembered so they never have to re-tick it.
+const PREFS_KEY = "streak_copy_prefs_v1";
+
+interface CopyPrefs {
+  withAmount: boolean;
+  withDe: boolean;
+  keepNSuffix: boolean;
+  skipZero: boolean;
+}
+
+const DEFAULT_PREFS: CopyPrefs = {
+  withAmount: true,
+  withDe: true,
+  keepNSuffix: false,
+  skipZero: false,
+};
 
 type Filter = "all" | "consecutive" | "cold";
 type CopySep = "space" | "comma" | "newline";
@@ -49,14 +68,40 @@ export default function StreakCopyCard({ limits }: Props) {
   const [sep, setSep] = useState<CopySep>("space");
   // Bet-string mode: emit "<lô>b<hạn mức>n" like the Theo Dõi tab, so the output
   // can be pasted straight to a bookie. Separator is fixed to ", " there.
-  const [withAmount, setWithAmount] = useState(false);
-  const [skipZero, setSkipZero] = useState(false);
+  const [withAmount, setWithAmount] = useState(DEFAULT_PREFS.withAmount);
+  const [skipZero, setSkipZero] = useState(DEFAULT_PREFS.skipZero);
   // Đề rider: "<lô>b<tiền>dd<tiền>" — same stake on lô and đề, per the bookie's
   // own example (85b200dd200, 86b15dd15). Some bookies want the "n" (nghìn)
   // suffix kept on each amount, so that stays switchable — a wrong token gets
   // the whole bet line rejected.
-  const [withDe, setWithDe] = useState(false);
-  const [keepNSuffix, setKeepNSuffix] = useState(false);
+  const [withDe, setWithDe] = useState(DEFAULT_PREFS.withDe);
+  const [keepNSuffix, setKeepNSuffix] = useState(DEFAULT_PREFS.keepNSuffix);
+
+  // Hydrate after mount — reading localStorage during render would desync SSR.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(PREFS_KEY);
+      if (!raw) return;
+      const p = JSON.parse(raw) as Partial<CopyPrefs>;
+      if (typeof p.withAmount === "boolean") setWithAmount(p.withAmount);
+      if (typeof p.withDe === "boolean") setWithDe(p.withDe);
+      if (typeof p.keepNSuffix === "boolean") setKeepNSuffix(p.keepNSuffix);
+      if (typeof p.skipZero === "boolean") setSkipZero(p.skipZero);
+    } catch {
+      /* corrupt/unavailable storage — defaults are fine */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        PREFS_KEY,
+        JSON.stringify({ withAmount, withDe, keepNSuffix, skipZero })
+      );
+    } catch {
+      /* storage full or blocked — preferences just won't persist */
+    }
+  }, [withAmount, withDe, keepNSuffix, skipZero]);
 
   const options =
     filterMode === "all"
