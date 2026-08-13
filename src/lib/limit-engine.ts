@@ -129,10 +129,16 @@ export function getWinAmount(points: number, occurrences: number = 1): number {
 // Daily updater (called by scrape + recalc)
 // ─────────────────────────────────────────────
 
+// All-UTC arithmetic on purpose. Building the date in local time and reading it
+// back with toISOString() shifts the result by a day for any positive UTC offset
+// — in UTC+7 this returned the day BEFORE yesterday, so `lastDate === prevDate`
+// never matched and every streak collapsed to 1. Correct on Vercel (UTC), wrong
+// anywhere else, which silently corrupted lo_status on local recalcs.
 function previousDate(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00");
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  t.setUTCDate(t.getUTCDate() - 1);
+  return t.toISOString().slice(0, 10);
 }
 
 // Calendar gap in days between two YYYY-MM-DD strings (end - start, clamped ≥ 0).
@@ -181,6 +187,10 @@ export async function updateAllLoStatus(targetDate: string, region: Region): Pro
     } else {
       // Compute calendar gap (idempotent) instead of `daysSince += 1` (drifts on re-process).
       daysSince = lastDate ? daysBetween(targetDate, lastDate) : daysSince + 1;
+      // Missing this draw ENDS the streak. Leaving consec untouched froze the
+      // old run forever: a lô that went 4 days then stopped kept reporting
+      // "🔥 4 ngày liên tiếp" and kept the consecutive cap on its limit.
+      consec = 0;
     }
 
     const newLimit = calculateEffectiveLimit(daysSince, consec, schedule);
@@ -253,6 +263,7 @@ export async function recalculateAllFromHistory(region?: Region): Promise<void> 
           st.last = date;
         } else {
           st.days = st.last ? daysBetween(date, st.last) : st.days + 1;
+          st.consec = 0;   // streak ends on a miss — same rule as updateAllLoStatus
         }
       }
     }
