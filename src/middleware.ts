@@ -12,11 +12,18 @@ const PUBLIC_PATHS = new Set([
 
 const PUBLIC_PREFIXES = ["/api/cron/", "/api/init-db", "/_next/"];
 
+// Images in /public carry nothing secret, and gating them breaks things that
+// cannot log in: the favicon on the login page itself, and link-preview
+// crawlers (Telegram, Zalo) fetching og:image — those got a 307 to /login and
+// silently rendered no thumbnail.
+const PUBLIC_FILE = /\.(?:png|jpe?g|gif|svg|webp|ico|avif)$/i;
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (PUBLIC_PATHS.has(pathname)) return NextResponse.next();
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return NextResponse.next();
+  if (PUBLIC_FILE.test(pathname)) return NextResponse.next();
 
   const session = req.cookies.get("auth_session")?.value;
   const expected = process.env.AUTH_SECRET;

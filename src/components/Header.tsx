@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface Props {
@@ -17,10 +18,30 @@ interface Props {
 
 /**
  * Tỳ Hưu (Pixiu) — the wealth beast that swallows and never lets go, which is
- * the whole premise of a limit board. Drawn rather than shipped as an image so
- * it stays crisp at any size and costs no request.
+ * the whole premise of a limit board.
+ *
+ * Uses the real artwork at /pixiu.png. Falls back to the drawn mark if that
+ * file is missing so a header never renders as a broken-image icon.
  */
 function PixiuMark() {
+  const [broken, setBroken] = useState(false);
+
+  if (!broken) {
+    return (
+      <span className="relative flex-shrink-0 w-10 h-10 md:w-12 md:h-12">
+        <span className="absolute -inset-1 rounded-full bg-[var(--glow)] opacity-30 blur-[12px]" />
+        <img
+          src="/pixiu.png"
+          alt="Kho Bạc"
+          width={48}
+          height={48}
+          onError={() => setBroken(true)}
+          className="relative w-full h-full rounded-full object-cover ring-1 ring-[rgba(200,225,255,0.45)] shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_4px_16px_-4px_rgba(77,166,255,0.8)]"
+        />
+      </span>
+    );
+  }
+
   return (
     <span className="relative flex-shrink-0 w-9 h-9 md:w-11 md:h-11">
       <span className="absolute inset-0 rounded-full bg-[var(--glow)] opacity-25 blur-[10px]" />

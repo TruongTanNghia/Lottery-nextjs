@@ -2,8 +2,14 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Lottery Limit Manager",
+  title: "Kho Bạc — Quản Lý Hạn Mức",
   description: "Quản Lý Hạn Mức Lô 3 Miền — Miền Nam, Miền Bắc, Miền Trung",
+  icons: { icon: "/icon.png", apple: "/icon.png" },
+  openGraph: {
+    title: "Kho Bạc — Quản Lý Hạn Mức",
+    description: "Bảng hạn mức 100 lô, 3 miền",
+    images: ["/og.png"],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
