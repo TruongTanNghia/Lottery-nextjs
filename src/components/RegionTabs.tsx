@@ -4,6 +4,18 @@ import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
 
 type ViewKey = "dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling";
 
+// Every view the app can render, in tab order. Kept as the full list so the
+// pages stay wired up and nothing has to be rebuilt to bring one back.
+const ALL_VIEWS = [
+  "dashboard", "prediction", "vip", "golden", "pair", "three",
+  "four", "sim", "watcher", "today", "accuracy", "history", "rolling",
+] as const;
+
+// Which of those actually show up. The app now runs a chặn-số (limit) workflow
+// rather than a betting one, so only the limit board is exposed — add a key
+// back to this list to restore its tab.
+const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard"];
+
 interface Props {
   current: Region;
   onChange: (r: Region) => void;
@@ -47,8 +59,13 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
         })}
       </div>
 
-      <div className="flex flex-wrap gap-1 md:gap-1.5 p-1 rounded-full bg-[#111827] border border-[#1f2937]">
-        {(["dashboard", "prediction", "vip", "golden", "pair", "three", "four", "sim", "watcher", "today", "accuracy", "history", "rolling"] as const).map((v) => {
+      {/* Nothing to switch between when a single view is enabled — drop the strip. */}
+      <div
+        className={`flex flex-wrap gap-1 md:gap-1.5 p-1 rounded-full bg-[#111827] border border-[#1f2937] ${
+          ENABLED_VIEWS.length <= 1 ? "hidden" : ""
+        }`}
+      >
+        {ALL_VIEWS.filter((v) => ENABLED_VIEWS.includes(v)).map((v) => {
           const labels: Record<ViewKey, string> = {
             dashboard: "📊 Dashboard",
             prediction: "🔮 Dự Đoán",
