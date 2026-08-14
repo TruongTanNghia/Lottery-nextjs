@@ -2,16 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════════════════
+   KHO BẠC — minted-metal design system
+   Tỳ Hưu swallows wealth and never lets it out; the board is a vault
+   tray of struck silver tokens sitting in cobalt light.
+   ═══════════════════════════════════════════════════════════════ */
+
 :root {
-  --bg-primary: #0a0e17;
-  --bg-secondary: #111827;
-  --bg-tertiary: #1a2332;
-  --text-primary: #f0f4f8;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-accent: #60a5fa;
-  --border: rgba(255, 255, 255, 0.06);
-  --border-hover: rgba(255, 255, 255, 0.12);
+  /* Cobalt field — the logo's backdrop, darkened for a working surface */
+  --void: #04091a;
+  --cobalt-900: #071634;
+  --cobalt-800: #0a2050;
+  --cobalt-700: #10306f;
+  --cobalt-500: #1a56d0;
+  --glow: #4da6ff;
+  --glow-soft: #7fc4ff;
+
+  /* Chrome ramp — specular → mid → shadowed steel */
+  --chrome-100: #f4f8fc;
+  --chrome-200: #dce6f2;
+  --chrome-300: #b8c7db;
+  --chrome-400: #8e9fb8;
+  --chrome-500: #6a7b94;
+  --chrome-600: #4e5d75;
+  --chrome-700: #36435a;
+
+  --text-primary: var(--chrome-100);
+  --text-secondary: var(--chrome-300);
+  --text-muted: var(--chrome-500);
+
+  /* Plate edges: a lit top lip and a dark underside = struck metal */
+  --edge-lit: rgba(255, 255, 255, 0.16);
+  --edge-dark: rgba(0, 0, 0, 0.55);
+  --hairline: rgba(160, 190, 230, 0.14);
+  --hairline-hot: rgba(120, 190, 255, 0.38);
+
+  --font-display: Archivo, "Be Vietnam Pro", sans-serif;
+  --font-body: "Be Vietnam Pro", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 *,
@@ -24,16 +52,45 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--bg-primary);
+  background: var(--void);
   color: var(--text-primary);
-  font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.6;
   min-height: 100vh;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Forced-colors mode opt-out (Windows High Contrast) */
+/* Ambient cobalt light pooling behind everything, plus a fine grain so the
+   large dark fields never look like flat #000 plastic. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(60rem 40rem at 50% -10%, rgba(26, 86, 208, 0.3), transparent 65%),
+    radial-gradient(40rem 30rem at 100% 0%, rgba(77, 166, 255, 0.12), transparent 60%),
+    radial-gradient(45rem 35rem at 0% 30%, rgba(10, 32, 80, 0.55), transparent 60%);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
 button,
 input,
 select,
@@ -45,12 +102,157 @@ textarea {
   font-family: inherit;
 }
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-primary); }
-::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #334155; }
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--cobalt-900);
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--chrome-600), var(--chrome-700));
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--chrome-400), var(--chrome-600));
+}
 
-/* Limit color tiers */
+::selection {
+  background: rgba(77, 166, 255, 0.35);
+  color: #fff;
+}
+
+/* ── Chrome type ─────────────────────────────────────────────── */
+/* Real chrome needs a hard mid-tone break, not a smooth fade. */
+.chrome {
+  background: linear-gradient(
+    177deg,
+    #ffffff 0%,
+    var(--chrome-200) 30%,
+    var(--chrome-500) 50%,
+    var(--chrome-100) 62%,
+    var(--chrome-300) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.chrome-blue {
+  background: linear-gradient(177deg, #ffffff 0%, var(--glow-soft) 42%, var(--cobalt-500) 58%, var(--glow) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.eyebrow {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--chrome-500);
+}
+
+.numeric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+/* ── Struck metal plate ──────────────────────────────────────── */
+.plate {
+  position: relative;
+  border-radius: 14px;
+  background: linear-gradient(168deg, rgba(24, 44, 88, 0.72) 0%, rgba(7, 18, 42, 0.9) 46%, rgba(5, 12, 30, 0.94) 100%);
+  border: 1px solid var(--hairline);
+  box-shadow:
+    inset 0 1px 0 var(--edge-lit),
+    inset 0 -1px 0 var(--edge-dark),
+    0 24px 48px -28px rgba(0, 0, 0, 0.9);
+  overflow: hidden;
+}
+
+/* A raking highlight across the top edge — light catching milled steel. */
+.plate::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(190, 220, 255, 0.55), transparent);
+}
+
+.plate-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--hairline);
+  background: linear-gradient(180deg, rgba(30, 58, 116, 0.4), transparent);
+}
+
+.plate-title {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--chrome-200);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+.btn-chrome {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: #071634;
+  background: linear-gradient(180deg, #ffffff, var(--chrome-200) 45%, var(--chrome-400) 52%, var(--chrome-200) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 6px 18px -8px rgba(180, 210, 255, 0.7);
+  transition: transform 140ms ease, box-shadow 200ms ease, filter 200ms ease;
+}
+.btn-chrome:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 10px 26px -8px rgba(180, 210, 255, 0.9);
+}
+.btn-chrome:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btn-chrome:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--chrome-300);
+  background: rgba(140, 180, 240, 0.06);
+  border: 1px solid var(--hairline);
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(140, 180, 240, 0.14);
+  border-color: var(--hairline-hot);
+  color: var(--chrome-100);
+}
+.btn-ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Vault tray: 100 struck tokens ───────────────────────────── */
+/* Tier is computed from the limit's share of the day's max, so any
+   schedule the operator types in still reads at a glance. */
 .lo-cell {
   position: relative;
   aspect-ratio: 1;
@@ -58,89 +260,171 @@ textarea {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--border);
+  border-radius: 9px;
   cursor: pointer;
-  transition: border-color 200ms ease, box-shadow 200ms ease;
   overflow: hidden;
+  --tier: var(--chrome-400);
+  background:
+    radial-gradient(120% 100% at 30% 0%, rgba(255, 255, 255, 0.14), transparent 55%),
+    linear-gradient(170deg, rgba(28, 52, 100, 0.6), rgba(6, 14, 34, 0.85));
+  border: 1px solid rgba(150, 185, 230, 0.13);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.45);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 200ms ease, border-color 200ms ease;
 }
+
+/* Tier wash — sits under the type, never over it. */
 .lo-cell::before {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  opacity: 0.12;
-  transition: opacity 200ms ease;
+  background: radial-gradient(110% 90% at 50% 115%, var(--tier), transparent 70%);
+  opacity: 0.34;
+  transition: opacity 220ms ease;
 }
+
 .lo-cell:hover {
-  border-color: var(--border-hover);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+  transform: translateY(-2px);
+  border-color: var(--hairline-hot);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 10px 22px -10px var(--tier),
+    0 0 0 1px rgba(120, 190, 255, 0.25);
 }
-.lo-cell:hover::before { opacity: 0.25; }
+.lo-cell:hover::before {
+  opacity: 0.6;
+}
+
 .lo-cell .lo-num {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 1.1rem;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
   font-weight: 700;
   line-height: 1;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
   position: relative;
   z-index: 1;
+  color: var(--chrome-100);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
 }
 .lo-cell .lo-limit {
-  font-size: 0.6rem;
-  font-weight: 600;
-  opacity: 0.85;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.62rem;
+  font-weight: 700;
   position: relative;
   z-index: 1;
+  color: var(--tier);
+  filter: brightness(1.35);
 }
 .lo-cell .lo-meta {
   font-size: 0.5rem;
-  opacity: 0.6;
+  letter-spacing: 0.04em;
+  color: var(--chrome-500);
   margin-top: 1px;
   position: relative;
   z-index: 1;
 }
 
-.lo-cell[data-limit="200"]::before { background: #10b981; }
-.lo-cell[data-limit="200"] .lo-num { color: #10b981; }
-.lo-cell[data-limit="180"]::before { background: #34d399; }
-.lo-cell[data-limit="180"] .lo-num { color: #34d399; }
-.lo-cell[data-limit="160"]::before { background: #6ee7b7; }
-.lo-cell[data-limit="160"] .lo-num { color: #6ee7b7; }
-.lo-cell[data-limit="150"]::before { background: #f59e0b; }
-.lo-cell[data-limit="150"] .lo-num { color: #f59e0b; }
-.lo-cell[data-limit="140"]::before { background: #86efac; }
-.lo-cell[data-limit="140"] .lo-num { color: #86efac; }
-.lo-cell[data-limit="120"]::before { background: #a3e635; }
-.lo-cell[data-limit="120"] .lo-num { color: #a3e635; }
-.lo-cell[data-limit="100"]::before { background: #facc15; }
-.lo-cell[data-limit="100"] .lo-num { color: #facc15; }
-.lo-cell[data-limit="80"]::before { background: #fbbf24; }
-.lo-cell[data-limit="80"] .lo-num { color: #fbbf24; }
-.lo-cell[data-limit="60"]::before { background: #fb923c; }
-.lo-cell[data-limit="60"] .lo-num { color: #fb923c; }
-.lo-cell[data-limit="50"]::before { background: #ef4444; }
-.lo-cell[data-limit="50"] .lo-num { color: #ef4444; }
-.lo-cell[data-limit="40"]::before { background: #f87171; }
-.lo-cell[data-limit="40"] .lo-num { color: #f87171; }
-.lo-cell[data-limit="20"]::before { background: #ef4444; }
-.lo-cell[data-limit="20"] .lo-num { color: #ef4444; }
-.lo-cell[data-limit="10"]::before { background: #7f1d1d; }
-.lo-cell[data-limit="10"] .lo-num { color: #fca5a5; }
-.lo-cell[data-limit="10"] { background: rgba(127, 29, 29, 0.1); }
+/* Tier ramp: open → throttled → shut. Kept high-contrast because real
+   money rides on reading this board correctly at a glance. */
+.lo-cell[data-tier="5"] { --tier: #22e3a0; }
+.lo-cell[data-tier="4"] { --tier: #a8e34a; }
+.lo-cell[data-tier="3"] { --tier: #f5c542; }
+.lo-cell[data-tier="2"] { --tier: #fb8b3c; }
+.lo-cell[data-tier="1"] { --tier: #f4525f; }
 
-/* ═══════ MOBILE RESPONSIVE ═══════ */
+/* Blocked (limit 0) — the vault door. Deliberately drained of colour so a
+   shut number is unmistakable against every live one. */
+.lo-cell[data-tier="0"] {
+  --tier: #4a5a73;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.035) 0 6px, transparent 6px 12px),
+    linear-gradient(170deg, rgba(18, 26, 44, 0.9), rgba(4, 9, 24, 0.95));
+  border-color: rgba(120, 140, 170, 0.14);
+}
+.lo-cell[data-tier="0"] .lo-num { color: var(--chrome-500); }
+.lo-cell[data-tier="0"] .lo-limit { color: var(--chrome-600); filter: none; }
+.lo-cell[data-tier="0"]::before { opacity: 0.1; }
+
+/* Awaiting data — deliberately inert so it can't be mistaken for a decision. */
+.lo-cell[data-tier="na"] {
+  --tier: transparent;
+  cursor: default;
+  background: linear-gradient(170deg, rgba(20, 32, 58, 0.5), rgba(5, 11, 26, 0.7));
+  border-color: rgba(120, 150, 195, 0.08);
+  animation: cell-wait 1.6s ease-in-out infinite;
+}
+.lo-cell[data-tier="na"]:hover {
+  transform: none;
+  border-color: rgba(120, 150, 195, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.45);
+}
+.lo-cell[data-tier="na"] .lo-num { color: var(--chrome-600); }
+.lo-cell[data-tier="na"] .lo-limit { color: var(--chrome-700); filter: none; }
+.lo-cell[data-tier="na"]::before { opacity: 0; }
+
+@keyframes cell-wait {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.78; }
+}
+
+/* Streak markers */
+.lo-cell[data-streak="hot"] {
+  border-color: rgba(244, 82, 95, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 0 0 1px rgba(244, 82, 95, 0.35),
+    0 0 18px -4px rgba(244, 82, 95, 0.55);
+}
+.lo-cell[data-streak="on"] {
+  border-color: rgba(245, 197, 66, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 0 0 1px rgba(245, 197, 66, 0.25);
+}
+
+/* ── Entrance ────────────────────────────────────────────────── */
+@keyframes plate-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: plate-rise 640ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.rise-1 { animation-delay: 60ms; }
+.rise-2 { animation-delay: 130ms; }
+.rise-3 { animation-delay: 200ms; }
+.rise-4 { animation-delay: 270ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rise { animation: none; }
+  .lo-cell { transition: none; }
+  .lo-cell:hover { transform: none; }
+}
+
+/* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 768px) {
   html, body { font-size: 14px; }
-
-  .lo-cell { border-radius: 5px; }
-  .lo-cell .lo-num { font-size: 0.85rem; }
-  .lo-cell .lo-limit { font-size: 0.5rem; }
-  .lo-cell .lo-meta { font-size: 0.45rem; }
+  .lo-cell { border-radius: 7px; }
+  .lo-cell .lo-num { font-size: 0.82rem; }
+  .lo-cell .lo-limit { font-size: 0.52rem; }
+  .lo-cell .lo-meta { font-size: 0.44rem; }
 }
 
 @media (max-width: 480px) {
   html, body { font-size: 13px; }
-  .lo-cell .lo-num { font-size: 0.75rem; }
+  .lo-cell .lo-num { font-size: 0.72rem; }
+  .lo-cell .lo-meta { display: none; }
 }

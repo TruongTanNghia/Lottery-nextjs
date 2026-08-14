@@ -28,7 +28,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
   const regions: Region[] = ["xsmn", "xsmb", "xsmt"];
 
   return (
-    <nav className="sticky top-[60px] md:top-[72px] z-40 flex flex-wrap items-center justify-between gap-2 md:gap-4 px-3 sm:px-5 md:px-7 py-2 md:py-3 bg-[#0a0e17] border-b border-white/[0.06]">
+    <nav className="sticky top-[60px] md:top-[76px] z-40 flex flex-wrap items-center justify-between gap-2 md:gap-4 px-3 sm:px-5 md:px-7 py-2 md:py-3 bg-[rgba(4,9,26,0.82)] backdrop-blur-xl border-b border-[var(--hairline)]">
       <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
         {regions.map((r) => {
           const active = r === current;
@@ -37,10 +37,10 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
             <button
               key={r}
               onClick={() => onChange(r)}
-              className={`inline-flex items-center gap-1.5 md:gap-2.5 px-3 md:px-7 py-1.5 md:py-2.5 rounded-full border font-semibold text-xs md:text-sm transition-colors ${
+              className={`inline-flex items-center gap-1.5 md:gap-2.5 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full border font-semibold text-xs md:text-sm transition-all duration-200 ${
                 active
-                  ? "bg-blue-900 border-blue-500 text-white shadow-[0_2px_12px_rgba(59,130,246,0.25)]"
-                  : "bg-[#111827] border-[#1f2937] text-slate-300 hover:bg-[#1a2332] hover:border-slate-600 hover:text-slate-100"
+                  ? "bg-gradient-to-b from-[#1a56d0] to-[#0a2050] border-[rgba(120,190,255,0.55)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_6px_20px_-8px_rgba(77,166,255,0.8)]"
+                  : "bg-[rgba(140,180,240,0.05)] border-[var(--hairline)] text-[var(--chrome-400)] hover:bg-[rgba(140,180,240,0.12)] hover:border-[var(--hairline-hot)] hover:text-[var(--chrome-100)]"
               }`}
             >
               <span className="text-base md:text-lg leading-none">{REGION_ICONS[r]}</span>

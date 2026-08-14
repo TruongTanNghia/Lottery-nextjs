@@ -312,42 +312,30 @@ function Dashboard() {
             <StreakCopyCard limits={limits} />
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 md:gap-6 items-start">
-              <section className="rounded-2xl bg-[#111827] border border-white/[0.06] overflow-hidden">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06]">
-                  <h2 className="text-sm font-bold">
-                    📊 Bảng Hạn Mức 100 Lô (00–99) — {REGION_LABELS[region]}
+              <section className="plate rise rise-3">
+                <div className="plate-hd">
+                  <h2 className="plate-title">
+                    Bảng Hạn Mức 100 Lô · {REGION_LABELS[region]}
                   </h2>
-                  <div className="hidden md:flex flex-wrap gap-2 text-[0.65rem] font-semibold font-mono">
-                    {[200, 150, 100, 50, 10].map((v) => (
-                      <span
-                        key={v}
-                        className="px-2.5 py-0.5 rounded"
-                        style={{
-                          background:
-                            v === 200
-                              ? "rgba(16,185,129,0.15)"
-                              : v === 150
-                              ? "rgba(245,158,11,0.15)"
-                              : v === 100
-                              ? "rgba(250,204,21,0.15)"
-                              : v === 50
-                              ? "rgba(239,68,68,0.12)"
-                              : "rgba(127,29,29,0.2)",
-                          color:
-                            v === 200
-                              ? "#10b981"
-                              : v === 150
-                              ? "#f59e0b"
-                              : v === 100
-                              ? "#facc15"
-                              : v === 50
-                              ? "#ef4444"
-                              : "#fca5a5",
-                        }}
-                      >
-                        {v === 50 ? "≤50đ" : `${v}đ`}
-                      </span>
-                    ))}
+                  {/* Legend mirrors LoGrid's relative tiers, so it stays true
+                      whatever numbers the schedule produces. */}
+                  <div className="hidden md:flex items-center gap-3 text-[0.62rem]">
+                    <div className="flex items-center gap-1.5">
+                      {(["1", "2", "3", "4", "5"] as const).map((t) => (
+                        <span
+                          key={t}
+                          className="w-4 h-2.5 rounded-sm"
+                          style={{
+                            background: { "1": "#f4525f", "2": "#fb8b3c", "3": "#f5c542", "4": "#a8e34a", "5": "#22e3a0" }[t],
+                            opacity: 0.85,
+                          }}
+                        />
+                      ))}
+                      <span className="eyebrow ml-1">Thấp → Cao</span>
+                    </div>
+                    <span className="eyebrow px-2 py-0.5 rounded border border-[var(--hairline)] text-[var(--chrome-500)]">
+                      Chặn
+                    </span>
                   </div>
                 </div>
                 <LoGrid data={limits} onCellClick={setOpenLo} />
@@ -360,11 +348,11 @@ function Dashboard() {
                 <PricingCard region={region} config={config} />
               </section>
 
-              <aside className="space-y-6">
-                <section className="rounded-2xl bg-[#111827] border border-white/[0.06] overflow-hidden">
-                  <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06]">
-                    <h2 className="text-sm font-bold">🔥 Lô Về Liên Tiếp</h2>
-                    <span className="inline-flex items-center justify-center min-w-6 h-6 px-2 rounded-full text-xs font-bold font-mono bg-amber-500/15 text-amber-500">
+              <aside className="space-y-4 md:space-y-6">
+                <section className="plate rise rise-4">
+                  <div className="plate-hd">
+                    <h2 className="plate-title">🔥 Lô Về Liên Tiếp</h2>
+                    <span className="numeric inline-flex items-center justify-center min-w-6 h-6 px-2 rounded-full text-xs font-bold bg-[rgba(245,197,66,0.14)] border border-[rgba(245,197,66,0.3)] text-[#f5c542]">
                       {consecutive.length}
                     </span>
                   </div>
@@ -392,13 +380,13 @@ function Dashboard() {
                   </div>
                 </section>
 
-                <section className="rounded-2xl bg-[#111827] border border-white/[0.06] overflow-hidden">
+                <section className="plate rise rise-4">
                   <ProfitChart data={chartData} days={chartDays} onDaysChange={setChartDays} />
                 </section>
 
-                <section className="rounded-2xl bg-[#111827] border border-white/[0.06] overflow-hidden">
-                  <div className="px-6 py-4 border-b border-white/[0.06]">
-                    <h2 className="text-sm font-bold">📋 Kết Quả Gần Đây</h2>
+                <section className="plate rise rise-4">
+                  <div className="plate-hd">
+                    <h2 className="plate-title">📋 Kết Quả Gần Đây</h2>
                   </div>
                   <div className="p-4 max-h-96 overflow-y-auto">
                     {recentByDate.length === 0 ? (

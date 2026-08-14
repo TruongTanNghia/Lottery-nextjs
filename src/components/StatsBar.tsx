@@ -9,32 +9,52 @@ export default function StatsBar({ stats }: { stats: ProfitStats | null }) {
   const lai = stats?.net_profit_vnd ?? thu - bu;
 
   return (
-    <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-      <Card icon="💰" label="Tổng Lãi/Lỗ (30 ngày)" value={formatVND(lai)} valueClass={lai < 0 ? "text-red-500" : "text-emerald-500"} />
-      <Card icon="📈" label="Tổng Thu" value={formatVND(thu)} valueClass="text-emerald-500" />
-      <Card icon="📉" label="Tổng Bù" value={formatVND(-bu)} valueClass="text-red-500" />
-      <Card icon="🎯" label="Tỷ Lệ Ăn" value={stats ? `${stats.win_rate.toFixed(1)}%` : "--"} valueClass="text-blue-400" />
+    <section className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-4 mb-4 md:mb-6">
+      <Card
+        label="Lãi / Lỗ · 30 ngày"
+        value={formatVND(lai)}
+        tone={lai < 0 ? "loss" : "gain"}
+        lead
+      />
+      <Card label="Tổng Thu" value={formatVND(thu)} tone="gain" />
+      <Card label="Tổng Bù" value={formatVND(-bu)} tone="loss" />
+      <Card
+        label="Tỷ Lệ Ăn"
+        value={stats ? `${stats.win_rate.toFixed(1)}%` : "--"}
+        tone="neutral"
+      />
     </section>
   );
 }
 
+const TONE: Record<string, { text: string; bar: string }> = {
+  gain: { text: "#22e3a0", bar: "linear-gradient(90deg,#22e3a0,transparent)" },
+  loss: { text: "#f4525f", bar: "linear-gradient(90deg,#f4525f,transparent)" },
+  neutral: { text: "#7fc4ff", bar: "linear-gradient(90deg,#7fc4ff,transparent)" },
+};
+
 function Card({
-  icon,
   label,
   value,
-  valueClass,
+  tone,
+  lead,
 }: {
-  icon: string;
   label: string;
   value: string;
-  valueClass: string;
+  tone: keyof typeof TONE | string;
+  lead?: boolean;
 }) {
+  const t = TONE[tone] ?? TONE.neutral;
   return (
-    <div className="flex items-center gap-4 p-5 rounded-2xl bg-[#111827] border border-white/[0.06] hover:border-white/[0.12] transition-colors">
-      <div className="text-3xl flex-shrink-0">{icon}</div>
-      <div>
-        <div className="text-xs uppercase tracking-wider text-slate-500 mb-1">{label}</div>
-        <div className={`text-xl font-extrabold font-mono tracking-tight ${valueClass}`}>{value}</div>
+    <div className={`plate rise ${lead ? "rise-1 col-span-2 lg:col-span-1" : "rise-2"} p-3.5 md:p-5`}>
+      {/* tone bar doubles as the plate's lit edge */}
+      <div className="absolute top-0 left-0 h-[2px] w-2/3" style={{ background: t.bar }} />
+      <div className="eyebrow mb-1.5">{label}</div>
+      <div
+        className={`numeric font-extrabold leading-none ${lead ? "text-2xl md:text-[2rem]" : "text-lg md:text-2xl"}`}
+        style={{ color: t.text, textShadow: `0 0 24px ${t.text}44` }}
+      >
+        {value}
       </div>
     </div>
   );
