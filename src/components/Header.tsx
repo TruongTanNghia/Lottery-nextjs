@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 
 interface Props {
   scrapedDays: number | null;
+  latestScraped?: string | null;
   lastUpdate: string;
   status: "loading" | "connected" | "error";
   statusText: string;
   onScrape: () => void;
   isScraping: boolean;
+  onQuickUpdate?: () => void;
+  isQuickUpdating?: boolean;
   onDedupe?: () => void;
   isDedupeRunning?: boolean;
   onBackfill?: () => void;
@@ -83,11 +86,14 @@ function PixiuMark() {
 
 export default function Header({
   scrapedDays,
+  latestScraped,
   lastUpdate,
   status,
   statusText,
   onScrape,
   isScraping,
+  onQuickUpdate,
+  isQuickUpdating,
   onDedupe,
   isDedupeRunning,
   onBackfill,
@@ -134,23 +140,45 @@ export default function Header({
       </div>
 
       <div className="flex items-center gap-2 md:gap-5">
+        {/* Freshness at a glance: which draw the board is priced off. */}
         <div className="hidden md:flex flex-col items-end">
-          <span className="eyebrow">Đã cào</span>
+          <span className="eyebrow">KQ mới nhất</span>
           <span className="numeric text-sm font-bold text-[var(--glow-soft)]">
-            {scrapedDays !== null ? `${scrapedDays} ngày` : "--"}
+            {latestScraped ? latestScraped.slice(8, 10) + "/" + latestScraped.slice(5, 7) : "--"}
           </span>
         </div>
         <div className="hidden lg:flex flex-col items-end">
-          <span className="eyebrow">Cập nhật</span>
+          <span className="eyebrow">Đã cào</span>
+          <span className="numeric text-sm font-bold text-[var(--glow-soft)]">
+            {scrapedDays !== null ? `${scrapedDays}d` : "--"}
+          </span>
+        </div>
+        <div className="hidden xl:flex flex-col items-end">
+          <span className="eyebrow">Tải lúc</span>
           <span className="numeric text-sm font-bold text-[var(--glow-soft)]">{lastUpdate}</span>
         </div>
+
+        {/* Primary daily action — one tap, no prompt. */}
+        {onQuickUpdate && (
+          <button
+            onClick={onQuickUpdate}
+            disabled={isQuickUpdating || isScraping}
+            title="Lấy kết quả kỳ mới nhất + tính lại hạn mức"
+            className="btn-chrome inline-flex items-center gap-1.5 md:gap-2 px-3 md:px-5 py-2 md:py-2.5 rounded-lg text-xs md:text-sm"
+          >
+            <span className={isQuickUpdating ? "animate-spin" : ""}>⚡</span>
+            <span>{isQuickUpdating ? "Đang lấy KQ..." : "Cập nhật KQ"}</span>
+          </button>
+        )}
+
         <button
           onClick={onScrape}
-          disabled={isScraping}
-          className="btn-chrome inline-flex items-center gap-1.5 md:gap-2 px-3 md:px-5 py-2 md:py-2.5 rounded-lg text-xs md:text-sm"
+          disabled={isScraping || isQuickUpdating}
+          title="Cào lại nhiều ngày — chọn số ngày"
+          className="btn-ghost inline-flex items-center gap-1.5 md:gap-2 px-2.5 md:px-3 py-2 md:py-2.5 rounded-lg text-xs"
         >
           <span className={isScraping ? "animate-spin" : ""}>🔄</span>
-          <span className="hidden sm:inline">{isScraping ? "Đang cập nhật..." : "Cập nhật"}</span>
+          <span className="hidden lg:inline">{isScraping ? "Đang cào..." : "Cào nhiều ngày"}</span>
         </button>
         {onBackfill && (
           <button

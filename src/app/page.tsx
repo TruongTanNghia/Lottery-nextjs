@@ -73,6 +73,7 @@ function Dashboard() {
   const [scrapeStatusText, setScrapeStatusText] = useState("");
   const [regionStatus, setRegionStatus] = useState({ xsmn: "⏳", xsmb: "⏳", xsmt: "⏳" });
   const [isDedupeRunning, setIsDedupeRunning] = useState(false);
+  const [isQuickUpdating, setIsQuickUpdating] = useState(false);
   const [backfillProgress, setBackfillProgress] = useState<{ current: number; total: number; status: string } | null>(null);
 
   const loadAll = useCallback(async () => {
@@ -239,6 +240,48 @@ function Dashboard() {
     }
   }
 
+  /**
+   * One-tap "lấy kết quả mới nhất" — the daily action.
+   *
+   * handleScrape prompts for a day count and re-crawls 30 days, which is the
+   * wrong shape for the thing done every evening: pull the draw that just
+   * happened and re-price the board. Two days of overlap covers a missed run.
+   */
+  async function handleQuickUpdate() {
+    if (isQuickUpdating || isScraping) return;
+    setIsQuickUpdating(true);
+    try {
+      const res = await fetch("/api/scrape/all?days=2", { method: "POST" });
+      if (!res.ok) {
+        toast.show("error", `Không lấy được KQ (HTTP ${res.status})`);
+        return;
+      }
+      const body = await res.json();
+      const added = Object.values(body.counts ?? {}).reduce(
+        (s: number, n) => s + (n as number),
+        0
+      );
+
+      const recalcRes = await fetch("/api/recalculate", { method: "POST" });
+      if (!recalcRes.ok) {
+        toast.show("error", "Đã lấy KQ nhưng tính lại hạn mức lỗi — bấm lại giúp em");
+        return;
+      }
+
+      await loadAll();
+      toast.show(
+        "success",
+        added > 0
+          ? `Đã cập nhật ${added} kỳ mới + tính lại hạn mức`
+          : "Chưa có kỳ mới — hạn mức đã tính lại"
+      );
+    } catch (err) {
+      toast.show("error", `Lỗi: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsQuickUpdating(false);
+    }
+  }
+
   async function handleDedupe() {
     if (!confirm("Quét và xóa data bị scrape lặp lại?\n\nViệc này KHÔNG mất data thật — chỉ xóa các dòng duplicate do bấm Refresh nhiều lần.")) return;
     setIsDedupeRunning(true);
@@ -280,11 +323,14 @@ function Dashboard() {
     <>
       <Header
         scrapedDays={scrapedDays}
+        latestScraped={latestScraped}
         lastUpdate={lastUpdate}
         status={status}
         statusText={statusText}
         onScrape={handleScrape}
         isScraping={isScraping}
+        onQuickUpdate={handleQuickUpdate}
+        isQuickUpdating={isQuickUpdating}
         onDedupe={handleDedupe}
         isDedupeRunning={isDedupeRunning}
         onBackfill={handleBackfill}
