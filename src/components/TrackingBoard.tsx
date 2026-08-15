@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import type { ConfigPayload, LimitItem } from "@/lib/types";
+import type { LimitItem } from "@/lib/types";
 
 interface DailyRow {
   date: string;
@@ -12,24 +12,11 @@ interface DailyRow {
 interface Props {
   limits: LimitItem[];
   recent: DailyRow[];
-  config: ConfigPayload | null;
 }
 
 const WINDOW = 7;
 
-/** Limit this lô drops to tomorrow if it still doesn't come. */
-function nextTier(item: LimitItem, config: ConfigPayload | null): number {
-  if (!config) return item.current_limit;
-  const d = item.days_since_last + 1;
-  const base = config.base_schedule?.[String(d)] ?? config.min_limit ?? 0;
-  const cap =
-    item.consecutive_days > (config.consecutive_reset_after ?? 4)
-      ? null
-      : config.consecutive_limits?.[String(item.consecutive_days)] ?? null;
-  return cap !== null ? Math.min(base, cap) : base;
-}
-
-export default function TrackingBoard({ limits, recent, config }: Props) {
+export default function TrackingBoard({ limits, recent }: Props) {
   // Last 7 DRAW dates, not calendar days — a missed scrape must not silently
   // shorten the rhythm or shift every lô's pattern by a column.
   const { dates, hitBy } = useMemo(() => {
@@ -44,11 +31,17 @@ export default function TrackingBoard({ limits, recent, config }: Props) {
 
   const patternOf = (lo: string) => dates.map((d) => (hitBy.get(d)?.has(lo) ? 1 : 0));
 
+  // Only lô whose gaps are steady AND whose beat is due. Listing every cold
+  // number put 75 rows here, which is not a watchlist anyone can act on.
   const tracking = useMemo(
     () =>
       limits
-        .filter((l) => l.days_since_last > 0)
-        .sort((a, b) => b.days_since_last - a.days_since_last || a.lo_number.localeCompare(b.lo_number)),
+        .filter((l) => l.tracked)
+        .sort(
+          (a, b) =>
+            (a.rhythm?.cv ?? 1) - (b.rhythm?.cv ?? 1) ||
+            a.lo_number.localeCompare(b.lo_number)
+        ),
     [limits]
   );
 
@@ -70,7 +63,7 @@ export default function TrackingBoard({ limits, recent, config }: Props) {
           <div>
             <h2 className="plate-title">👁️ Đang Theo Dõi</h2>
             <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-              Chưa về — tiền đang tụt bậc
+              Nhịp đều &amp; đã tới kỳ — hạn mức đã giảm 50%
             </p>
           </div>
           <span className="numeric inline-flex items-center justify-center min-w-7 h-7 px-2 rounded-full text-sm font-bold bg-[rgba(249,115,22,0.18)] border border-[rgba(249,115,22,0.45)] text-[#ffab6b]">
@@ -81,9 +74,8 @@ export default function TrackingBoard({ limits, recent, config }: Props) {
           rows={tracking}
           dayLabels={dayLabels}
           patternOf={patternOf}
-          config={config}
           mode="tracking"
-          empty="Mọi lô đều vừa về"
+          empty="Chưa có lô nào vào nhịp — không cần theo dõi kỳ này"
         />
       </section>
 
@@ -104,7 +96,6 @@ export default function TrackingBoard({ limits, recent, config }: Props) {
           rows={released}
           dayLabels={dayLabels}
           patternOf={patternOf}
-          config={config}
           mode="released"
           empty="Chưa có lô nào về kỳ này"
         />
@@ -117,14 +108,12 @@ function Table({
   rows,
   dayLabels,
   patternOf,
-  config,
   mode,
   empty,
 }: {
   rows: LimitItem[];
   dayLabels: string[];
   patternOf: (lo: string) => number[];
-  config: ConfigPayload | null;
   mode: "tracking" | "released";
   empty: string;
 }) {
@@ -148,18 +137,16 @@ function Table({
                 ))}
               </div>
             </th>
+            {mode === "tracking" && <th className="px-2 py-2 text-right font-bold">Nhịp</th>}
             <th className="px-2 py-2 text-right font-bold">
               {mode === "tracking" ? "Chưa về" : "Liên tiếp"}
             </th>
             <th className="px-3 py-2 text-right font-bold">Hạn mức</th>
-            {mode === "tracking" && <th className="px-3 py-2 text-right font-bold">Bậc kế</th>}
           </tr>
         </thead>
         <tbody>
           {rows.map((l) => {
             const pat = patternOf(l.lo_number);
-            const next = nextTier(l, config);
-            const dropping = mode === "tracking" && next < l.current_limit;
             return (
               <tr
                 key={l.lo_number}
@@ -183,35 +170,43 @@ function Table({
                     ))}
                   </div>
                 </td>
+                {mode === "tracking" && (
+                  <td className="px-2 py-2 text-right">
+                    <span
+                      className="numeric text-[var(--text-secondary)]"
+                      title={`Đều: sai lệch ${((l.rhythm?.cv ?? 0) * 100).toFixed(0)}% · về ${l.rhythm?.appearances ?? 0} lần/30 kỳ`}
+                    >
+                      ~{l.rhythm?.mean_gap ?? "–"} kỳ
+                    </span>
+                  </td>
+                )}
                 <td className="px-2 py-2 text-right">
                   <span
                     className={`numeric font-bold ${
                       mode === "tracking"
-                        ? l.days_since_last >= 5
-                          ? "text-[#ff6b78]"
-                          : "text-[#ffab6b]"
+                        ? "text-[#ffab6b]"
                         : l.consecutive_days >= 2
                         ? "text-[#ffd24a]"
                         : "text-[var(--text-secondary)]"
                     }`}
                   >
-                    {mode === "tracking" ? `${l.days_since_last}d` : `${l.consecutive_days}d`}
+                    {mode === "tracking"
+                      ? `${l.rhythm?.draws_since_last ?? l.days_since_last} kỳ`
+                      : `${l.consecutive_days}d`}
                   </span>
                 </td>
-                <td className="px-3 py-2 text-right">
-                  <span className="numeric font-bold text-white">{l.current_limit}n</span>
-                </td>
-                {mode === "tracking" && (
-                  <td className="px-3 py-2 text-right">
-                    <span
-                      className={`numeric font-semibold ${
-                        dropping ? "text-[#ff6b78]" : "text-[var(--text-muted)]"
-                      }`}
-                    >
-                      {dropping ? `↓ ${next}n` : `${next}n`}
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  {l.tracked && l.limit_before_tracking !== undefined && (
+                    <span className="numeric text-[0.7rem] text-[var(--text-muted)] line-through mr-1.5">
+                      {l.limit_before_tracking}n
                     </span>
-                  </td>
-                )}
+                  )}
+                  <span
+                    className={`numeric font-bold ${l.tracked ? "text-[#ffd24a]" : "text-white"}`}
+                  >
+                    {l.current_limit}n
+                  </span>
+                </td>
               </tr>
             );
           })}

@@ -12,6 +12,15 @@ export const REGION_ICONS: Record<Region, string> = {
   xsmt: "⛩️",
 };
 
+export interface Rhythm {
+  appearances: number;
+  mean_gap: number;
+  cv: number;
+  draws_since_last: number;
+  regular: boolean;
+  due: boolean;
+}
+
 export interface LimitItem {
   lo_number: string;
   days_since_last: number;
@@ -24,6 +33,10 @@ export interface LimitItem {
   consecutive_penalty: number | null;
   bet_cost_vnd: number;
   win_per_hit_vnd: number;
+  rhythm?: Rhythm;
+  /** Steady beat and due → on the watchlist, limit already halved. */
+  tracked?: boolean;
+  limit_before_tracking?: number;
 }
 
 export interface ConfigPayload {

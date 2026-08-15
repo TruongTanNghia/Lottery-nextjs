@@ -357,7 +357,7 @@ function Dashboard() {
               refreshing={isScraping}
             />
             <StatsBar stats={profit} />
-            <TrackingBoard limits={limits} recent={recent} config={config} />
+            <TrackingBoard limits={limits} recent={recent} />
             <StreakCopyCard limits={limits} />
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 md:gap-6 items-start">

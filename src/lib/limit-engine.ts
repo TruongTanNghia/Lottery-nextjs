@@ -302,6 +302,101 @@ export async function recalculateAllFromHistory(region?: Region): Promise<void> 
 // Live summary (compute days_since_last on the fly so it's always current)
 // ─────────────────────────────────────────────
 
+// ─────────────────────────────────────────────
+// Rhythm ("nhịp") — which lô are worth watching
+// ─────────────────────────────────────────────
+//
+// The operator only wants to watch numbers that come back on a steady beat,
+// and only once that beat is due. A lô that drops in at random gaps carries no
+// signal for them, so it stays off the watchlist.
+//
+// Steady = the gaps between appearances cluster tightly, measured by the
+// coefficient of variation (sd / mean). Tuned on 180 days of real data: ≥3 gaps
+// with CV ≤ 0.5 leaves ~5-13 lô per region, which is a watchlist a person can
+// actually act on. Looser settings return half the board.
+export const RHYTHM_WINDOW_DRAWS = 30;
+export const RHYTHM_MIN_GAPS = 3;
+export const RHYTHM_MAX_CV = 0.5;
+/** A watched lô takes half the money a normal one would. */
+export const TRACKED_LIMIT_FACTOR = 0.5;
+
+export interface Rhythm {
+  appearances: number;
+  mean_gap: number;
+  cv: number;
+  draws_since_last: number;
+  regular: boolean;
+  due: boolean;
+}
+
+const EMPTY_RHYTHM: Rhythm = {
+  appearances: 0,
+  mean_gap: 0,
+  cv: 0,
+  draws_since_last: RHYTHM_WINDOW_DRAWS,
+  regular: false,
+  due: false,
+};
+
+/**
+ * Gaps are counted in DRAWS, not calendar days — a skipped draw would otherwise
+ * inflate every gap and make a steady lô look erratic.
+ */
+async function computeRhythms(region: Region): Promise<Map<string, Rhythm>> {
+  const rows = await query<{ date: string; lo_number: string }>(
+    `SELECT date, lo_number FROM lo_daily
+     WHERE region = ? AND date > date((SELECT MAX(date) FROM lo_daily WHERE region = ?), ?)
+     ORDER BY date ASC`,
+    [region, region, `-${RHYTHM_WINDOW_DRAWS + 5} day`]
+  );
+
+  const byDate = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (!byDate.has(r.date)) byDate.set(r.date, new Set());
+    byDate.get(r.date)!.add(r.lo_number);
+  }
+  const draws = [...byDate.keys()].sort().slice(-RHYTHM_WINDOW_DRAWS);
+
+  const out = new Map<string, Rhythm>();
+  for (let i = 0; i < 100; i++) {
+    const lo = String(i).padStart(2, "0");
+    const at: number[] = [];
+    draws.forEach((d, k) => {
+      if (byDate.get(d)!.has(lo)) at.push(k);
+    });
+
+    if (at.length === 0) {
+      out.set(lo, { ...EMPTY_RHYTHM, draws_since_last: draws.length });
+      continue;
+    }
+
+    const sinceLast = draws.length - 1 - at[at.length - 1];
+    const gaps: number[] = [];
+    for (let k = 1; k < at.length; k++) gaps.push(at[k] - at[k - 1]);
+
+    if (gaps.length < RHYTHM_MIN_GAPS) {
+      out.set(lo, { ...EMPTY_RHYTHM, appearances: at.length, draws_since_last: sinceLast });
+      continue;
+    }
+
+    const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    const sd = Math.sqrt(gaps.reduce((s, g) => s + (g - mean) ** 2, 0) / gaps.length);
+    const cv = mean > 0 ? sd / mean : Infinity;
+    const regular = cv <= RHYTHM_MAX_CV;
+
+    out.set(lo, {
+      appearances: at.length,
+      mean_gap: Math.round(mean * 10) / 10,
+      cv: Math.round(cv * 100) / 100,
+      draws_since_last: sinceLast,
+      regular,
+      // Due once it has been quiet at least as long as its own usual gap.
+      due: regular && sinceLast >= Math.floor(mean),
+    });
+  }
+  return out;
+}
+
 export interface LimitSummaryItem extends LoStatus {
   appearance_count: number;
   category: "hot_streak" | "consecutive" | "just_hit" | "recent" | "cooling" | "cold";
@@ -309,6 +404,11 @@ export interface LimitSummaryItem extends LoStatus {
   consecutive_penalty: number | null;
   bet_cost_vnd: number;
   win_per_hit_vnd: number;
+  rhythm: Rhythm;
+  /** Steady beat AND due → on the watchlist, so the limit is halved. */
+  tracked: boolean;
+  /** What the limit would be without the watchlist discount. */
+  limit_before_tracking: number;
 }
 
 function categorize(consec: number, days: number): LimitSummaryItem["category"] {
@@ -340,6 +440,7 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
   const anchorDt = new Date(anchor + "T00:00:00");
   const counts = await getAppearanceCounts(region, anchor, APPEARANCE_WINDOW_DAYS);
   const schedule = await loadSchedule(region);
+  const rhythms = await computeRhythms(region);
 
   return allStatus.map((status) => {
     const lastDate = status.last_appeared_date;
@@ -352,7 +453,13 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
     }
 
     const consec = status.consecutive_days;
-    const liveLimit = calculateEffectiveLimit(days, consec, schedule);
+    const scheduled = calculateEffectiveLimit(days, consec, schedule);
+
+    // Watchlist discount is applied last, on top of the schedule and the
+    // consecutive cap, so it always reads as exactly half of the cell above it.
+    const rhythm = rhythms.get(status.lo_number) ?? EMPTY_RHYTHM;
+    const tracked = rhythm.due;
+    const liveLimit = tracked ? Math.round(scheduled * TRACKED_LIMIT_FACTOR) : scheduled;
 
     return {
       ...status,
@@ -364,6 +471,9 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
       consecutive_penalty: calculateConsecutiveLimit(consec, schedule),
       bet_cost_vnd: getBetCost(liveLimit, region),
       win_per_hit_vnd: getWinAmount(liveLimit, 1),
+      rhythm,
+      tracked,
+      limit_before_tracking: scheduled,
     };
   });
 }
