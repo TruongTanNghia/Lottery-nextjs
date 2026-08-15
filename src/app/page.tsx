@@ -11,6 +11,7 @@ import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import StatsBar from "@/components/StatsBar";
 import StreakCopyCard from "@/components/StreakCopyCard";
+import TopBoard from "@/components/TopBoard";
 import TrackingBoard from "@/components/TrackingBoard";
 import { ToastProvider, useToast } from "@/components/Toast";
 import AccuracyPage from "@/components/AccuracyPage";
@@ -358,6 +359,7 @@ function Dashboard() {
             />
             <StatsBar stats={profit} />
             <TrackingBoard limits={limits} recent={recent} />
+            <TopBoard limits={limits} />
             <StreakCopyCard limits={limits} />
 
             {/* Money settings sit above the board: you set the tiers, then read
