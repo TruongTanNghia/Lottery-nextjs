@@ -359,7 +359,7 @@ function Dashboard() {
             />
             <StatsBar stats={profit} />
             <TrackingBoard limits={limits} recent={recent} />
-            <TopBoard limits={limits} recent={recent} />
+            <TopBoard limits={limits} region={region} onChanged={loadAll} />
             <StreakCopyCard limits={limits} />
 
             {/* Money settings sit above the board: you set the tiers, then read

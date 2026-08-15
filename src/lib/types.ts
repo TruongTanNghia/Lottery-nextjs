@@ -34,9 +34,18 @@ export interface LimitItem {
   bet_cost_vnd: number;
   win_per_hit_vnd: number;
   rhythm?: Rhythm;
-  /** Steady beat and due → on the watchlist, limit already halved. */
+  /** On a watchlist (rhythm due, or inside Top-N) → limit already halved. */
   tracked?: boolean;
+  in_top?: boolean;
+  /** Hits over the short Top-N window. */
+  recent_hits?: number;
   limit_before_tracking?: number;
+}
+
+export interface TopConfig {
+  size: number;
+  dir: "cold" | "hot";
+  enabled: boolean;
 }
 
 export interface ConfigPayload {

@@ -329,6 +329,48 @@ export interface Rhythm {
   due: boolean;
 }
 
+// ── Top-N watchlist ──────────────────────────────────────────
+// The operator also wants the hottest (or coldest) lô of the last few draws
+// on half money. That selection drives real limits, so it lives on the server
+// — keeping it in the browser would make the board, the 100-lô grid and the
+// copied bet string disagree with each other.
+export const TOP_WINDOW_DRAWS = 7;
+
+export interface TopConfig {
+  size: number;
+  dir: "cold" | "hot";
+  enabled: boolean;
+}
+
+const DEFAULT_TOP: TopConfig = { size: 10, dir: "hot", enabled: true };
+const topKey = (region: Region) => `top:${region}`;
+
+export async function loadTopConfig(region: Region): Promise<TopConfig> {
+  const raw = await getConfigValue(topKey(region));
+  if (!raw) return DEFAULT_TOP;
+  try {
+    const p = JSON.parse(raw);
+    return {
+      size: Math.min(Math.max(Number(p.size) || DEFAULT_TOP.size, 0), 100),
+      dir: p.dir === "cold" ? "cold" : "hot",
+      enabled: p.enabled !== false,
+    };
+  } catch {
+    return DEFAULT_TOP;
+  }
+}
+
+export async function saveTopConfig(region: Region, cfg: TopConfig): Promise<void> {
+  await setConfigValue(
+    topKey(region),
+    JSON.stringify({
+      size: Math.min(Math.max(Number(cfg.size) || 0, 0), 100),
+      dir: cfg.dir === "cold" ? "cold" : "hot",
+      enabled: cfg.enabled !== false,
+    })
+  );
+}
+
 const EMPTY_RHYTHM: Rhythm = {
   appearances: 0,
   mean_gap: 0,
@@ -342,7 +384,9 @@ const EMPTY_RHYTHM: Rhythm = {
  * Gaps are counted in DRAWS, not calendar days — a skipped draw would otherwise
  * inflate every gap and make a steady lô look erratic.
  */
-async function computeRhythms(region: Region): Promise<Map<string, Rhythm>> {
+async function computeRhythms(
+  region: Region
+): Promise<{ rhythms: Map<string, Rhythm>; recentHits: Map<string, number> }> {
   const rows = await query<{ date: string; lo_number: string }>(
     `SELECT date, lo_number FROM lo_daily
      WHERE region = ? AND date > date((SELECT MAX(date) FROM lo_daily WHERE region = ?), ?)
@@ -355,7 +399,15 @@ async function computeRhythms(region: Region): Promise<Map<string, Rhythm>> {
     if (!byDate.has(r.date)) byDate.set(r.date, new Set());
     byDate.get(r.date)!.add(r.lo_number);
   }
-  const draws = [...byDate.keys()].sort().slice(-RHYTHM_WINDOW_DRAWS);
+  const all = [...byDate.keys()].sort();
+  const draws = all.slice(-RHYTHM_WINDOW_DRAWS);
+
+  // Same pass gives the short-window hit counts the Top-N board ranks on.
+  const recentHits = new Map<string, number>();
+  for (let i = 0; i < 100; i++) recentHits.set(String(i).padStart(2, "0"), 0);
+  for (const d of all.slice(-TOP_WINDOW_DRAWS)) {
+    for (const lo of byDate.get(d)!) recentHits.set(lo, (recentHits.get(lo) ?? 0) + 1);
+  }
 
   const out = new Map<string, Rhythm>();
   for (let i = 0; i < 100; i++) {
@@ -394,7 +446,7 @@ async function computeRhythms(region: Region): Promise<Map<string, Rhythm>> {
       due: regular && sinceLast >= Math.floor(mean),
     });
   }
-  return out;
+  return { rhythms: out, recentHits };
 }
 
 export interface LimitSummaryItem extends LoStatus {
@@ -405,8 +457,11 @@ export interface LimitSummaryItem extends LoStatus {
   bet_cost_vnd: number;
   win_per_hit_vnd: number;
   rhythm: Rhythm;
-  /** Steady beat AND due → on the watchlist, so the limit is halved. */
+  /** On a watchlist (steady beat and due, or inside Top-N) → limit halved. */
   tracked: boolean;
+  in_top: boolean;
+  /** Hits over the short Top-N window. */
+  recent_hits: number;
   /** What the limit would be without the watchlist discount. */
   limit_before_tracking: number;
 }
@@ -440,7 +495,28 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
   const anchorDt = new Date(anchor + "T00:00:00");
   const counts = await getAppearanceCounts(region, anchor, APPEARANCE_WINDOW_DAYS);
   const schedule = await loadSchedule(region);
-  const rhythms = await computeRhythms(region);
+  const { rhythms, recentHits } = await computeRhythms(region);
+  const topCfg = await loadTopConfig(region);
+
+  // Rank exactly like the Top board does, so the two never disagree. Ties are
+  // broken by how long the lô has been quiet, then by number.
+  const topSet = new Set<string>();
+  if (topCfg.enabled && topCfg.size > 0) {
+    const ranked = allStatus
+      .map((s) => ({
+        lo: s.lo_number,
+        hits: recentHits.get(s.lo_number) ?? 0,
+        quiet: rhythms.get(s.lo_number)?.draws_since_last ?? 0,
+      }))
+      .sort((a, b) => {
+        const primary = topCfg.dir === "cold" ? a.hits - b.hits : b.hits - a.hits;
+        if (primary !== 0) return primary;
+        const secondary = topCfg.dir === "cold" ? b.quiet - a.quiet : a.quiet - b.quiet;
+        return secondary || a.lo.localeCompare(b.lo);
+      })
+      .slice(0, topCfg.size);
+    for (const r of ranked) topSet.add(r.lo);
+  }
 
   return allStatus.map((status) => {
     const lastDate = status.last_appeared_date;
@@ -457,8 +533,10 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
 
     // Watchlist discount is applied last, on top of the schedule and the
     // consecutive cap, so it always reads as exactly half of the cell above it.
+    // A lô on BOTH lists is still halved once — never quartered.
     const rhythm = rhythms.get(status.lo_number) ?? EMPTY_RHYTHM;
-    const tracked = rhythm.due;
+    const inTop = topSet.has(status.lo_number);
+    const tracked = rhythm.due || inTop;
     const liveLimit = tracked ? Math.round(scheduled * TRACKED_LIMIT_FACTOR) : scheduled;
 
     return {
@@ -473,6 +551,8 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
       win_per_hit_vnd: getWinAmount(liveLimit, 1),
       rhythm,
       tracked,
+      in_top: inTop,
+      recent_hits: recentHits.get(status.lo_number) ?? 0,
       limit_before_tracking: scheduled,
     };
   });

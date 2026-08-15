@@ -45,18 +45,10 @@ export default function TrackingBoard({ limits, recent }: Props) {
     [limits]
   );
 
-  const released = useMemo(
-    () =>
-      limits
-        .filter((l) => l.days_since_last === 0)
-        .sort((a, b) => b.consecutive_days - a.consecutive_days || a.lo_number.localeCompare(b.lo_number)),
-    [limits]
-  );
-
   const dayLabels = dates.map((d) => d.slice(8, 10) + "/" + d.slice(5, 7));
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 md:gap-6 mb-4 md:mb-6">
+    <div className="mb-4 md:mb-6">
       {/* ── Đang theo dõi ─────────────────────────────────────── */}
       <section className="plate rise rise-2">
         <div className="plate-hd">
@@ -74,32 +66,10 @@ export default function TrackingBoard({ limits, recent }: Props) {
           rows={tracking}
           dayLabels={dayLabels}
           patternOf={patternOf}
-          mode="tracking"
           empty="Chưa có lô nào vào nhịp — không cần theo dõi kỳ này"
         />
       </section>
 
-      {/* ── Đã nhả ────────────────────────────────────────────── */}
-      <section className="plate rise rise-3">
-        <div className="plate-hd">
-          <div>
-            <h2 className="plate-title">💰 Đã Nhả Ra</h2>
-            <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-              Vừa về — tiền đã khôi phục
-            </p>
-          </div>
-          <span className="numeric inline-flex items-center justify-center min-w-7 h-7 px-2 rounded-full text-sm font-bold bg-[rgba(16,185,129,0.18)] border border-[rgba(16,185,129,0.45)] text-[#4ade9f]">
-            {released.length}
-          </span>
-        </div>
-        <Table
-          rows={released}
-          dayLabels={dayLabels}
-          patternOf={patternOf}
-          mode="released"
-          empty="Chưa có lô nào về kỳ này"
-        />
-      </section>
     </div>
   );
 }
@@ -108,13 +78,11 @@ function Table({
   rows,
   dayLabels,
   patternOf,
-  mode,
   empty,
 }: {
   rows: LimitItem[];
   dayLabels: string[];
   patternOf: (lo: string) => number[];
-  mode: "tracking" | "released";
   empty: string;
 }) {
   if (rows.length === 0) {
@@ -137,10 +105,8 @@ function Table({
                 ))}
               </div>
             </th>
-            {mode === "tracking" && <th className="px-2 py-2 text-right font-bold">Nhịp</th>}
-            <th className="px-2 py-2 text-right font-bold">
-              {mode === "tracking" ? "Chưa về" : "Liên tiếp"}
-            </th>
+            <th className="px-2 py-2 text-right font-bold">Nhịp</th>
+            <th className="px-2 py-2 text-right font-bold">Chưa về</th>
             <th className="px-3 py-2 text-right font-bold">Hạn mức</th>
           </tr>
         </thead>
@@ -170,29 +136,17 @@ function Table({
                     ))}
                   </div>
                 </td>
-                {mode === "tracking" && (
-                  <td className="px-2 py-2 text-right">
-                    <span
-                      className="numeric text-[var(--text-secondary)]"
-                      title={`Đều: sai lệch ${((l.rhythm?.cv ?? 0) * 100).toFixed(0)}% · về ${l.rhythm?.appearances ?? 0} lần/30 kỳ`}
-                    >
-                      ~{l.rhythm?.mean_gap ?? "–"} kỳ
-                    </span>
-                  </td>
-                )}
                 <td className="px-2 py-2 text-right">
                   <span
-                    className={`numeric font-bold ${
-                      mode === "tracking"
-                        ? "text-[#ffab6b]"
-                        : l.consecutive_days >= 2
-                        ? "text-[#ffd24a]"
-                        : "text-[var(--text-secondary)]"
-                    }`}
+                    className="numeric text-[var(--text-secondary)]"
+                    title={`Đều: sai lệch ${((l.rhythm?.cv ?? 0) * 100).toFixed(0)}% · về ${l.rhythm?.appearances ?? 0} lần/30 kỳ`}
                   >
-                    {mode === "tracking"
-                      ? `${l.rhythm?.draws_since_last ?? l.days_since_last} kỳ`
-                      : `${l.consecutive_days}d`}
+                    ~{l.rhythm?.mean_gap ?? "–"} kỳ
+                  </span>
+                </td>
+                <td className="px-2 py-2 text-right">
+                  <span className="numeric font-bold text-[#ffab6b]">
+                    {l.rhythm?.draws_since_last ?? l.days_since_last} kỳ
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
