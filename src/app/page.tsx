@@ -12,6 +12,7 @@ import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import StatsBar from "@/components/StatsBar";
 import StreakCopyCard from "@/components/StreakCopyCard";
+import TrackingBoard from "@/components/TrackingBoard";
 import { ToastProvider, useToast } from "@/components/Toast";
 import AccuracyPage from "@/components/AccuracyPage";
 import HistoryPage from "@/components/HistoryPage";
@@ -85,7 +86,9 @@ function Dashboard() {
         fetch(`/api/stats/profit?region=${region}&days=30`).then((r) => r.json()),
         fetch(`/api/stats/profit/chart?region=${region}&days=${chartDays}`).then((r) => r.json()),
         fetch(`/api/consecutive?region=${region}`).then((r) => r.json()),
-        fetch(`/api/results/lo-daily?region=${region}&days=7`).then((r) => r.json()),
+        // 10 calendar days so the last 7 DRAW dates are always covered even if
+        // a scrape was missed or a region skipped a day.
+        fetch(`/api/results/lo-daily?region=${region}&days=10`).then((r) => r.json()),
         fetch(`/api/scrape/status`).then((r) => r.json()),
       ]);
 
@@ -355,6 +358,7 @@ function Dashboard() {
               refreshing={isScraping}
             />
             <StatsBar stats={profit} />
+            <TrackingBoard limits={limits} recent={recent} config={config} />
             <StreakCopyCard limits={limits} />
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 md:gap-6 items-start">
