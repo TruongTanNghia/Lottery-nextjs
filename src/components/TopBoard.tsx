@@ -8,6 +8,15 @@ type Direction = "cold" | "hot";
 
 const SIZES = [5, 10, 15, 20, 25, 30, 50] as const;
 const PREFS_KEY = "top_board_prefs_v1";
+/** Ranking window, in DRAWS. Deliberately short — this board is about what is
+ *  running now, not the 30-day average the rest of the app uses. */
+const TOP_WINDOW = 7;
+
+interface DailyRow {
+  date: string;
+  lo_number: string;
+  count: number;
+}
 
 interface Prefs {
   size: number;
@@ -16,7 +25,13 @@ interface Prefs {
 
 const DEFAULTS: Prefs = { size: 10, dir: "cold" };
 
-export default function TopBoard({ limits }: { limits: LimitItem[] }) {
+export default function TopBoard({
+  limits,
+  recent,
+}: {
+  limits: LimitItem[];
+  recent: DailyRow[];
+}) {
   const toast = useToast();
   const [size, setSize] = useState<number>(DEFAULTS.size);
   const [dir, setDir] = useState<Direction>(DEFAULTS.dir);
@@ -42,22 +57,40 @@ export default function TopBoard({ limits }: { limits: LimitItem[] }) {
     }
   }, [size, dir]);
 
+  // Count over the last 7 DRAWS, not the 30-day figure carried on LimitItem.
+  const { count7, drawCount } = useMemo(() => {
+    const byDate = new Map<string, Set<string>>();
+    for (const r of recent) {
+      if (!byDate.has(r.date)) byDate.set(r.date, new Set());
+      byDate.get(r.date)!.add(r.lo_number);
+    }
+    const draws = [...byDate.keys()].sort().slice(-TOP_WINDOW);
+    const m = new Map<string, number>();
+    for (let i = 0; i < 100; i++) m.set(String(i).padStart(2, "0"), 0);
+    for (const d of draws) {
+      for (const lo of byDate.get(d)!) m.set(lo, (m.get(lo) ?? 0) + 1);
+    }
+    return { count7: m, drawCount: draws.length };
+  }, [recent]);
+
   const rows = useMemo(() => {
     const sorted = [...limits].sort((a, b) => {
-      const d =
+      const ca = count7.get(a.lo_number) ?? 0;
+      const cb = count7.get(b.lo_number) ?? 0;
+      const primary = dir === "cold" ? ca - cb : cb - ca;
+      if (primary !== 0) return primary;
+      // 7 draws means lots of ties. Break them by how long it has been quiet —
+      // among equally cold numbers the one absent longest is the coldest.
+      const secondary =
         dir === "cold"
-          ? a.appearance_count - b.appearance_count
-          : b.appearance_count - a.appearance_count;
-      // Stable tie-break so the list doesn't reshuffle between refreshes.
-      return d || a.lo_number.localeCompare(b.lo_number);
+          ? b.days_since_last - a.days_since_last
+          : a.days_since_last - b.days_since_last;
+      return secondary || a.lo_number.localeCompare(b.lo_number);
     });
     return sorted.slice(0, size);
-  }, [limits, size, dir]);
+  }, [limits, size, dir, count7]);
 
-  const maxCount = useMemo(
-    () => limits.reduce((m, l) => Math.max(m, l.appearance_count), 1),
-    [limits]
-  );
+  const maxCount = Math.max(1, drawCount);
 
   async function copyNumbers() {
     if (rows.length === 0) return;
@@ -81,7 +114,7 @@ export default function TopBoard({ limits }: { limits: LimitItem[] }) {
             🏆 Top {size} lô {dir === "cold" ? "ÍT ra nhất" : "NHIỀU ra nhất"}
           </h2>
           <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-            Đếm số kỳ đã về trong 30 kỳ gần nhất
+            Đếm số kỳ đã về trong {drawCount} kỳ gần nhất
           </p>
         </div>
         <button
@@ -136,7 +169,7 @@ export default function TopBoard({ limits }: { limits: LimitItem[] }) {
             <tr className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">
               <th className="px-2 py-2 text-left font-bold">#</th>
               <th className="px-2 py-2 text-left font-bold">Lô</th>
-              <th className="px-2 py-2 text-left font-bold">Số kỳ đã về / 30</th>
+              <th className="px-2 py-2 text-left font-bold">Số kỳ đã về / {drawCount}</th>
               <th className="px-2 py-2 text-right font-bold">Chưa về</th>
               <th className="px-2 py-2 text-right font-bold">Hạn mức</th>
             </tr>
@@ -156,13 +189,13 @@ export default function TopBoard({ limits }: { limits: LimitItem[] }) {
                       <div
                         className="h-full rounded-full"
                         style={{
-                          width: `${Math.max(4, (l.appearance_count / maxCount) * 100)}%`,
+                          width: `${Math.max(4, ((count7.get(l.lo_number) ?? 0) / maxCount) * 100)}%`,
                           background: dir === "cold" ? "#4da6ff" : "#e11d48",
                         }}
                       />
                     </div>
                     <span className="numeric text-xs font-bold text-white w-6 text-right">
-                      {l.appearance_count}
+                      {count7.get(l.lo_number) ?? 0}
                     </span>
                   </div>
                 </td>
