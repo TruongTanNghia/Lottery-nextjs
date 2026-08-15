@@ -5,7 +5,6 @@ import Header from "@/components/Header";
 import LoDetailModal from "@/components/LoDetailModal";
 import LoGrid from "@/components/LoGrid";
 import NextDrawCard from "@/components/NextDrawCard";
-import PricingCard from "@/components/PricingCard";
 import ProfitChart from "@/components/ProfitChart";
 import RegionTabs from "@/components/RegionTabs";
 import ScheduleEditor from "@/components/ScheduleEditor";
@@ -395,7 +394,6 @@ function Dashboard() {
                     loadAll();
                   }}
                 />
-                <PricingCard region={region} config={config} />
               </section>
 
               <aside className="space-y-4 md:space-y-6">
