@@ -413,7 +413,26 @@ export async function scrapeDay(date: Date, region: Region, force: boolean = fal
 export async function scrapeTodayForce(region: Region): Promise<unknown> {
   // Always force re-scrape — bypass isDateScraped cache so refresh works
   // even if today was already scraped (e.g., before draws finished).
-  return scrapeDay(new Date(), region, true);
+  return scrapeDay(vnDay(), region, true);
+}
+
+/**
+ * A calendar day in Vietnam, anchored at 12:00 UTC.
+ *
+ * Two traps this avoids:
+ *  - Vercel runs in UTC, a day behind Vietnam between 00:00 and 07:00 local,
+ *    so `new Date()` there can point at the wrong draw date.
+ *  - scrapeDay reads the date BOTH as UTC (toISOString, for the row it saves)
+ *    and as local time (getDate/getMonth, for the page URL). Midnight makes
+ *    those two disagree on any positive offset — it would fetch one day's page
+ *    and file it under the day before. Noon UTC lands on the same calendar day
+ *    under either reading.
+ */
+function vnDay(offsetDays: number = 0): Date {
+  const s = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
+  const d = new Date(`${s}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - offsetDays);
+  return d;
 }
 
 export async function scrapeRange(
@@ -423,11 +442,11 @@ export async function scrapeRange(
   delayMs: number = 600
 ): Promise<number> {
   let count = 0;
-  let cur = new Date(start);
+  const cur = new Date(start);
   while (cur <= end) {
     const r = await scrapeDay(new Date(cur), region);
     if (r) count++;
-    cur.setDate(cur.getDate() + 1);
+    cur.setUTCDate(cur.getUTCDate() + 1);
     if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
   }
   return count;
@@ -439,17 +458,18 @@ export async function scrapeLastNDays(
   delayMs: number = 600,
   offsetDays: number = 0
 ): Promise<number> {
-  // offsetDays = 0 → scrape ending yesterday
-  // offsetDays = 30 → scrape ending 30 days before yesterday (for backfill chunks)
-  const end = new Date();
-  end.setDate(end.getDate() - 1 - offsetDays);
+  // Ends at TODAY. It used to end at yesterday, which left the app permanently
+  // one draw behind: the 19:00 cron only re-checked days already stored, and
+  // tonight's results did not land until tomorrow night's run.
+  // offsetDays shifts the whole window back for backfill chunks.
+  const end = vnDay(offsetDays);
   const start = new Date(end);
-  start.setDate(start.getDate() - (n - 1));
+  start.setUTCDate(start.getUTCDate() - (n - 1));
   return scrapeRange(start, end, region, delayMs);
 }
 
 export async function scrapeToday(region: Region): Promise<unknown> {
-  return scrapeDay(new Date(), region);
+  return scrapeDay(vnDay(), region);
 }
 
 export async function scrapeAllRegionsRange(
