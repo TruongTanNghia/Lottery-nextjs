@@ -77,7 +77,7 @@ export default function ScheduleEditor({
   }
 
   return (
-    <div className="p-6 border-t border-white/[0.06]">
+    <div className="p-4 md:p-6">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-slate-300">
           📋 Hạn Mức Theo Số Ngày Chưa Về{" "}

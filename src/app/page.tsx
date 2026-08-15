@@ -360,6 +360,19 @@ function Dashboard() {
             <TrackingBoard limits={limits} recent={recent} />
             <StreakCopyCard limits={limits} />
 
+            {/* Money settings sit above the board: you set the tiers, then read
+                the result. They are also per-region, so keeping them adjacent
+                to the region tabs avoids editing the wrong region. */}
+            <section className="plate rise rise-2 mb-4 md:mb-6">
+              <ScheduleEditor
+                region={region}
+                onSaved={() => {
+                  toast.show("success", `Đã lưu hạn mức ${REGION_LABELS[region]} + tính lại`);
+                  loadAll();
+                }}
+              />
+            </section>
+
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 md:gap-6 items-start">
               <section className="plate rise rise-3">
                 <div className="plate-hd">
@@ -388,13 +401,6 @@ function Dashboard() {
                   </div>
                 </div>
                 <LoGrid data={limits} onCellClick={setOpenLo} />
-                <ScheduleEditor
-                  region={region}
-                  onSaved={() => {
-                    toast.show("success", `Đã lưu hạn mức ${REGION_LABELS[region]} + tính lại`);
-                    loadAll();
-                  }}
-                />
               </section>
 
               <aside className="space-y-4 md:space-y-6">
