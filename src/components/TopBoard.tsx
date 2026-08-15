@@ -8,12 +8,20 @@ type Direction = "cold" | "hot";
 
 const SIZES = [5, 10, 15, 20, 25, 30, 50] as const;
 
+interface DailyRow {
+  date: string;
+  lo_number: string;
+  count: number;
+}
+
 export default function TopBoard({
   limits,
+  recent,
   region,
   onChanged,
 }: {
   limits: LimitItem[];
+  recent: DailyRow[];
   region: Region;
   onChanged: () => void;
 }) {
@@ -75,7 +83,19 @@ export default function TopBoard({
     [limits, dir]
   );
 
-  const maxHits = Math.max(1, ...limits.map((l) => l.recent_hits ?? 0));
+  // Same 7-draw strip as the watchlist, so both boards read the same way.
+  const { dates, hitBy } = useMemo(() => {
+    const byDate = new Map<string, Set<string>>();
+    for (const r of recent) {
+      if (!byDate.has(r.date)) byDate.set(r.date, new Set());
+      byDate.get(r.date)!.add(r.lo_number);
+    }
+    return { dates: [...byDate.keys()].sort().slice(-7), hitBy: byDate };
+  }, [recent]);
+
+  const patternOf = (lo: string) => dates.map((d) => (hitBy.get(d)?.has(lo) ? 1 : 0));
+  const dayLabels = dates.map((d) => d.slice(8, 10));
+
   const totalSaved = rows.reduce(
     (s, l) => s + ((l.limit_before_tracking ?? l.current_limit) - l.current_limit),
     0
@@ -172,7 +192,17 @@ export default function TopBoard({
                 <tr className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">
                   <th className="px-2 py-2 text-left font-bold">#</th>
                   <th className="px-2 py-2 text-left font-bold">Lô</th>
-                  <th className="px-2 py-2 text-left font-bold">Về / 7 kỳ</th>
+                  <th className="px-2 py-2 text-center font-bold">
+                    Nhịp {dates.length} kỳ
+                    <div className="hidden sm:flex justify-center gap-[3px] mt-1 font-normal normal-case tracking-normal text-[0.5rem]">
+                      {dayLabels.map((d) => (
+                        <span key={d} className="w-5 text-center">
+                          {d}
+                        </span>
+                      ))}
+                    </div>
+                  </th>
+                  <th className="px-2 py-2 text-right font-bold">Về</th>
                   <th className="px-2 py-2 text-right font-bold">Chưa về</th>
                   <th className="px-2 py-2 text-right font-bold">Hạn mức</th>
                 </tr>
@@ -186,20 +216,24 @@ export default function TopBoard({
                       {l.rhythm?.due && <span className="ml-1.5 text-[0.6rem]">👁️</span>}
                     </td>
                     <td className="px-2 py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-2 rounded-full bg-[#0e1a2e] overflow-hidden min-w-[3rem]">
-                          <div
-                            className="h-full rounded-full"
-                            style={{
-                              width: `${Math.max(4, ((l.recent_hits ?? 0) / maxHits) * 100)}%`,
-                              background: dir === "cold" ? "#4da6ff" : "#e11d48",
-                            }}
+                      <div className="flex justify-center gap-[3px]">
+                        {patternOf(l.lo_number).map((v, k) => (
+                          <span
+                            key={k}
+                            title={v ? "về" : "không về"}
+                            className={`w-5 h-5 rounded-[3px] ${
+                              v
+                                ? "bg-[#10b981] shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]"
+                                : "bg-[#0e1a2e] border border-[rgba(150,185,235,0.18)]"
+                            }`}
                           />
-                        </div>
-                        <span className="numeric text-xs font-bold text-white w-6 text-right">
-                          {l.recent_hits ?? 0}
-                        </span>
+                        ))}
                       </div>
+                    </td>
+                    <td className="px-2 py-2 text-right">
+                      <span className="numeric text-sm font-bold text-white">
+                        {l.recent_hits ?? 0}
+                      </span>
                     </td>
                     <td className="px-2 py-2 text-right numeric text-[var(--text-secondary)]">
                       {l.days_since_last}d

@@ -365,7 +365,7 @@ function Dashboard() {
 
             <StatsBar stats={profit} />
             <TrackingBoard limits={limits} recent={recent} />
-            <TopBoard limits={limits} region={region} onChanged={loadAll} />
+            <TopBoard limits={limits} recent={recent} region={region} onChanged={loadAll} />
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 md:gap-6 items-start">
               <section className="plate rise rise-3">
