@@ -389,8 +389,9 @@ function Dashboard() {
                 </div>
                 <LoGrid data={limits} onCellClick={setOpenLo} />
                 <ScheduleEditor
+                  region={region}
                   onSaved={() => {
-                    toast.show("success", "Đã lưu schedule + recalc");
+                    toast.show("success", `Đã lưu hạn mức ${REGION_LABELS[region]} + tính lại`);
                     loadAll();
                   }}
                 />

@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
-import { ApiError, ensureDb, jsonError } from "@/lib/api-utils";
+import { ApiError, ensureDb, jsonError, validateRegion } from "@/lib/api-utils";
 import { loadSchedule, recalculateAllFromHistory, saveSchedule, type Schedule } from "@/lib/limit-engine";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     await ensureDb();
-    const sched = await loadSchedule();
+    const region = validateRegion(new URL(req.url).searchParams.get("region"));
+    const sched = await loadSchedule(region);
     return NextResponse.json({
       status: "success",
       data: {
@@ -29,6 +30,7 @@ export async function GET() {
 export async function PUT(req: Request) {
   try {
     await ensureDb();
+    const region = validateRegion(new URL(req.url).searchParams.get("region"));
     const body = await req.json();
     if (!body || typeof body !== "object") throw new ApiError(400, "Body must be JSON");
 
@@ -47,12 +49,14 @@ export async function PUT(req: Request) {
       throw new ApiError(400, "base schedule is required");
     }
 
-    await saveSchedule(cfg);
-    await recalculateAllFromHistory();
+    // Only this region — editing one region must not touch the other two.
+    await saveSchedule(region, cfg);
+    await recalculateAllFromHistory(region);
 
     return NextResponse.json({
       status: "success",
-      message: "Schedule saved. All regions recalculated.",
+      region,
+      message: `Đã lưu schedule ${region} và tính lại hạn mức.`,
     });
   } catch (err) {
     return jsonError(err);

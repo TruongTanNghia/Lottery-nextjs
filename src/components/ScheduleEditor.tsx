@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { REGION_LABELS, type Region } from "@/lib/types";
 
 interface ScheduleData {
   base: Record<string, number>;
@@ -16,14 +17,21 @@ const DEFAULT_SCHEDULE: ScheduleData = {
   consecutive_reset_after: 4,
 };
 
-export default function ScheduleEditor({ onSaved }: { onSaved: () => void }) {
+export default function ScheduleEditor({
+  region,
+  onSaved,
+}: {
+  region: Region;
+  onSaved: () => void;
+}) {
   const [schedule, setSchedule] = useState<ScheduleData>(DEFAULT_SCHEDULE);
   const [original, setOriginal] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
 
+  // Re-fetch on region change: each region keeps its own limits now.
   useEffect(() => {
-    fetch("/api/config/schedule")
+    fetch(`/api/config/schedule?region=${region}`)
       .then((r) => r.json())
       .then((d) => {
         if (d.data) {
@@ -32,7 +40,7 @@ export default function ScheduleEditor({ onSaved }: { onSaved: () => void }) {
         }
       })
       .catch(() => void 0);
-  }, []);
+  }, [region]);
 
   const dirty = JSON.stringify(schedule) !== original;
 
@@ -46,7 +54,7 @@ export default function ScheduleEditor({ onSaved }: { onSaved: () => void }) {
   async function save() {
     setSaving(true);
     try {
-      const res = await fetch("/api/config/schedule", {
+      const res = await fetch(`/api/config/schedule?region=${region}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(schedule),
@@ -72,7 +80,11 @@ export default function ScheduleEditor({ onSaved }: { onSaved: () => void }) {
     <div className="p-6 border-t border-white/[0.06]">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-slate-300">
-          📋 Hạn Mức Theo Số Ngày Chưa Về <span className="text-xs text-slate-500 font-normal">(click số để sửa)</span>
+          📋 Hạn Mức Theo Số Ngày Chưa Về{" "}
+          <span className="px-2 py-0.5 rounded bg-[#2563eb] text-white text-xs font-bold">
+            {REGION_LABELS[region]}
+          </span>{" "}
+          <span className="text-xs text-slate-500 font-normal">(click số để sửa)</span>
         </h3>
         <div className="flex gap-1.5">
           <button

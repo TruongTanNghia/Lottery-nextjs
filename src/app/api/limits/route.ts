@@ -19,7 +19,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const region = validateRegion(url.searchParams.get("region"));
 
-    const [summary, sched] = await Promise.all([getLimitSummary(region), loadSchedule()]);
+    const [summary, sched] = await Promise.all([getLimitSummary(region), loadSchedule(region)]);
 
     return NextResponse.json({
       status: "success",

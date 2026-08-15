@@ -44,14 +44,23 @@ const DEFAULT_SCHEDULE: Schedule = {
   consecutive_reset_after: 4,
 };
 
-let _scheduleCache: { value: Schedule; ts: number } | null = null;
+// Per-region config keys. The original single "schedule" key meant editing one
+// region silently rewrote all three — the regions have different draw counts
+// (27 vs 18 numbers a day) so they need different limits.
+const scheduleKey = (region: Region) => `schedule:${region}`;
+const LEGACY_KEY = "schedule";
+
+const _scheduleCache = new Map<Region, { value: Schedule; ts: number }>();
 const SCHEDULE_TTL_MS = 30_000; // re-read DB at most every 30s
 
-export async function loadSchedule(): Promise<Schedule> {
-  if (_scheduleCache && Date.now() - _scheduleCache.ts < SCHEDULE_TTL_MS) {
-    return _scheduleCache.value;
+export async function loadSchedule(region: Region): Promise<Schedule> {
+  const cached = _scheduleCache.get(region);
+  if (cached && Date.now() - cached.ts < SCHEDULE_TTL_MS) {
+    return cached.value;
   }
-  const raw = await getConfigValue("schedule");
+  // Fall back to the shared key so a region never loses its settings before
+  // it has been saved individually.
+  const raw = (await getConfigValue(scheduleKey(region))) ?? (await getConfigValue(LEGACY_KEY));
   let value: Schedule = DEFAULT_SCHEDULE;
   if (raw) {
     try {
@@ -72,11 +81,11 @@ export async function loadSchedule(): Promise<Schedule> {
       value = DEFAULT_SCHEDULE;
     }
   }
-  _scheduleCache = { value, ts: Date.now() };
+  _scheduleCache.set(region, { value, ts: Date.now() });
   return value;
 }
 
-export async function saveSchedule(cfg: Schedule): Promise<void> {
+export async function saveSchedule(region: Region, cfg: Schedule): Promise<void> {
   const payload = {
     base: Object.fromEntries(Object.entries(cfg.base).map(([k, v]) => [String(k), Number(v)])),
     min_limit: Number(cfg.min_limit),
@@ -85,8 +94,8 @@ export async function saveSchedule(cfg: Schedule): Promise<void> {
     ),
     consecutive_reset_after: Number(cfg.consecutive_reset_after),
   };
-  await setConfigValue("schedule", JSON.stringify(payload));
-  _scheduleCache = null; // invalidate
+  await setConfigValue(scheduleKey(region), JSON.stringify(payload));
+  _scheduleCache.delete(region);
 }
 
 // ─────────────────────────────────────────────
@@ -154,7 +163,7 @@ export async function updateAllLoStatus(targetDate: string, region: Region): Pro
   const db = getDb();
 
   const appearedToday = await getLoAppearedOnDate(targetDate, region);
-  const schedule = await loadSchedule();
+  const schedule = await loadSchedule(region);
   const resetAfter = schedule.consecutive_reset_after;
 
   // 1 round-trip to read all 100 lô status at once
@@ -222,10 +231,11 @@ export async function recalculateAllFromHistory(region?: Region): Promise<void> 
   const regions: Region[] = region ? [region] : [...VALID_REGIONS];
   const { query, getDb } = await import("./db");
 
-  const schedule = await loadSchedule();
-  const resetAfter = schedule.consecutive_reset_after;
-
   for (const rgn of regions) {
+    // Each region carries its own schedule now — must be read inside the loop.
+    const schedule = await loadSchedule(rgn);
+    const resetAfter = schedule.consecutive_reset_after;
+
     const rows = await query<{ date: string; lo_number: string }>(
       "SELECT date, lo_number FROM lo_daily WHERE region = ? ORDER BY date ASC",
       [rgn]
@@ -329,7 +339,7 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
   const anchor = latest[0]?.date ?? new Date().toISOString().slice(0, 10);
   const anchorDt = new Date(anchor + "T00:00:00");
   const counts = await getAppearanceCounts(region, anchor, APPEARANCE_WINDOW_DAYS);
-  const schedule = await loadSchedule();
+  const schedule = await loadSchedule(region);
 
   return allStatus.map((status) => {
     const lastDate = status.last_appeared_date;

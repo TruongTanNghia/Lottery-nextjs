@@ -36,7 +36,7 @@ export async function GET(
     const today = new Date().toISOString().slice(0, 10);
     const todayDt = new Date(today + "T00:00:00");
     const counts = await getAppearanceCounts(region, today, APPEARANCE_WINDOW_DAYS);
-    const sched = await loadSchedule();
+    const sched = await loadSchedule(region);
 
     let daysLive: number;
     if (status.last_appeared_date) {
