@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+// og:image is resolved against this; without it Next falls back to
+// localhost:3000 and link previews silently show nothing.
+const siteUrl =
+  process.env.NEXT_PUBLIC_APP_URL ??
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Kho Bạc — Quản Lý Hạn Mức",
   description: "Quản Lý Hạn Mức Lô 3 Miền — Miền Nam, Miền Bắc, Miền Trung",
   icons: { icon: "/icon.png", apple: "/icon.png" },

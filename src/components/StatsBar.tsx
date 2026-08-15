@@ -28,9 +28,9 @@ export default function StatsBar({ stats }: { stats: ProfitStats | null }) {
 }
 
 const TONE: Record<string, { text: string; bar: string }> = {
-  gain: { text: "#22e3a0", bar: "linear-gradient(90deg,#22e3a0,transparent)" },
-  loss: { text: "#f4525f", bar: "linear-gradient(90deg,#f4525f,transparent)" },
-  neutral: { text: "#7fc4ff", bar: "linear-gradient(90deg,#7fc4ff,transparent)" },
+  gain: { text: "#34e6a8", bar: "#34e6a8" },
+  loss: { text: "#ff6b78", bar: "#ff6b78" },
+  neutral: { text: "#8fd0ff", bar: "#8fd0ff" },
 };
 
 function Card({
@@ -48,11 +48,11 @@ function Card({
   return (
     <div className={`plate rise ${lead ? "rise-1 col-span-2 lg:col-span-1" : "rise-2"} p-3.5 md:p-5`}>
       {/* tone bar doubles as the plate's lit edge */}
-      <div className="absolute top-0 left-0 h-[2px] w-2/3" style={{ background: t.bar }} />
+      <div className="absolute top-0 left-0 h-[3px] w-full" style={{ background: t.bar }} />
       <div className="eyebrow mb-1.5">{label}</div>
       <div
         className={`numeric font-extrabold leading-none ${lead ? "text-2xl md:text-[2rem]" : "text-lg md:text-2xl"}`}
-        style={{ color: t.text, textShadow: `0 0 24px ${t.text}44` }}
+        style={{ color: t.text }}
       >
         {value}
       </div>

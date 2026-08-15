@@ -27,15 +27,20 @@
   --chrome-600: #4e5d75;
   --chrome-700: #36435a;
 
-  --text-primary: var(--chrome-100);
-  --text-secondary: var(--chrome-300);
-  --text-muted: var(--chrome-500);
+  /* Panel fill sits clearly ABOVE the page, not a shade of it. A dense number
+     board is read for hours; separation and contrast beat mood. */
+  --panel: #15243f;
+  --panel-hi: #1b2d4d;
+
+  --text-primary: #ffffff;
+  --text-secondary: #c2d4ea;
+  --text-muted: #93a9c6;
 
   /* Plate edges: a lit top lip and a dark underside = struck metal */
   --edge-lit: rgba(255, 255, 255, 0.16);
-  --edge-dark: rgba(0, 0, 0, 0.55);
-  --hairline: rgba(160, 190, 230, 0.14);
-  --hairline-hot: rgba(120, 190, 255, 0.38);
+  --edge-dark: rgba(0, 0, 0, 0.45);
+  --hairline: rgba(150, 185, 235, 0.26);
+  --hairline-hot: rgba(120, 190, 255, 0.6);
 
   --font-display: Archivo, "Be Vietnam Pro", sans-serif;
   --font-body: "Be Vietnam Pro", sans-serif;
@@ -64,26 +69,16 @@ body {
 
 /* Ambient cobalt light pooling behind everything, plus a fine grain so the
    large dark fields never look like flat #000 plastic. */
+/* One soft cobalt wash at the top so the page isn't flat black. The grain
+   overlay and side glows were removed — texture behind 100 small numbers just
+   reads as dirt. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background:
-    radial-gradient(60rem 40rem at 50% -10%, rgba(26, 86, 208, 0.3), transparent 65%),
-    radial-gradient(40rem 30rem at 100% 0%, rgba(77, 166, 255, 0.12), transparent 60%),
-    radial-gradient(45rem 35rem at 0% 30%, rgba(10, 32, 80, 0.55), transparent 60%);
-}
-
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  background: radial-gradient(70rem 34rem at 50% -12%, rgba(26, 86, 208, 0.22), transparent 70%);
 }
 
 body > * {
@@ -153,11 +148,11 @@ textarea {
 
 .eyebrow {
   font-family: var(--font-display);
-  font-size: 0.6rem;
+  font-size: 0.64rem;
   font-weight: 700;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--chrome-500);
+  color: var(--text-muted);
 }
 
 .numeric {
@@ -170,12 +165,11 @@ textarea {
 .plate {
   position: relative;
   border-radius: 14px;
-  background: linear-gradient(168deg, rgba(24, 44, 88, 0.72) 0%, rgba(7, 18, 42, 0.9) 46%, rgba(5, 12, 30, 0.94) 100%);
+  background: linear-gradient(180deg, var(--panel-hi) 0%, var(--panel) 100%);
   border: 1px solid var(--hairline);
   box-shadow:
     inset 0 1px 0 var(--edge-lit),
-    inset 0 -1px 0 var(--edge-dark),
-    0 24px 48px -28px rgba(0, 0, 0, 0.9);
+    0 18px 36px -24px rgba(0, 0, 0, 0.85);
   overflow: hidden;
 }
 
@@ -193,17 +187,17 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.9rem 1.25rem;
+  padding: 0.85rem 1.2rem;
   border-bottom: 1px solid var(--hairline);
-  background: linear-gradient(180deg, rgba(30, 58, 116, 0.4), transparent);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .plate-title {
   font-family: var(--font-display);
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: 700;
   letter-spacing: 0.01em;
-  color: var(--chrome-200);
+  color: #ffffff;
 }
 
 /* ── Buttons ─────────────────────────────────────────────────── */
@@ -235,15 +229,15 @@ textarea {
 .btn-ghost {
   font-family: var(--font-display);
   font-weight: 600;
-  color: var(--chrome-300);
-  background: rgba(140, 180, 240, 0.06);
+  color: #dce8f8;
+  background: rgba(255, 255, 255, 0.09);
   border: 1px solid var(--hairline);
   transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
 }
 .btn-ghost:hover:not(:disabled) {
-  background: rgba(140, 180, 240, 0.14);
+  background: rgba(255, 255, 255, 0.18);
   border-color: var(--hairline-hot);
-  color: var(--chrome-100);
+  color: #ffffff;
 }
 .btn-ghost:disabled {
   opacity: 0.45;
@@ -253,6 +247,9 @@ textarea {
 /* ── Vault tray: 100 struck tokens ───────────────────────────── */
 /* Tier is computed from the limit's share of the day's max, so any
    schedule the operator types in still reads at a glance. */
+/* Solid fill per tier, dark ink on top — a heatmap, not a moody token. The
+   previous 34%-opacity colour wash under chrome-grey type was the thing that
+   made this board hard to read. */
 .lo-cell {
   position: relative;
   aspect-ratio: 1;
@@ -260,132 +257,99 @@ textarea {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border-radius: 9px;
+  border-radius: 8px;
   cursor: pointer;
   overflow: hidden;
-  --tier: var(--chrome-400);
-  background:
-    radial-gradient(120% 100% at 30% 0%, rgba(255, 255, 255, 0.14), transparent 55%),
-    linear-gradient(170deg, rgba(28, 52, 100, 0.6), rgba(6, 14, 34, 0.85));
-  border: 1px solid rgba(150, 185, 230, 0.13);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.45);
-  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 200ms ease, border-color 200ms ease;
-}
-
-/* Tier wash — sits under the type, never over it. */
-.lo-cell::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(110% 90% at 50% 115%, var(--tier), transparent 70%);
-  opacity: 0.34;
-  transition: opacity 220ms ease;
+  --tier: #33456a;
+  --ink: #ffffff;
+  background: var(--tier);
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: transform 140ms ease, box-shadow 160ms ease;
 }
 
 .lo-cell:hover {
   transform: translateY(-2px);
-  border-color: var(--hairline-hot);
+  z-index: 2;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 10px 22px -10px var(--tier),
-    0 0 0 1px rgba(120, 190, 255, 0.25);
-}
-.lo-cell:hover::before {
-  opacity: 0.6;
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 0 0 2px #ffffff,
+    0 10px 20px -8px rgba(0, 0, 0, 0.75);
 }
 
 .lo-cell .lo-num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   font-weight: 700;
   line-height: 1;
-  margin-bottom: 3px;
-  position: relative;
-  z-index: 1;
-  color: var(--chrome-100);
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+  color: var(--ink);
 }
 .lo-cell .lo-limit {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 0.62rem;
-  font-weight: 700;
-  position: relative;
-  z-index: 1;
-  color: var(--tier);
-  filter: brightness(1.35);
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1;
+  margin-top: 3px;
+  color: var(--ink);
+  opacity: 0.92;
 }
 .lo-cell .lo-meta {
-  font-size: 0.5rem;
-  letter-spacing: 0.04em;
-  color: var(--chrome-500);
-  margin-top: 1px;
-  position: relative;
-  z-index: 1;
+  font-size: 0.52rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  margin-top: 3px;
+  color: var(--ink);
+  opacity: 0.62;
 }
 
-/* Tier ramp: open → throttled → shut. Kept high-contrast because real
-   money rides on reading this board correctly at a glance. */
-.lo-cell[data-tier="5"] { --tier: #22e3a0; }
-.lo-cell[data-tier="4"] { --tier: #a8e34a; }
-.lo-cell[data-tier="3"] { --tier: #f5c542; }
-.lo-cell[data-tier="2"] { --tier: #fb8b3c; }
-.lo-cell[data-tier="1"] { --tier: #f4525f; }
+/* Open → throttled → shut. Ink is picked per fill for contrast, not reused. */
+.lo-cell[data-tier="5"] { --tier: #10b981; --ink: #04251a; }
+.lo-cell[data-tier="4"] { --tier: #84cc16; --ink: #16260a; }
+.lo-cell[data-tier="3"] { --tier: #eab308; --ink: #2c2003; }
+.lo-cell[data-tier="2"] { --tier: #f97316; --ink: #2e1304; }
+.lo-cell[data-tier="1"] { --tier: #e11d48; --ink: #ffffff; }
 
-/* Blocked (limit 0) — the vault door. Deliberately drained of colour so a
-   shut number is unmistakable against every live one. */
+/* Blocked (limit 0) — drained and hatched so a shut number can never be
+   mistaken for a live one at a glance. */
 .lo-cell[data-tier="0"] {
-  --tier: #4a5a73;
+  --tier: #24344e;
+  --ink: #93a9c6;
   background:
-    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.035) 0 6px, transparent 6px 12px),
-    linear-gradient(170deg, rgba(18, 26, 44, 0.9), rgba(4, 9, 24, 0.95));
-  border-color: rgba(120, 140, 170, 0.14);
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0 5px, transparent 5px 10px),
+    #24344e;
 }
-.lo-cell[data-tier="0"] .lo-num { color: var(--chrome-500); }
-.lo-cell[data-tier="0"] .lo-limit { color: var(--chrome-600); filter: none; }
-.lo-cell[data-tier="0"]::before { opacity: 0.1; }
 
 /* Awaiting data — deliberately inert so it can't be mistaken for a decision. */
 .lo-cell[data-tier="na"] {
-  --tier: transparent;
+  --tier: #1b2a45;
+  --ink: #55698a;
   cursor: default;
-  background: linear-gradient(170deg, rgba(20, 32, 58, 0.5), rgba(5, 11, 26, 0.7));
-  border-color: rgba(120, 150, 195, 0.08);
   animation: cell-wait 1.6s ease-in-out infinite;
 }
 .lo-cell[data-tier="na"]:hover {
   transform: none;
-  border-color: rgba(120, 150, 195, 0.08);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
-.lo-cell[data-tier="na"] .lo-num { color: var(--chrome-600); }
-.lo-cell[data-tier="na"] .lo-limit { color: var(--chrome-700); filter: none; }
-.lo-cell[data-tier="na"]::before { opacity: 0; }
 
 @keyframes cell-wait {
   0%, 100% { opacity: 0.5; }
   50% { opacity: 0.78; }
 }
 
-/* Streak markers */
+/* Streak markers — an INSET ring, so it reads on every fill colour and does
+   not fight the outer ring hover already uses. */
 .lo-cell[data-streak="hot"] {
-  border-color: rgba(244, 82, 95, 0.6);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 0 0 1px rgba(244, 82, 95, 0.35),
-    0 0 18px -4px rgba(244, 82, 95, 0.55);
+    inset 0 0 0 2.5px rgba(255, 255, 255, 0.92),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 .lo-cell[data-streak="on"] {
-  border-color: rgba(245, 197, 66, 0.45);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 0 0 1px rgba(245, 197, 66, 0.25);
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 /* ── Entrance ────────────────────────────────────────────────── */

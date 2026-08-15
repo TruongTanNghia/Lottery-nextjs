@@ -39,8 +39,8 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
               onClick={() => onChange(r)}
               className={`inline-flex items-center gap-1.5 md:gap-2.5 px-3 md:px-6 py-1.5 md:py-2.5 rounded-full border font-semibold text-xs md:text-sm transition-all duration-200 ${
                 active
-                  ? "bg-gradient-to-b from-[#1a56d0] to-[#0a2050] border-[rgba(120,190,255,0.55)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_6px_20px_-8px_rgba(77,166,255,0.8)]"
-                  : "bg-[rgba(140,180,240,0.05)] border-[var(--hairline)] text-[var(--chrome-400)] hover:bg-[rgba(140,180,240,0.12)] hover:border-[var(--hairline-hot)] hover:text-[var(--chrome-100)]"
+                  ? "bg-[#2563eb] border-[#7fc4ff] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]"
+                  : "bg-white/[0.09] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.18] hover:border-[var(--hairline-hot)] hover:text-white"
               }`}
             >
               <span className="text-base md:text-lg leading-none">{REGION_ICONS[r]}</span>
