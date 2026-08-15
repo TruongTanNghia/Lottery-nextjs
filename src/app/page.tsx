@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "@/components/Header";
 import LoDetailModal from "@/components/LoDetailModal";
 import LoGrid from "@/components/LoGrid";
-import NextDrawCard from "@/components/NextDrawCard";
 import ProfitChart from "@/components/ProfitChart";
 import RegionTabs from "@/components/RegionTabs";
 import ScheduleEditor from "@/components/ScheduleEditor";
@@ -350,22 +349,10 @@ function Dashboard() {
       <main className="max-w-[1600px] mx-auto px-3 sm:px-5 md:px-7 py-3 md:py-6">
         {view === "dashboard" ? (
           <>
-            <NextDrawCard
-              region={region}
-              latestScraped={latestScraped}
-              onSeeAll={() => setView("prediction")}
-              onRefresh={handleScrape}
-              refreshing={isScraping}
-            />
-            <StatsBar stats={profit} />
-            <TrackingBoard limits={limits} recent={recent} />
-            <TopBoard limits={limits} region={region} onChanged={loadAll} />
-            <StreakCopyCard limits={limits} />
-
-            {/* Money settings sit above the board: you set the tiers, then read
-                the result. They are also per-region, so keeping them adjacent
-                to the region tabs avoids editing the wrong region. */}
-            <section className="plate rise rise-2 mb-4 md:mb-6">
+            {/* The two things touched every session lead: set the money, then
+                copy the bet string. Per-region settings also sit right under
+                the region tabs so the wrong region is hard to edit. */}
+            <section className="plate rise rise-1 mb-4 md:mb-6">
               <ScheduleEditor
                 region={region}
                 onSaved={() => {
@@ -374,6 +361,11 @@ function Dashboard() {
                 }}
               />
             </section>
+            <StreakCopyCard limits={limits} />
+
+            <StatsBar stats={profit} />
+            <TrackingBoard limits={limits} recent={recent} />
+            <TopBoard limits={limits} region={region} onChanged={loadAll} />
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 md:gap-6 items-start">
               <section className="plate rise rise-3">
