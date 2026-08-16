@@ -8,6 +8,14 @@ type Direction = "cold" | "hot";
 
 const SIZES = [5, 10, 15, 20, 25, 30, 50] as const;
 
+/**
+ * Direction and size pickers are hidden at the operator's request — the board
+ * runs on whatever is saved per region and nobody changes it by accident. The
+ * values still live server-side, so flipping this back exposes them again with
+ * the current setting already selected.
+ */
+const SHOW_CONTROLS = false;
+
 interface DailyRow {
   date: string;
   lo_number: string;
@@ -134,24 +142,28 @@ export default function TopBoard({
 
       <div className="p-3 md:p-4 space-y-3">
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            onClick={() => persist({ dir: "cold" })}
-            disabled={saving}
-            className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${
-              dir === "cold" ? "bg-[#2563eb] text-white" : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.18]"
-            }`}
-          >
-            ❄️ Ít ra nhất
-          </button>
-          <button
-            onClick={() => persist({ dir: "hot" })}
-            disabled={saving}
-            className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${
-              dir === "hot" ? "bg-[#e11d48] text-white" : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.18]"
-            }`}
-          >
-            🔥 Nhiều ra nhất
-          </button>
+          {SHOW_CONTROLS && (
+            <>
+              <button
+                onClick={() => persist({ dir: "cold" })}
+                disabled={saving}
+                className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${
+                  dir === "cold" ? "bg-[#2563eb] text-white" : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.18]"
+                }`}
+              >
+                ❄️ Ít ra nhất
+              </button>
+              <button
+                onClick={() => persist({ dir: "hot" })}
+                disabled={saving}
+                className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${
+                  dir === "hot" ? "bg-[#e11d48] text-white" : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.18]"
+                }`}
+              >
+                🔥 Nhiều ra nhất
+              </button>
+            </>
+          )}
           <label className="ml-auto inline-flex items-center gap-2 text-xs text-[#c2d4ea] cursor-pointer select-none">
             <input
               type="checkbox"
@@ -164,22 +176,24 @@ export default function TopBoard({
           </label>
         </div>
 
-        <div className="flex flex-wrap gap-1.5">
-          {SIZES.map((n) => (
-            <button
-              key={n}
-              onClick={() => persist({ size: n })}
-              disabled={saving}
-              className={`min-w-[2.75rem] px-2.5 py-1.5 text-xs font-bold rounded transition-colors numeric ${
-                size === n
-                  ? "bg-[#10b981] text-[#04251a]"
-                  : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.18]"
-              }`}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
+        {SHOW_CONTROLS && (
+          <div className="flex flex-wrap gap-1.5">
+            {SIZES.map((n) => (
+              <button
+                key={n}
+                onClick={() => persist({ size: n })}
+                disabled={saving}
+                className={`min-w-[2.75rem] px-2.5 py-1.5 text-xs font-bold rounded transition-colors numeric ${
+                  size === n
+                    ? "bg-[#10b981] text-[#04251a]"
+                    : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.18]"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        )}
 
         {rows.length === 0 ? (
           <div className="py-8 text-center text-sm text-[var(--text-muted)]">

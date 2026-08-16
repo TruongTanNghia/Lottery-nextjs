@@ -317,6 +317,14 @@ export async function recalculateAllFromHistory(region?: Region): Promise<void> 
 export const RHYTHM_WINDOW_DRAWS = 30;
 export const RHYTHM_MIN_GAPS = 3;
 export const RHYTHM_MAX_CV = 0.5;
+/**
+ * A watched lô must still be RUNNING on its beat — quiet at most this many
+ * draws. Watching for "overdue" instead (quiet ≥ its own average gap) put lô
+ * that had been gone 7-8 draws on the list: those have broken the rhythm, not
+ * come due. It also contradicted a cap on quiet draws, since average gaps run
+ * 2-5 — the two conditions together left the board empty.
+ */
+export const RHYTHM_MAX_QUIET = 2;
 /** A watched lô takes half the money a normal one would. */
 export const TRACKED_LIMIT_FACTOR = 0.5;
 
@@ -442,8 +450,8 @@ async function computeRhythms(
       cv: Math.round(cv * 100) / 100,
       draws_since_last: sinceLast,
       regular,
-      // Due once it has been quiet at least as long as its own usual gap.
-      due: regular && sinceLast >= Math.floor(mean),
+      // On the watchlist while the beat is steady AND still running.
+      due: regular && sinceLast <= RHYTHM_MAX_QUIET,
     });
   }
   return { rhythms: out, recentHits };

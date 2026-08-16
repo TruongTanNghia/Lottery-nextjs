@@ -16,6 +16,9 @@ interface Props {
 
 const WINDOW = 7;
 
+/** Mirrors RHYTHM_MAX_QUIET on the server — shown in the subtitle only. */
+const MAX_QUIET = 2;
+
 export default function TrackingBoard({ limits, recent }: Props) {
   // Last 7 DRAW dates, not calendar days — a missed scrape must not silently
   // shorten the rhythm or shift every lô's pattern by a column.
@@ -31,12 +34,13 @@ export default function TrackingBoard({ limits, recent }: Props) {
 
   const patternOf = (lo: string) => dates.map((d) => (hitBy.get(d)?.has(lo) ? 1 : 0));
 
-  // Only lô whose gaps are steady AND whose beat is due. Listing every cold
-  // number put 75 rows here, which is not a watchlist anyone can act on.
+  // Rhythm lô only — `tracked` also covers the Top-N discount, and folding
+  // those 50 rows in here pushed the table past 55 entries. Top has its own
+  // board; this one answers "which numbers are running on a beat right now".
   const tracking = useMemo(
     () =>
       limits
-        .filter((l) => l.tracked)
+        .filter((l) => l.rhythm?.due)
         .sort(
           (a, b) =>
             (a.rhythm?.cv ?? 1) - (b.rhythm?.cv ?? 1) ||
@@ -55,7 +59,7 @@ export default function TrackingBoard({ limits, recent }: Props) {
           <div>
             <h2 className="plate-title">👁️ Đang Theo Dõi</h2>
             <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-              Nhịp đều &amp; đã tới kỳ — hạn mức đã giảm 50%
+              Nhịp đều &amp; chưa về ≤ {MAX_QUIET} kỳ — hạn mức đã giảm 50%
             </p>
           </div>
           <span className="numeric inline-flex items-center justify-center min-w-7 h-7 px-2 rounded-full text-sm font-bold bg-[rgba(249,115,22,0.18)] border border-[rgba(249,115,22,0.45)] text-[#ffab6b]">
