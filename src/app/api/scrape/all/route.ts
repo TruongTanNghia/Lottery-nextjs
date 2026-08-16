@@ -19,8 +19,11 @@ export async function POST(req: Request) {
     const url = new URL(req.url);
     const days = Math.min(Math.max(parseInt(url.searchParams.get("days") ?? "5"), 1), 30);
     const offset = Math.min(Math.max(parseInt(url.searchParams.get("offset") ?? "0"), 0), 365);
+    // force=1 re-reads the newest day even if it is already stored, so a
+    // province that published late still gets picked up.
+    const force = url.searchParams.get("force") === "1";
 
-    const counts = await scrapeAllRegionsRange(days, 600, offset);
+    const counts = await scrapeAllRegionsRange(days, 600, offset, force);
 
     // Maintain rolling 180-day window (skip when backfilling old data)
     const skipCleanup = url.searchParams.get("skip_cleanup") === "1" || offset > 0;

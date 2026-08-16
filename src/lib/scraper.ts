@@ -19,6 +19,11 @@ import {
 
 const XSMN_BASE = "https://xsmn.mobi";
 
+/** Prize numbers actually parsed, across every province on the page. */
+function countNumbers(results: Record<string, { prize_type: string; number: string }[]>): number {
+  return Object.values(results).reduce((s, v) => s + v.length, 0);
+}
+
 const HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -181,7 +186,11 @@ async function scrapeXsmnDay(date: Date, force: boolean = false): Promise<Record
     const total = Object.values(results).reduce((s, v) => s + v.length, 0);
     console.log(`[XSMN] ${dateStr}: ${Object.keys(results).length} provinces, ${total} numbers`);
   }
-  return results;
+  // Return null, and decide on NUMBERS rather than province keys. Callers treat
+  // a truthy return as "a day was scraped"; an empty object is truthy, and a
+  // page for a draw that has not happened yet still lists the province names
+  // with no numbers under them. Both made an unpublished draw look fetched.
+  return countNumbers(results) > 0 ? results : null;
 }
 
 // ─────────────────────────────────────────────
@@ -278,7 +287,7 @@ async function scrapeXsmbDay(date: Date, force: boolean = false): Promise<Record
     // Surface parser failure in Vercel logs — caller may still think scrape succeeded otherwise.
     console.warn(`[XSMB] ${dateStr}: parser returned 0 numbers. HTML len=${html.length}, first 200 chars: ${html.slice(0, 200)}`);
   }
-  return results;
+  return countNumbers(results) > 0 ? results : null;
 }
 
 // ─────────────────────────────────────────────
@@ -397,7 +406,7 @@ async function scrapeXsmtDay(date: Date, force: boolean = false): Promise<Record
     const total = Object.values(results).reduce((s, v) => s + v.length, 0);
     console.log(`[XSMT] ${dateStr}: ${Object.keys(results).length} provinces, ${total} numbers`);
   }
-  return results;
+  return countNumbers(results) > 0 ? results : null;
 }
 
 // ─────────────────────────────────────────────
@@ -439,12 +448,19 @@ export async function scrapeRange(
   start: Date,
   end: Date,
   region: Region,
-  delayMs: number = 600
+  delayMs: number = 600,
+  forceLast: boolean = false
 ): Promise<number> {
   let count = 0;
   const cur = new Date(start);
   while (cur <= end) {
-    const r = await scrapeDay(new Date(cur), region);
+    // Only the newest day is ever re-fetched. Provinces publish hours apart,
+    // so a day scraped early holds just the results that were out then — and
+    // the scraped_dates row it wrote makes every later attempt skip it. Force
+    // wipes that day and re-reads it, which is the only way a late province
+    // ever lands.
+    const isLast = cur.getTime() === end.getTime();
+    const r = await scrapeDay(new Date(cur), region, forceLast && isLast);
     if (r) count++;
     cur.setUTCDate(cur.getUTCDate() + 1);
     if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
@@ -456,7 +472,8 @@ export async function scrapeLastNDays(
   n: number,
   region: Region,
   delayMs: number = 600,
-  offsetDays: number = 0
+  offsetDays: number = 0,
+  forceLatest: boolean = false
 ): Promise<number> {
   // Ends at TODAY. It used to end at yesterday, which left the app permanently
   // one draw behind: the 19:00 cron only re-checked days already stored, and
@@ -465,7 +482,7 @@ export async function scrapeLastNDays(
   const end = vnDay(offsetDays);
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - (n - 1));
-  return scrapeRange(start, end, region, delayMs);
+  return scrapeRange(start, end, region, delayMs, forceLatest);
 }
 
 export async function scrapeToday(region: Region): Promise<unknown> {
@@ -475,13 +492,14 @@ export async function scrapeToday(region: Region): Promise<unknown> {
 export async function scrapeAllRegionsRange(
   n: number = 5,
   delayMs: number = 600,
-  offsetDays: number = 0
+  offsetDays: number = 0,
+  forceLatest: boolean = false
 ): Promise<Record<Region, number>> {
   // Run all 3 regions in parallel (different domains so no rate-limit conflict)
   const results = await Promise.all(
     VALID_REGIONS.map(async (region) => {
       console.log(`=== Scraping ${region.toUpperCase()} (${n} days, offset ${offsetDays}) ===`);
-      return scrapeLastNDays(n, region, delayMs, offsetDays);
+      return scrapeLastNDays(n, region, delayMs, offsetDays, forceLatest);
     })
   );
   return Object.fromEntries(VALID_REGIONS.map((r, i) => [r, results[i]])) as Record<Region, number>;

@@ -253,16 +253,15 @@ function Dashboard() {
     if (isQuickUpdating || isScraping) return;
     setIsQuickUpdating(true);
     try {
-      const res = await fetch("/api/scrape/all?days=2", { method: "POST" });
+      // force=1: the newest day is re-read even when already stored. Provinces
+      // publish hours apart, so pressing this at 17:00 and again at 20:00 must
+      // pick up whatever came out in between.
+      const res = await fetch("/api/scrape/all?days=2&force=1", { method: "POST" });
       if (!res.ok) {
         toast.show("error", `Không lấy được KQ (HTTP ${res.status})`);
         return;
       }
-      const body = await res.json();
-      const added = Object.values(body.counts ?? {}).reduce(
-        (s: number, n) => s + (n as number),
-        0
-      );
+      await res.json();
 
       const recalcRes = await fetch("/api/recalculate", { method: "POST" });
       if (!recalcRes.ok) {
@@ -271,11 +270,17 @@ function Dashboard() {
       }
 
       await loadAll();
+
+      // Report the draw actually on the board, not a count of "new" days —
+      // a forced re-read always reports 1 and told the user nothing.
+      const st = await fetch("/api/scrape/status").then((r) => r.json());
+      const latest = st?.by_region?.[region]?.latest;
+      const todayVN = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
       toast.show(
-        "success",
-        added > 0
-          ? `Đã cập nhật ${added} kỳ mới + tính lại hạn mức`
-          : "Chưa có kỳ mới — hạn mức đã tính lại"
+        latest === todayVN ? "success" : "info",
+        latest === todayVN
+          ? `Đã có KQ hôm nay (${latest.slice(8, 10)}/${latest.slice(5, 7)}) — hạn mức đã tính lại`
+          : `KQ mới nhất vẫn là ${latest?.slice(8, 10)}/${latest?.slice(5, 7)} — chưa xổ hoặc chưa công bố`
       );
     } catch (err) {
       toast.show("error", `Lỗi: ${err instanceof Error ? err.message : String(err)}`);
