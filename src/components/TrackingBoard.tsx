@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
-import type { LimitItem } from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
+import { useToast } from "./Toast";
+import type { LimitItem, Region } from "@/lib/types";
 
 interface DailyRow {
   date: string;
@@ -12,6 +13,8 @@ interface DailyRow {
 interface Props {
   limits: LimitItem[];
   recent: DailyRow[];
+  region: Region;
+  onChanged: () => void;
 }
 
 const WINDOW = 7;
@@ -19,7 +22,44 @@ const WINDOW = 7;
 /** Mirrors RHYTHM_MAX_QUIET on the server — shown in the subtitle only. */
 const MAX_QUIET = 2;
 
-export default function TrackingBoard({ limits, recent }: Props) {
+export default function TrackingBoard({ limits, recent, region, onChanged }: Props) {
+  const toast = useToast();
+  const [enabled, setEnabled] = useState(true);
+  const [halve, setHalve] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // Both switches drive real limits, so they live on the server per region.
+  useEffect(() => {
+    fetch(`/api/config/watch?region=${region}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.data) return;
+        setEnabled(d.data.enabled);
+        setHalve(d.data.halve);
+      })
+      .catch(() => void 0);
+  }, [region]);
+
+  async function persist(next: { enabled?: boolean; halve?: boolean }) {
+    const cfg = { enabled, halve, ...next };
+    setEnabled(cfg.enabled);
+    setHalve(cfg.halve);
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/config/watch?region=${region}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cfg),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      onChanged(); // limits may have changed
+    } catch (err) {
+      toast.show("error", `Lỗi lưu: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // Last 7 DRAW dates, not calendar days — a missed scrape must not silently
   // shorten the rhythm or shift every lô's pattern by a column.
   const { dates, hitBy } = useMemo(() => {
@@ -40,7 +80,7 @@ export default function TrackingBoard({ limits, recent }: Props) {
   const tracking = useMemo(
     () =>
       limits
-        .filter((l) => l.rhythm?.due)
+        .filter((l) => l.in_watch)
         .sort(
           (a, b) =>
             (a.rhythm?.cv ?? 1) - (b.rhythm?.cv ?? 1) ||
@@ -59,22 +99,84 @@ export default function TrackingBoard({ limits, recent }: Props) {
           <div>
             <h2 className="plate-title">👁️ Đang Theo Dõi</h2>
             <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-              Nhịp đều &amp; chưa về ≤ {MAX_QUIET} kỳ — hạn mức đã giảm 50%
+              Nhịp đều &amp; chưa về ≤ {MAX_QUIET} kỳ
+              {enabled ? (halve ? " — hạn mức đã giảm 50%" : " — không giảm hạn mức") : " — đang tắt"}
             </p>
           </div>
           <span className="numeric inline-flex items-center justify-center min-w-7 h-7 px-2 rounded-full text-sm font-bold bg-[rgba(249,115,22,0.18)] border border-[rgba(249,115,22,0.45)] text-[#ffab6b]">
             {tracking.length}
           </span>
         </div>
-        <Table
-          rows={tracking}
-          dayLabels={dayLabels}
-          patternOf={patternOf}
-          empty="Chưa có lô nào vào nhịp — không cần theo dõi kỳ này"
-        />
+
+        {/* Two independent switches: watch the beat, and cut the money. */}
+        <div className="flex flex-wrap items-center gap-2 px-3 md:px-4 pt-3">
+          <Switch
+            label="Theo dõi"
+            on={enabled}
+            disabled={saving}
+            onToggle={() => persist({ enabled: !enabled })}
+          />
+          <Switch
+            label="Chia đôi tiền"
+            on={halve}
+            disabled={saving || !enabled}
+            onToggle={() => persist({ halve: !halve })}
+          />
+        </div>
+
+        {enabled ? (
+          <Table
+            rows={tracking}
+            dayLabels={dayLabels}
+            patternOf={patternOf}
+            empty="Chưa có lô nào vào nhịp — không cần theo dõi kỳ này"
+          />
+        ) : (
+          <div className="py-10 text-center text-sm text-[var(--text-muted)]">
+            Đang tắt theo dõi — hạn mức giữ nguyên theo bảng cài tiền
+          </div>
+        )}
       </section>
 
     </div>
+  );
+}
+
+/** Labelled ON/OFF pill — reads at a glance which state it is in. */
+function Switch({
+  label,
+  on,
+  disabled,
+  onToggle,
+}: {
+  label: string;
+  on: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      disabled={disabled}
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+        on
+          ? "bg-[rgba(16,185,129,0.18)] border-[rgba(16,185,129,0.55)] text-[#4ade9f]"
+          : "bg-white/[0.06] border-[var(--hairline)] text-[var(--text-muted)]"
+      }`}
+    >
+      <span
+        className={`w-8 h-4 rounded-full relative transition-colors ${
+          on ? "bg-[#10b981]" : "bg-[#3a4a63]"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${
+            on ? "left-[1.15rem]" : "left-0.5"
+          }`}
+        />
+      </span>
+      {label}: {on ? "BẬT" : "TẮT"}
+    </button>
   );
 }
 

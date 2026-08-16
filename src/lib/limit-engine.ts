@@ -368,6 +368,36 @@ export async function loadTopConfig(region: Region): Promise<TopConfig> {
   }
 }
 
+// ── Rhythm watchlist switches ────────────────────────────────
+// Two independent toggles, per region: whether the beat watchlist runs at all,
+// and whether being on it halves the limit. Kept apart so the board can be
+// used purely to look at without touching money.
+export interface WatchConfig {
+  enabled: boolean;
+  halve: boolean;
+}
+
+const DEFAULT_WATCH: WatchConfig = { enabled: true, halve: true };
+const watchKey = (region: Region) => `watch:${region}`;
+
+export async function loadWatchConfig(region: Region): Promise<WatchConfig> {
+  const raw = await getConfigValue(watchKey(region));
+  if (!raw) return DEFAULT_WATCH;
+  try {
+    const p = JSON.parse(raw);
+    return { enabled: p.enabled !== false, halve: p.halve !== false };
+  } catch {
+    return DEFAULT_WATCH;
+  }
+}
+
+export async function saveWatchConfig(region: Region, cfg: WatchConfig): Promise<void> {
+  await setConfigValue(
+    watchKey(region),
+    JSON.stringify({ enabled: cfg.enabled !== false, halve: cfg.halve !== false })
+  );
+}
+
 export async function saveTopConfig(region: Region, cfg: TopConfig): Promise<void> {
   await setConfigValue(
     topKey(region),
@@ -465,8 +495,9 @@ export interface LimitSummaryItem extends LoStatus {
   bet_cost_vnd: number;
   win_per_hit_vnd: number;
   rhythm: Rhythm;
-  /** On a watchlist (steady beat and due, or inside Top-N) → limit halved. */
+  /** On either watchlist. Halving is a separate switch. */
   tracked: boolean;
+  in_watch: boolean;
   in_top: boolean;
   /** Hits over the short Top-N window. */
   recent_hits: number;
@@ -505,6 +536,7 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
   const schedule = await loadSchedule(region);
   const { rhythms, recentHits } = await computeRhythms(region);
   const topCfg = await loadTopConfig(region);
+  const watchCfg = await loadWatchConfig(region);
 
   // Rank exactly like the Top board does, so the two never disagree. Ties are
   // broken by how long the lô has been quiet, then by number.
@@ -539,13 +571,15 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
     const consec = status.consecutive_days;
     const scheduled = calculateEffectiveLimit(days, consec, schedule);
 
-    // Watchlist discount is applied last, on top of the schedule and the
-    // consecutive cap, so it always reads as exactly half of the cell above it.
-    // A lô on BOTH lists is still halved once — never quartered.
+    // Discount is applied last, on top of the schedule and the consecutive cap,
+    // so it always reads as exactly half of the cell above it. A lô on BOTH
+    // lists is still halved once — never quartered.
     const rhythm = rhythms.get(status.lo_number) ?? EMPTY_RHYTHM;
-    const inTop = topSet.has(status.lo_number);
-    const tracked = rhythm.due || inTop;
-    const liveLimit = tracked ? Math.round(scheduled * TRACKED_LIMIT_FACTOR) : scheduled;
+    const inWatch = watchCfg.enabled && rhythm.due;
+    const inTop = topSet.has(status.lo_number);   // already gated by topCfg.enabled
+    const tracked = inWatch || inTop;
+    const halve = (inWatch && watchCfg.halve) || inTop;
+    const liveLimit = halve ? Math.round(scheduled * TRACKED_LIMIT_FACTOR) : scheduled;
 
     return {
       ...status,
@@ -559,6 +593,7 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
       win_per_hit_vnd: getWinAmount(liveLimit, 1),
       rhythm,
       tracked,
+      in_watch: inWatch,
       in_top: inTop,
       recent_hits: recentHits.get(status.lo_number) ?? 0,
       limit_before_tracking: scheduled,

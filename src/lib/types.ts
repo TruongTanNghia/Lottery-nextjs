@@ -34,8 +34,9 @@ export interface LimitItem {
   bet_cost_vnd: number;
   win_per_hit_vnd: number;
   rhythm?: Rhythm;
-  /** On a watchlist (rhythm due, or inside Top-N) → limit already halved. */
+  /** On either watchlist. Halving is a separate switch. */
   tracked?: boolean;
+  in_watch?: boolean;
   in_top?: boolean;
   /** Hits over the short Top-N window. */
   recent_hits?: number;
@@ -46,6 +47,11 @@ export interface TopConfig {
   size: number;
   dir: "cold" | "hot";
   enabled: boolean;
+}
+
+export interface WatchConfig {
+  enabled: boolean;
+  halve: boolean;
 }
 
 export interface ConfigPayload {
