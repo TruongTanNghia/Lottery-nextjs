@@ -398,6 +398,51 @@ export async function saveWatchConfig(region: Region, cfg: WatchConfig): Promise
   );
 }
 
+// ── Manual watchlist ─────────────────────────────────────────
+// Numbers the operator types in by hand. Same halving as the automatic lists,
+// but chosen by eye rather than by rhythm — there is no rule that catches
+// everything they notice.
+export interface ManualConfig {
+  los: string[];
+  halve: boolean;
+}
+
+const DEFAULT_MANUAL: ManualConfig = { los: [], halve: true };
+const manualKey = (region: Region) => `manual:${region}`;
+
+/** Accepts "12 34", "12,34", "1 2" — anything digit-separated. */
+export function parseLoList(input: string): string[] {
+  const seen = new Set<string>();
+  for (const raw of input.split(/[^0-9]+/)) {
+    if (!raw) continue;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0 || n > 99) continue;
+    seen.add(String(n).padStart(2, "0"));
+  }
+  return [...seen].sort();
+}
+
+export async function loadManualConfig(region: Region): Promise<ManualConfig> {
+  const raw = await getConfigValue(manualKey(region));
+  if (!raw) return DEFAULT_MANUAL;
+  try {
+    const p = JSON.parse(raw);
+    return {
+      los: Array.isArray(p.los) ? parseLoList(p.los.join(" ")) : [],
+      halve: p.halve !== false,
+    };
+  } catch {
+    return DEFAULT_MANUAL;
+  }
+}
+
+export async function saveManualConfig(region: Region, cfg: ManualConfig): Promise<void> {
+  await setConfigValue(
+    manualKey(region),
+    JSON.stringify({ los: parseLoList(cfg.los.join(" ")), halve: cfg.halve !== false })
+  );
+}
+
 export async function saveTopConfig(region: Region, cfg: TopConfig): Promise<void> {
   await setConfigValue(
     topKey(region),
@@ -499,6 +544,7 @@ export interface LimitSummaryItem extends LoStatus {
   tracked: boolean;
   in_watch: boolean;
   in_top: boolean;
+  in_manual: boolean;
   /** Hits over the short Top-N window. */
   recent_hits: number;
   /** What the limit would be without the watchlist discount. */
@@ -537,6 +583,8 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
   const { rhythms, recentHits } = await computeRhythms(region);
   const topCfg = await loadTopConfig(region);
   const watchCfg = await loadWatchConfig(region);
+  const manualCfg = await loadManualConfig(region);
+  const manualSet = new Set(manualCfg.los);
 
   // Rank exactly like the Top board does, so the two never disagree. Ties are
   // broken by how long the lô has been quiet, then by number.
@@ -577,8 +625,10 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
     const rhythm = rhythms.get(status.lo_number) ?? EMPTY_RHYTHM;
     const inWatch = watchCfg.enabled && rhythm.due;
     const inTop = topSet.has(status.lo_number);   // already gated by topCfg.enabled
-    const tracked = inWatch || inTop;
-    const halve = (inWatch && watchCfg.halve) || inTop;
+    const inManual = manualSet.has(status.lo_number);
+    const tracked = inWatch || inTop || inManual;
+    const halve =
+      (inWatch && watchCfg.halve) || inTop || (inManual && manualCfg.halve);
     const liveLimit = halve ? Math.round(scheduled * TRACKED_LIMIT_FACTOR) : scheduled;
 
     return {
@@ -595,6 +645,7 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
       tracked,
       in_watch: inWatch,
       in_top: inTop,
+      in_manual: inManual,
       recent_hits: recentHits.get(status.lo_number) ?? 0,
       limit_before_tracking: scheduled,
     };

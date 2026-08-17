@@ -38,6 +38,7 @@ export interface LimitItem {
   tracked?: boolean;
   in_watch?: boolean;
   in_top?: boolean;
+  in_manual?: boolean;
   /** Hits over the short Top-N window. */
   recent_hits?: number;
   limit_before_tracking?: number;

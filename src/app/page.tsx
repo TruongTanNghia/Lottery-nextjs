@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "@/components/Header";
 import LoDetailModal from "@/components/LoDetailModal";
 import LoGrid from "@/components/LoGrid";
-import ProfitChart from "@/components/ProfitChart";
+import ManualWatchCard from "@/components/ManualWatchCard";
 import RegionTabs from "@/components/RegionTabs";
 import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
@@ -54,8 +54,6 @@ function Dashboard() {
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
   const [profit, setProfit] = useState<ProfitStats | null>(null);
-  const [chartData, setChartData] = useState<ChartData | null>(null);
-  const [chartDays, setChartDays] = useState(7);
   const [consecutive, setConsecutive] = useState<{ lo_number: string; consecutive_days: number; current_limit: number }[]>([]);
   const [recent, setRecent] = useState<{ date: string; lo_number: string; count: number }[]>([]);
   const [scrapedDays, setScrapedDays] = useState<number | null>(null);
@@ -80,10 +78,12 @@ function Dashboard() {
     setStatus("loading");
     setStatusText(`Đang tải ${REGION_LABELS[region]}...`);
     try {
-      const [limitsRes, profitRes, chartRes, consecRes, recentRes, statusRes] = await Promise.allSettled([
+      // Chart data is no longer fetched — the chart was replaced by the manual
+      // watchlist, and that endpoint replayed profit for every day in the range
+      // on each dashboard load.
+      const [limitsRes, profitRes, consecRes, recentRes, statusRes] = await Promise.allSettled([
         fetch(`/api/limits?region=${region}`).then((r) => r.json()),
         fetch(`/api/stats/profit?region=${region}&days=30`).then((r) => r.json()),
-        fetch(`/api/stats/profit/chart?region=${region}&days=${chartDays}`).then((r) => r.json()),
         fetch(`/api/consecutive?region=${region}`).then((r) => r.json()),
         // 10 calendar days so the last 7 DRAW dates are always covered even if
         // a scrape was missed or a region skipped a day.
@@ -96,7 +96,6 @@ function Dashboard() {
         setConfig(limitsRes.value.config ?? null);
       }
       if (profitRes.status === "fulfilled") setProfit(profitRes.value.data ?? null);
-      if (chartRes.status === "fulfilled") setChartData(chartRes.value.data ?? null);
       if (consecRes.status === "fulfilled") setConsecutive(consecRes.value.data ?? []);
       if (recentRes.status === "fulfilled") setRecent(recentRes.value.data ?? []);
       if (statusRes.status === "fulfilled") {
@@ -120,7 +119,7 @@ function Dashboard() {
       setStatus("error");
       setStatusText("Lỗi kết nối");
     }
-  }, [region, chartDays]);
+  }, [region]);
 
   useEffect(() => {
     loadAll();
@@ -439,9 +438,12 @@ function Dashboard() {
                   </div>
                 </section>
 
-                <section className="plate rise rise-4">
-                  <ProfitChart data={chartData} days={chartDays} onDaysChange={setChartDays} />
-                </section>
+                <ManualWatchCard
+                  limits={limits}
+                  recent={recent}
+                  region={region}
+                  onChanged={loadAll}
+                />
 
                 <section className="plate rise rise-4">
                   <div className="plate-hd">
