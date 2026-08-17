@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import LoDetailModal from "@/components/LoDetailModal";
 import LoGrid from "@/components/LoGrid";
 import ManualWatchCard from "@/components/ManualWatchCard";
+import PairBoard from "@/components/PairBoard";
 import RegionTabs from "@/components/RegionTabs";
 import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
@@ -405,6 +406,7 @@ function Dashboard() {
               onChanged={loadAll}
             />
             <TopBoard limits={limits} recent={recent} region={region} onChanged={loadAll} />
+            <PairBoard limits={limits} region={region} onChanged={loadAll} />
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 md:gap-6 items-start">
               <section className="plate rise rise-3">

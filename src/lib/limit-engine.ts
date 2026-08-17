@@ -471,6 +471,38 @@ export async function saveManualConfig(region: Region, cfg: ManualConfig): Promi
   );
 }
 
+// ── Mirror pairs ─────────────────────────────────────────────
+// 15↔51, 07↔70. Punters routinely back both halves of a pair in one go, so
+// when the two carry the same price the exposure taken on that single decision
+// is doubled — halving each brings it back to one number's worth.
+//
+// Doubles (00, 11, …) mirror to themselves and are not a pair, so they are
+// skipped. Comparison uses the SCHEDULED limit (schedule + consecutive cap,
+// before any watchlist discount) so the pairing does not depend on which
+// discount happened to run first.
+export interface PairConfig {
+  enabled: boolean;
+}
+
+const DEFAULT_PAIR: PairConfig = { enabled: true };
+const pairKey = (region: Region) => `pair:${region}`;
+
+export const mirrorOf = (lo: string) => lo[1] + lo[0];
+
+export async function loadPairConfig(region: Region): Promise<PairConfig> {
+  const raw = await getConfigValue(pairKey(region));
+  if (!raw) return DEFAULT_PAIR;
+  try {
+    return { enabled: JSON.parse(raw).enabled !== false };
+  } catch {
+    return DEFAULT_PAIR;
+  }
+}
+
+export async function savePairConfig(region: Region, cfg: PairConfig): Promise<void> {
+  await setConfigValue(pairKey(region), JSON.stringify({ enabled: cfg.enabled !== false }));
+}
+
 export async function saveTopConfig(region: Region, cfg: TopConfig): Promise<void> {
   await setConfigValue(
     topKey(region),
@@ -577,6 +609,10 @@ export interface LimitSummaryItem extends LoStatus {
   in_watch: boolean;
   in_top: boolean;
   in_manual: boolean;
+  /** Mirror carries the same scheduled limit → both halved. */
+  in_pair: boolean;
+  /** The mirror number, when in_pair. */
+  pair_with: string | null;
   /** Hits over the short Top-N window. */
   recent_hits: number;
   /** What the limit would be without the watchlist discount. */
@@ -617,6 +653,33 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
   const { rhythms, recentHits } = await computeRhythms(region, watchCfg);
   const manualCfg = await loadManualConfig(region);
   const manualSet = new Set(manualCfg.los);
+  const pairCfg = await loadPairConfig(region);
+
+  // Scheduled price of every lô, needed up front so mirrors can be compared
+  // before any discount is applied.
+  const scheduledOf = new Map<string, number>();
+  const daysOf = new Map<string, number>();
+  for (const s of allStatus) {
+    const days = s.last_appeared_date
+      ? Math.max(
+          0,
+          Math.floor(
+            (anchorDt.getTime() - new Date(s.last_appeared_date + "T00:00:00").getTime()) / 86_400_000
+          )
+        )
+      : APPEARANCE_WINDOW_DAYS;
+    daysOf.set(s.lo_number, days);
+    scheduledOf.set(s.lo_number, calculateEffectiveLimit(days, s.consecutive_days, schedule));
+  }
+
+  const pairSet = new Set<string>();
+  if (pairCfg.enabled) {
+    for (const [lo, price] of scheduledOf) {
+      const mi = mirrorOf(lo);
+      if (mi === lo) continue;                       // 00, 11, … are not pairs
+      if (scheduledOf.get(mi) === price) pairSet.add(lo);
+    }
+  }
 
   // Rank exactly like the Top board does, so the two never disagree. Ties are
   // broken by how long the lô has been quiet, then by number.
@@ -639,28 +702,23 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
   }
 
   return allStatus.map((status) => {
-    const lastDate = status.last_appeared_date;
-    let days: number;
-    if (lastDate) {
-      const diffMs = anchorDt.getTime() - new Date(lastDate + "T00:00:00").getTime();
-      days = Math.max(0, Math.floor(diffMs / 86_400_000));
-    } else {
-      days = APPEARANCE_WINDOW_DAYS;
-    }
-
+    const days = daysOf.get(status.lo_number)!;
     const consec = status.consecutive_days;
-    const scheduled = calculateEffectiveLimit(days, consec, schedule);
+    const scheduled = scheduledOf.get(status.lo_number)!;
 
     // Discount is applied last, on top of the schedule and the consecutive cap,
-    // so it always reads as exactly half of the cell above it. A lô on BOTH
-    // lists is still halved once — never quartered.
+    // so it always reads as exactly half of the cell above it. A lô caught by
+    // SEVERAL rules is still halved once — never quartered.
     const rhythm = rhythms.get(status.lo_number) ?? EMPTY_RHYTHM;
     const inWatch = watchCfg.enabled && rhythm.due;
     const inTop = topSet.has(status.lo_number);   // already gated by topCfg.enabled
     const inManual = manualSet.has(status.lo_number);
-    const tracked = inWatch || inTop || inManual;
+    const inPair = pairSet.has(status.lo_number);
+    const tracked = inWatch || inTop || inManual || inPair;
     const halve =
-      (inWatch && watchCfg.halve) || inTop || (inManual && manualCfg.halve);
+      (inWatch && watchCfg.halve) || inTop || (inManual && manualCfg.halve) || inPair;
+    // No floor clamp: the operator's own example takes 10n down to 5n, and 10n
+    // is that region's minimum.
     const liveLimit = halve ? Math.round(scheduled * TRACKED_LIMIT_FACTOR) : scheduled;
 
     return {
@@ -678,6 +736,8 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
       in_watch: inWatch,
       in_top: inTop,
       in_manual: inManual,
+      in_pair: inPair,
+      pair_with: inPair ? mirrorOf(status.lo_number) : null,
       recent_hits: recentHits.get(status.lo_number) ?? 0,
       limit_before_tracking: scheduled,
     };
