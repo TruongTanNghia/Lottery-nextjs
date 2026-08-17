@@ -85,9 +85,9 @@ function Dashboard() {
         fetch(`/api/limits?region=${region}`).then((r) => r.json()),
         fetch(`/api/stats/profit?region=${region}&days=30`).then((r) => r.json()),
         fetch(`/api/consecutive?region=${region}`).then((r) => r.json()),
-        // 10 calendar days so the last 7 DRAW dates are always covered even if
+        // 22 calendar days so the last 15 DRAW dates are always covered even if
         // a scrape was missed or a region skipped a day.
-        fetch(`/api/results/lo-daily?region=${region}&days=10`).then((r) => r.json()),
+        fetch(`/api/results/lo-daily?region=${region}&days=22`).then((r) => r.json()),
         fetch(`/api/scrape/status`).then((r) => r.json()),
       ]);
 

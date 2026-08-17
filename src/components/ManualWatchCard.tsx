@@ -17,7 +17,7 @@ interface Props {
   onChanged: () => void;
 }
 
-const WINDOW = 7;
+const WINDOW = 15;
 
 export default function ManualWatchCard({ limits, recent, region, onChanged }: Props) {
   const toast = useToast();
@@ -150,9 +150,9 @@ export default function ManualWatchCard({ limits, recent, region, onChanged }: P
                   <th className="px-2 py-2 text-left font-bold">Lô</th>
                   <th className="px-2 py-2 text-center font-bold">
                     Nhịp {dates.length} kỳ
-                    <div className="hidden sm:flex justify-center gap-[3px] mt-1 font-normal normal-case tracking-normal text-[0.5rem]">
+                    <div className="hidden sm:flex justify-center gap-[2px] mt-1 font-normal normal-case tracking-normal text-[0.5rem]">
                       {dates.map((d) => (
-                        <span key={d} className="w-5 text-center">
+                        <span key={d} className="w-3.5 md:w-4 text-center">
                           {d.slice(8, 10)}
                         </span>
                       ))}
@@ -170,14 +170,14 @@ export default function ManualWatchCard({ limits, recent, region, onChanged }: P
                       <span className="numeric text-base font-bold text-white">{lo}</span>
                     </td>
                     <td className="px-2 py-2">
-                      <div className="flex justify-center gap-[3px]">
+                      <div className="flex justify-center gap-[2px]">
                         {dates.map((d) => {
                           const hit = hitBy.get(d)?.has(lo);
                           return (
                             <span
                               key={d}
                               title={`${d.slice(8, 10)}/${d.slice(5, 7)} — ${hit ? "về" : "không về"}`}
-                              className={`w-5 h-5 rounded-[3px] ${
+                              className={`w-3.5 h-3.5 md:w-4 md:h-4 rounded-[2px] ${
                                 hit
                                   ? "bg-[#10b981] shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]"
                                   : "bg-[#0e1a2e] border border-[rgba(150,185,235,0.18)]"

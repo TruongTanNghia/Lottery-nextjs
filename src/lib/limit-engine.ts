@@ -314,9 +314,19 @@ export async function recalculateAllFromHistory(region?: Region): Promise<void> 
 // coefficient of variation (sd / mean). Tuned on 180 days of real data: ≥3 gaps
 // with CV ≤ 0.5 leaves ~5-13 lô per region, which is a watchlist a person can
 // actually act on. Looser settings return half the board.
-export const RHYTHM_WINDOW_DRAWS = 30;
+/**
+ * Must match the strip drawn on the board. It used to be 30 while only 7
+ * squares were shown, so a lô labelled "~8.7 kỳ" appeared as a single mark in
+ * seven — the figure was right but unverifiable, and read as broken. A shorter
+ * window also drops lô whose "rhythm" only exists because the window was long
+ * enough to average two distant hits.
+ */
+export const RHYTHM_WINDOW_DRAWS = 15;
 export const RHYTHM_MIN_GAPS = 3;
-export const RHYTHM_MAX_CV = 0.5;
+// Tightened from 0.5 when the window shrank to 15. Fewer gaps means a lower
+// spread by chance, so the old threshold let 47 lô through in one region —
+// back to a list too long to act on. 0.35 leaves 18/6/6.
+export const RHYTHM_MAX_CV = 0.35;
 /**
  * A watched lô must still be RUNNING on its beat — quiet at most this many
  * draws. Watching for "overdue" instead (quiet ≥ its own average gap) put lô

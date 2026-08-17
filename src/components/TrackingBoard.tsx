@@ -17,7 +17,9 @@ interface Props {
   onChanged: () => void;
 }
 
-const WINDOW = 7;
+/** Must equal RHYTHM_WINDOW_DRAWS — the squares are the evidence for the
+ *  "Nhịp ~X kỳ" figure, so they have to cover the same draws it averages. */
+const WINDOW = 15;
 
 /** Mirrors RHYTHM_MAX_QUIET on the server — shown in the subtitle only. */
 const MAX_QUIET = 2;
@@ -60,8 +62,8 @@ export default function TrackingBoard({ limits, recent, region, onChanged }: Pro
     }
   }
 
-  // Last 7 DRAW dates, not calendar days — a missed scrape must not silently
-  // shorten the rhythm or shift every lô's pattern by a column.
+  // Last WINDOW DRAW dates, not calendar days — a missed scrape must not
+  // silently shorten the rhythm or shift every lô's pattern by a column.
   const { dates, hitBy } = useMemo(() => {
     const byDate = new Map<string, Set<string>>();
     for (const r of recent) {
@@ -203,9 +205,9 @@ function Table({
             <th className="px-3 py-2 text-left font-bold">Lô</th>
             <th className="px-2 py-2 text-center font-bold">
               Nhịp {dayLabels.length} kỳ
-              <div className="hidden sm:flex justify-center gap-[3px] mt-1 font-normal normal-case tracking-normal text-[0.5rem]">
+              <div className="hidden sm:flex justify-center gap-[2px] mt-1 font-normal normal-case tracking-normal text-[0.5rem]">
                 {dayLabels.map((d) => (
-                  <span key={d} className="w-5 text-center">
+                  <span key={d} className="w-3.5 md:w-4 text-center">
                     {d.slice(0, 2)}
                   </span>
                 ))}
@@ -228,12 +230,12 @@ function Table({
                   <span className="numeric text-base font-bold text-white">{l.lo_number}</span>
                 </td>
                 <td className="px-2 py-2">
-                  <div className="flex justify-center gap-[3px]">
+                  <div className="flex justify-center gap-[2px]">
                     {pat.map((v, i) => (
                       <span
                         key={i}
                         title={v ? "về" : "không về"}
-                        className={`w-5 h-5 rounded-[3px] ${
+                        className={`w-3.5 h-3.5 md:w-4 md:h-4 rounded-[2px] ${
                           v
                             ? "bg-[#10b981] shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]"
                             : "bg-[#0e1a2e] border border-[rgba(150,185,235,0.18)]"
