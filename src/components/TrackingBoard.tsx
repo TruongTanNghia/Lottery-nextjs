@@ -24,10 +24,23 @@ const WINDOW = 15;
 /** Mirrors RHYTHM_MAX_QUIET on the server — shown in the subtitle only. */
 const MAX_QUIET = 2;
 
+/** Tempo bands the operator picks from, in draws between appearances. */
+const GAP_RANGES: Array<{ label: string; min: number; max: number }> = [
+  { label: "1–2", min: 1, max: 2 },
+  { label: "1–3", min: 1, max: 3 },
+  { label: "1–4", min: 1, max: 4 },
+  { label: "2–4", min: 2, max: 4 },
+  { label: "2–5", min: 2, max: 5 },
+  { label: "3–6", min: 3, max: 6 },
+  { label: "Tất cả", min: 1, max: 15 },
+];
+
 export default function TrackingBoard({ limits, recent, region, onChanged }: Props) {
   const toast = useToast();
   const [enabled, setEnabled] = useState(true);
   const [halve, setHalve] = useState(true);
+  const [minGap, setMinGap] = useState(1);
+  const [maxGap, setMaxGap] = useState(3);
   const [saving, setSaving] = useState(false);
 
   // Both switches drive real limits, so they live on the server per region.
@@ -38,14 +51,23 @@ export default function TrackingBoard({ limits, recent, region, onChanged }: Pro
         if (!d.data) return;
         setEnabled(d.data.enabled);
         setHalve(d.data.halve);
+        setMinGap(d.data.min_gap);
+        setMaxGap(d.data.max_gap);
       })
       .catch(() => void 0);
   }, [region]);
 
-  async function persist(next: { enabled?: boolean; halve?: boolean }) {
-    const cfg = { enabled, halve, ...next };
+  async function persist(next: {
+    enabled?: boolean;
+    halve?: boolean;
+    min_gap?: number;
+    max_gap?: number;
+  }) {
+    const cfg = { enabled, halve, min_gap: minGap, max_gap: maxGap, ...next };
     setEnabled(cfg.enabled);
     setHalve(cfg.halve);
+    setMinGap(cfg.min_gap);
+    setMaxGap(cfg.max_gap);
     setSaving(true);
     try {
       const res = await fetch(`/api/config/watch?region=${region}`, {
@@ -101,7 +123,7 @@ export default function TrackingBoard({ limits, recent, region, onChanged }: Pro
           <div>
             <h2 className="plate-title">👁️ Đang Theo Dõi</h2>
             <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-              Nhịp đều &amp; chưa về ≤ {MAX_QUIET} kỳ
+              Nhịp {minGap}–{maxGap} kỳ · chưa về ≤ {MAX_QUIET} kỳ
               {enabled ? (halve ? " — hạn mức đã giảm 50%" : " — không giảm hạn mức") : " — đang tắt"}
             </p>
           </div>
@@ -124,6 +146,28 @@ export default function TrackingBoard({ limits, recent, region, onChanged }: Pro
             disabled={saving || !enabled}
             onToggle={() => persist({ halve: !halve })}
           />
+        </div>
+
+        {/* Tempo band — how many draws apart the lô should be running. */}
+        <div className="flex flex-wrap items-center gap-1.5 px-3 md:px-4 pt-2.5">
+          <span className="eyebrow mr-1">Nhịp</span>
+          {GAP_RANGES.map((g) => {
+            const active = minGap === g.min && maxGap === g.max;
+            return (
+              <button
+                key={g.label}
+                onClick={() => persist({ min_gap: g.min, max_gap: g.max })}
+                disabled={saving || !enabled}
+                className={`px-2.5 py-1 text-xs font-bold rounded transition-colors numeric disabled:opacity-40 ${
+                  active
+                    ? "bg-[#10b981] text-[#04251a]"
+                    : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.18]"
+                }`}
+              >
+                {g.label}
+              </button>
+            );
+          })}
         </div>
 
         {enabled ? (

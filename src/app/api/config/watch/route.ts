@@ -33,6 +33,9 @@ export async function PUT(req: Request) {
     const cfg: WatchConfig = {
       enabled: body.enabled !== false,
       halve: body.halve !== false,
+      // saveWatchConfig clamps and orders these.
+      min_gap: Number(body.min_gap ?? 1),
+      max_gap: Number(body.max_gap ?? 3),
     };
 
     // No recalculate needed: getLimitSummary applies both switches on read.

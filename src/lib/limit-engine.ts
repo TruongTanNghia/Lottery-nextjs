@@ -385,17 +385,31 @@ export async function loadTopConfig(region: Region): Promise<TopConfig> {
 export interface WatchConfig {
   enabled: boolean;
   halve: boolean;
+  /** Keep only lô whose average gap falls inside [min_gap, max_gap] draws. */
+  min_gap: number;
+  max_gap: number;
 }
 
-const DEFAULT_WATCH: WatchConfig = { enabled: true, halve: true };
+const DEFAULT_WATCH: WatchConfig = { enabled: true, halve: true, min_gap: 1, max_gap: 3 };
 const watchKey = (region: Region) => `watch:${region}`;
+
+/** Clamp to a sane draw range and keep min ≤ max. */
+function normaliseGaps(min: unknown, max: unknown): { min_gap: number; max_gap: number } {
+  const lo = Math.min(Math.max(Number(min) || DEFAULT_WATCH.min_gap, 1), 15);
+  const hi = Math.min(Math.max(Number(max) || DEFAULT_WATCH.max_gap, 1), 15);
+  return { min_gap: Math.min(lo, hi), max_gap: Math.max(lo, hi) };
+}
 
 export async function loadWatchConfig(region: Region): Promise<WatchConfig> {
   const raw = await getConfigValue(watchKey(region));
   if (!raw) return DEFAULT_WATCH;
   try {
     const p = JSON.parse(raw);
-    return { enabled: p.enabled !== false, halve: p.halve !== false };
+    return {
+      enabled: p.enabled !== false,
+      halve: p.halve !== false,
+      ...normaliseGaps(p.min_gap, p.max_gap),
+    };
   } catch {
     return DEFAULT_WATCH;
   }
@@ -404,7 +418,11 @@ export async function loadWatchConfig(region: Region): Promise<WatchConfig> {
 export async function saveWatchConfig(region: Region, cfg: WatchConfig): Promise<void> {
   await setConfigValue(
     watchKey(region),
-    JSON.stringify({ enabled: cfg.enabled !== false, halve: cfg.halve !== false })
+    JSON.stringify({
+      enabled: cfg.enabled !== false,
+      halve: cfg.halve !== false,
+      ...normaliseGaps(cfg.min_gap, cfg.max_gap),
+    })
   );
 }
 
@@ -478,7 +496,8 @@ const EMPTY_RHYTHM: Rhythm = {
  * inflate every gap and make a steady lô look erratic.
  */
 async function computeRhythms(
-  region: Region
+  region: Region,
+  gapRange: { min_gap: number; max_gap: number }
 ): Promise<{ rhythms: Map<string, Rhythm>; recentHits: Map<string, number> }> {
   const rows = await query<{ date: string; lo_number: string }>(
     `SELECT date, lo_number FROM lo_daily
@@ -527,7 +546,10 @@ async function computeRhythms(
     const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
     const sd = Math.sqrt(gaps.reduce((s, g) => s + (g - mean) ** 2, 0) / gaps.length);
     const cv = mean > 0 ? sd / mean : Infinity;
-    const regular = cv <= RHYTHM_MAX_CV;
+    // Steady, and beating at the tempo the operator picked. Without the range
+    // a "steady" 8-draw lô sat next to a 2-draw one on the same list.
+    const inRange = mean >= gapRange.min_gap && mean <= gapRange.max_gap;
+    const regular = cv <= RHYTHM_MAX_CV && inRange;
 
     out.set(lo, {
       appearances: at.length,
@@ -590,9 +612,9 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
   const anchorDt = new Date(anchor + "T00:00:00");
   const counts = await getAppearanceCounts(region, anchor, APPEARANCE_WINDOW_DAYS);
   const schedule = await loadSchedule(region);
-  const { rhythms, recentHits } = await computeRhythms(region);
   const topCfg = await loadTopConfig(region);
   const watchCfg = await loadWatchConfig(region);
+  const { rhythms, recentHits } = await computeRhythms(region, watchCfg);
   const manualCfg = await loadManualConfig(region);
   const manualSet = new Set(manualCfg.los);
 

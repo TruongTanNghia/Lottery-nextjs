@@ -53,6 +53,8 @@ export interface TopConfig {
 export interface WatchConfig {
   enabled: boolean;
   halve: boolean;
+  min_gap: number;
+  max_gap: number;
 }
 
 export interface ConfigPayload {
