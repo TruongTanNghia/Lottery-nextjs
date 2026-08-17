@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "./Toast";
+import Switch from "./Switch";
 import type { LimitItem, Region } from "@/lib/types";
 
 type Direction = "cold" | "hot";
@@ -37,7 +38,11 @@ export default function TopBoard({
   const [size, setSize] = useState(10);
   const [dir, setDir] = useState<Direction>("hot");
   const [enabled, setEnabled] = useState(true);
+  const [halve, setHalve] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  /** Synchronous truth, so two quick taps don't fight over stale state. */
+  const cfgRef = useRef({ size, dir, enabled, halve });
 
   // The selection lives on the server because it halves real limits.
   useEffect(() => {
@@ -48,15 +53,31 @@ export default function TopBoard({
         setSize(d.data.size);
         setDir(d.data.dir);
         setEnabled(d.data.enabled);
+        setHalve(d.data.halve);
+        cfgRef.current = {
+          size: d.data.size,
+          dir: d.data.dir,
+          enabled: d.data.enabled,
+          halve: d.data.halve,
+        };
       })
       .catch(() => void 0);
   }, [region]);
 
-  async function persist(next: { size?: number; dir?: Direction; enabled?: boolean }) {
-    const cfg = { size, dir, enabled, ...next };
+  async function persist(next: {
+    size?: number;
+    dir?: Direction;
+    enabled?: boolean;
+    halve?: boolean;
+  }) {
+    const prev = cfgRef.current;
+    const cfg = { ...prev, ...next };
+    cfgRef.current = cfg;
+
     setSize(cfg.size);
     setDir(cfg.dir);
     setEnabled(cfg.enabled);
+    setHalve(cfg.halve);
     setSaving(true);
     try {
       const res = await fetch(`/api/config/top?region=${region}`, {
@@ -67,6 +88,12 @@ export default function TopBoard({
       if (!res.ok) throw new Error(await res.text());
       onChanged(); // pull fresh limits — the halving changed
     } catch (err) {
+      // Put the switches back so they never lie about what is saved.
+      cfgRef.current = prev;
+      setSize(prev.size);
+      setDir(prev.dir);
+      setEnabled(prev.enabled);
+      setHalve(prev.halve);
       toast.show("error", `Lỗi lưu: ${err instanceof Error ? err.message : err}`);
     } finally {
       setSaving(false);
@@ -128,7 +155,12 @@ export default function TopBoard({
             🏆 Top {size} lô {dir === "cold" ? "ÍT ra nhất" : "NHIỀU ra nhất"}
           </h2>
           <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-            7 kỳ gần nhất · hạn mức các lô này đã chia đôi
+            7 kỳ gần nhất
+            {enabled
+              ? halve
+                ? " · hạn mức các lô này đã giảm 50%"
+                : " · chỉ theo dõi, không giảm hạn mức"
+              : " · đang tắt"}
           </p>
         </div>
         <button
@@ -164,16 +196,17 @@ export default function TopBoard({
               </button>
             </>
           )}
-          <label className="ml-auto inline-flex items-center gap-2 text-xs text-[#c2d4ea] cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={enabled}
-              disabled={saving}
-              onChange={(e) => persist({ enabled: e.target.checked })}
-              className="accent-emerald-500"
-            />
-            Bật chia đôi
-          </label>
+          {/* Same two independent switches as the watchlist: show the list, and
+              cut the money. Never disabled — a switch that swallows a tap reads
+              as broken; "Chia đôi" stays settable while the list is off. */}
+          <Switch label="Top" on={enabled} onToggle={() => persist({ enabled: !enabled })} />
+          <Switch
+            label="Chia đôi tiền"
+            on={halve}
+            muted={!enabled}
+            onToggle={() => persist({ halve: !halve })}
+          />
+          {saving && <span className="text-[0.65rem] text-[var(--text-muted)]">đang lưu…</span>}
         </div>
 
         {SHOW_CONTROLS && (
@@ -266,8 +299,14 @@ export default function TopBoard({
               </tbody>
             </table>
             <div className="text-[0.7rem] text-[var(--text-muted)] text-right">
-              Chia đôi {rows.length} lô — giảm tổng{" "}
-              <strong className="text-[#ffd24a]">{totalSaved}n</strong> tiền nhận vào
+              {halve ? (
+                <>
+                  Chia đôi {rows.length} lô — giảm tổng{" "}
+                  <strong className="text-[#ffd24a]">{totalSaved}n</strong> tiền nhận vào
+                </>
+              ) : (
+                <>Đang theo dõi {rows.length} lô — hạn mức giữ nguyên</>
+              )}
             </div>
           </>
         )}

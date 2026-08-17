@@ -357,10 +357,13 @@ export const TOP_WINDOW_DRAWS = 7;
 export interface TopConfig {
   size: number;
   dir: "cold" | "hot";
+  /** List is active — lô get flagged. */
   enabled: boolean;
+  /** Being on the list cuts the limit in half. Separate, like the rhythm list. */
+  halve: boolean;
 }
 
-const DEFAULT_TOP: TopConfig = { size: 10, dir: "hot", enabled: true };
+const DEFAULT_TOP: TopConfig = { size: 10, dir: "hot", enabled: true, halve: true };
 const topKey = (region: Region) => `top:${region}`;
 
 export async function loadTopConfig(region: Region): Promise<TopConfig> {
@@ -372,6 +375,9 @@ export async function loadTopConfig(region: Region): Promise<TopConfig> {
       size: Math.min(Math.max(Number(p.size) || DEFAULT_TOP.size, 0), 100),
       dir: p.dir === "cold" ? "cold" : "hot",
       enabled: p.enabled !== false,
+      // Saved before this switch existed: "enabled" then meant "halve", so
+      // inherit it rather than silently turning the discount back on.
+      halve: p.halve === undefined ? p.enabled !== false : p.halve !== false,
     };
   } catch {
     return DEFAULT_TOP;
@@ -510,6 +516,7 @@ export async function saveTopConfig(region: Region, cfg: TopConfig): Promise<voi
       size: Math.min(Math.max(Number(cfg.size) || 0, 0), 100),
       dir: cfg.dir === "cold" ? "cold" : "hot",
       enabled: cfg.enabled !== false,
+      halve: cfg.halve !== false,
     })
   );
 }
@@ -716,7 +723,10 @@ export async function getLimitSummary(region: Region): Promise<LimitSummaryItem[
     const inPair = pairSet.has(status.lo_number);
     const tracked = inWatch || inTop || inManual || inPair;
     const halve =
-      (inWatch && watchCfg.halve) || inTop || (inManual && manualCfg.halve) || inPair;
+      (inWatch && watchCfg.halve) ||
+      (inTop && topCfg.halve) ||
+      (inManual && manualCfg.halve) ||
+      inPair;
     // No floor clamp: the operator's own example takes 10n down to 5n, and 10n
     // is that region's minimum.
     const liveLimit = halve ? Math.round(scheduled * TRACKED_LIMIT_FACTOR) : scheduled;

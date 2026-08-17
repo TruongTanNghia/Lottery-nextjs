@@ -32,6 +32,7 @@ export async function PUT(req: Request) {
       size: Number(body.size ?? 10),
       dir: body.dir === "cold" ? "cold" : "hot",
       enabled: body.enabled !== false,
+      halve: body.halve !== false,
     };
     if (!Number.isFinite(cfg.size) || cfg.size < 0 || cfg.size > 100) {
       throw new ApiError(400, "size phải trong khoảng 0-100");
