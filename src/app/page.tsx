@@ -60,6 +60,9 @@ function Dashboard() {
   const [latestScraped, setLatestScraped] = useState<string | null>(null);
   const [tabBadges, setTabBadges] = useState<Record<Region, number>>({ xsmn: 0, xsmb: 0, xsmt: 0 });
 
+  // Only true while switching regions — NOT for the 5-minute background
+  // refresh, which must never throw an overlay over what you are reading.
+  const [switchingTo, setSwitchingTo] = useState<Region | null>(null);
   const [status, setStatus] = useState<"loading" | "connected" | "error">("loading");
   const [statusText, setStatusText] = useState("Đang kết nối...");
   const [lastUpdate, setLastUpdate] = useState("--:--");
@@ -118,8 +121,22 @@ function Dashboard() {
       console.error("loadAll error:", err);
       setStatus("error");
       setStatusText("Lỗi kết nối");
+    } finally {
+      // Only lift the cover for the region this run actually loaded. Tapping
+      // two tabs quickly would otherwise let the first load uncover a board
+      // the second is still fetching.
+      setSwitchingTo((cur) => (cur === region ? null : cur));
     }
   }, [region]);
+
+  function changeRegion(r: Region) {
+    if (r === region) return;
+    // Cover the screen until the new region's numbers are in. Without it the
+    // old region's board stays up for a second or two under the new tab —
+    // easy to read the wrong region's limits and act on them.
+    setSwitchingTo(r);
+    setRegion(r);
+  }
 
   useEffect(() => {
     loadAll();
@@ -342,9 +359,22 @@ function Dashboard() {
         onBackfill={handleBackfill}
         backfillProgress={backfillProgress}
       />
+      {switchingTo && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 bg-[rgba(4,9,26,0.88)] backdrop-blur-sm">
+          <span className="relative flex w-14 h-14">
+            <span className="absolute inset-0 rounded-full border-2 border-[var(--hairline)]" />
+            <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#4da6ff] animate-spin" />
+          </span>
+          <div className="text-center">
+            <div className="chrome text-lg">{REGION_LABELS[switchingTo]}</div>
+            <div className="eyebrow mt-1">Đang tải hạn mức…</div>
+          </div>
+        </div>
+      )}
+
       <RegionTabs
         current={region}
-        onChange={setRegion}
+        onChange={changeRegion}
         view={view}
         onViewChange={setView}
         badges={tabBadges}

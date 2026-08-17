@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "./Toast";
 import type { LimitItem, Region } from "@/lib/types";
 
@@ -53,9 +53,25 @@ export default function TrackingBoard({ limits, recent, region, onChanged }: Pro
         setHalve(d.data.halve);
         setMinGap(d.data.min_gap);
         setMaxGap(d.data.max_gap);
+        cfgRef.current = {
+          enabled: d.data.enabled,
+          halve: d.data.halve,
+          min_gap: d.data.min_gap,
+          max_gap: d.data.max_gap,
+        };
       })
       .catch(() => void 0);
   }, [region]);
+
+  /**
+   * Optimistic, and never blocks the next click.
+   *
+   * The switches used to disable themselves for the whole round-trip, which on
+   * a slow request read as a dead button. Two quick taps also fought each
+   * other: the second one computed from the state the first had not committed
+   * yet, so it toggled straight back. cfgRef holds the truth synchronously.
+   */
+  const cfgRef = useRef({ enabled, halve, min_gap: minGap, max_gap: maxGap });
 
   async function persist(next: {
     enabled?: boolean;
@@ -63,7 +79,10 @@ export default function TrackingBoard({ limits, recent, region, onChanged }: Pro
     min_gap?: number;
     max_gap?: number;
   }) {
-    const cfg = { enabled, halve, min_gap: minGap, max_gap: maxGap, ...next };
+    const prev = cfgRef.current;
+    const cfg = { ...prev, ...next };
+    cfgRef.current = cfg;
+
     setEnabled(cfg.enabled);
     setHalve(cfg.halve);
     setMinGap(cfg.min_gap);
@@ -78,6 +97,12 @@ export default function TrackingBoard({ limits, recent, region, onChanged }: Pro
       if (!res.ok) throw new Error(await res.text());
       onChanged(); // limits may have changed
     } catch (err) {
+      // Put the switch back where it was so it never lies about what is saved.
+      cfgRef.current = prev;
+      setEnabled(prev.enabled);
+      setHalve(prev.halve);
+      setMinGap(prev.min_gap);
+      setMaxGap(prev.max_gap);
       toast.show("error", `Lỗi lưu: ${err instanceof Error ? err.message : err}`);
     } finally {
       setSaving(false);
@@ -134,18 +159,17 @@ export default function TrackingBoard({ limits, recent, region, onChanged }: Pro
 
         {/* Two independent switches: watch the beat, and cut the money. */}
         <div className="flex flex-wrap items-center gap-2 px-3 md:px-4 pt-3">
-          <Switch
-            label="Theo dõi"
-            on={enabled}
-            disabled={saving}
-            onToggle={() => persist({ enabled: !enabled })}
-          />
+          {/* Never disabled — a switch that ignores a tap reads as broken.
+              "Chia đôi" stays settable while tracking is off; it is a stored
+              preference, just not in effect yet. */}
+          <Switch label="Theo dõi" on={enabled} onToggle={() => persist({ enabled: !enabled })} />
           <Switch
             label="Chia đôi tiền"
             on={halve}
-            disabled={saving || !enabled}
+            muted={!enabled}
             onToggle={() => persist({ halve: !halve })}
           />
+          {saving && <span className="text-[0.65rem] text-[var(--text-muted)]">đang lưu…</span>}
         </div>
 
         {/* Tempo band — how many draws apart the lô should be running. */}
@@ -157,8 +181,9 @@ export default function TrackingBoard({ limits, recent, region, onChanged }: Pro
               <button
                 key={g.label}
                 onClick={() => persist({ min_gap: g.min, max_gap: g.max })}
-                disabled={saving || !enabled}
-                className={`px-2.5 py-1 text-xs font-bold rounded transition-colors numeric disabled:opacity-40 ${
+                className={`px-2.5 py-1 text-xs font-bold rounded transition-colors numeric active:scale-[0.97] ${
+                  !enabled ? "opacity-55" : ""
+                } ${
                   active
                     ? "bg-[#10b981] text-[#04251a]"
                     : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.18]"
@@ -192,19 +217,21 @@ export default function TrackingBoard({ limits, recent, region, onChanged }: Pro
 function Switch({
   label,
   on,
-  disabled,
+  muted,
   onToggle,
 }: {
   label: string;
   on: boolean;
-  disabled?: boolean;
+  /** Saved, but not in effect right now — dimmed yet still clickable. */
+  muted?: boolean;
   onToggle: () => void;
 }) {
   return (
     <button
       onClick={onToggle}
-      disabled={disabled}
-      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors active:scale-[0.97] ${
+        muted ? "opacity-55" : ""
+      } ${
         on
           ? "bg-[rgba(16,185,129,0.18)] border-[rgba(16,185,129,0.55)] text-[#4ade9f]"
           : "bg-white/[0.06] border-[var(--hairline)] text-[var(--text-muted)]"
