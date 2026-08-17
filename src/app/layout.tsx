@@ -9,11 +9,11 @@ const siteUrl =
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: "Kho Bạc — Quản Lý Hạn Mức",
+  title: "Gà Con — Quản Lý Hạn Mức",
   description: "Quản Lý Hạn Mức Lô 3 Miền — Miền Nam, Miền Bắc, Miền Trung",
   icons: { icon: "/icon.png", apple: "/icon.png" },
   openGraph: {
-    title: "Kho Bạc — Quản Lý Hạn Mức",
+    title: "Gà Con — Quản Lý Hạn Mức",
     description: "Bảng hạn mức 100 lô, 3 miền",
     images: ["/og.png"],
   },

@@ -35,7 +35,7 @@ function PixiuMark() {
         <span className="absolute -inset-1 rounded-full bg-[var(--glow)] opacity-30 blur-[12px]" />
         <img
           src="/pixiu.png"
-          alt="Kho Bạc"
+          alt="Gà Con"
           width={48}
           height={48}
           onError={() => setBroken(true)}
@@ -124,7 +124,7 @@ export default function Header({
       <div className="flex items-center gap-2.5 sm:gap-3 md:gap-4 min-w-0">
         <PixiuMark />
         <div className="min-w-0">
-          <h1 className="chrome text-base sm:text-lg md:text-xl truncate leading-tight">KHO BẠC</h1>
+          <h1 className="chrome text-base sm:text-lg md:text-xl truncate leading-tight">GÀ CON</h1>
           <p className="eyebrow truncate">Quản Lý Hạn Mức · 3 Miền</p>
         </div>
       </div>
