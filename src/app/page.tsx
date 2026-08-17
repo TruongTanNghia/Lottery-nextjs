@@ -6,6 +6,7 @@ import LoDetailModal from "@/components/LoDetailModal";
 import LoGrid from "@/components/LoGrid";
 import ManualWatchCard from "@/components/ManualWatchCard";
 import PairBoard from "@/components/PairBoard";
+import ResultsPage from "@/components/ResultsPage";
 import RegionTabs from "@/components/RegionTabs";
 import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
@@ -50,7 +51,7 @@ function Dashboard() {
   const toast = useToast();
 
   const [region, setRegion] = useState<Region>("xsmn");
-  const [view, setView] = useState<"dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling">("dashboard");
+  const [view, setView] = useState<"dashboard" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling">("dashboard");
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -514,6 +515,8 @@ function Dashboard() {
               </aside>
             </div>
           </>
+        ) : view === "results" ? (
+          <ResultsPage region={region} />
         ) : view === "prediction" ? (
           <PredictionPage region={region} />
         ) : view === "vip" ? (

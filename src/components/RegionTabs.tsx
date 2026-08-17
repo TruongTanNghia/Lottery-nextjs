@@ -2,19 +2,19 @@
 
 import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
 
-type ViewKey = "dashboard" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling";
+type ViewKey = "dashboard" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling";
 
 // Every view the app can render, in tab order. Kept as the full list so the
 // pages stay wired up and nothing has to be rebuilt to bring one back.
 const ALL_VIEWS = [
-  "dashboard", "prediction", "vip", "golden", "pair", "three",
+  "dashboard", "results", "prediction", "vip", "golden", "pair", "three",
   "four", "sim", "watcher", "today", "accuracy", "history", "rolling",
 ] as const;
 
 // Which of those actually show up. The app now runs a chặn-số (limit) workflow
 // rather than a betting one, so only the limit board is exposed — add a key
 // back to this list to restore its tab.
-const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard"];
+const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard", "results"];
 
 interface Props {
   current: Region;
@@ -68,6 +68,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
         {ALL_VIEWS.filter((v) => ENABLED_VIEWS.includes(v)).map((v) => {
           const labels: Record<ViewKey, string> = {
             dashboard: "📊 Dashboard",
+            results: "📋 Kết Quả",
             prediction: "🔮 Dự Đoán",
             vip: "👑 Dự Đoán VIP",
             golden: "🏆 VIP Tổng Hợp",
@@ -83,6 +84,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
           };
           const activeBg: Record<ViewKey, string> = {
             dashboard: "bg-blue-900 shadow-[0_1px_6px_rgba(59,130,246,0.25)]",
+            results: "bg-emerald-700 shadow-[0_1px_6px_rgba(16,185,129,0.35)]",
             prediction: "bg-blue-900 shadow-[0_1px_6px_rgba(59,130,246,0.25)]",
             vip: "bg-yellow-700 shadow-[0_1px_6px_rgba(245,158,11,0.35)]",
             golden: "bg-amber-600 shadow-[0_1px_6px_rgba(245,158,11,0.45)]",
