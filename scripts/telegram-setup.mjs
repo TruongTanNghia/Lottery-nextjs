@@ -16,7 +16,12 @@ const [argToken, argSecret, argUrl] = process.argv.slice(2);
 
 const token = argToken || process.env.TELEGRAM_BOT_TOKEN;
 const secret = argSecret || process.env.TELEGRAM_WEBHOOK_SECRET;
-const appUrl = argUrl || process.env.NEXT_PUBLIC_APP_URL || "https://gacon.vercel.app";
+// NEXT_PUBLIC_APP_URL is whatever the local .env points at, which in dev is
+// http://localhost — Telegram only accepts https, so it is used only when it
+// actually qualifies rather than silently producing a confusing rejection.
+const envUrl = process.env.NEXT_PUBLIC_APP_URL;
+const appUrl =
+  argUrl || (envUrl?.startsWith("https://") ? envUrl : "https://gacon.vercel.app");
 
 if (!token || !secret) {
   console.error("Thiếu TELEGRAM_BOT_TOKEN hoặc TELEGRAM_WEBHOOK_SECRET.");
@@ -47,7 +52,12 @@ const hook = await api("setWebhook", {
   allowed_updates: ["message", "edited_message"],
   drop_pending_updates: true,
 });
-console.log(hook.ok ? `✅ Webhook → ${appUrl}/api/telegram/webhook` : `❌ Webhook: ${hook.description}`);
+if (hook.ok) {
+  console.log(`✅ Webhook → ${appUrl}/api/telegram/webhook`);
+} else {
+  console.error(`❌ Webhook: ${hook.description}`);
+  process.exitCode = 1;
+}
 
 const cmds = await api("setMyCommands", {
   commands: [
