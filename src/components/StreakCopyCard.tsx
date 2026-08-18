@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "./Toast";
-import type { LimitItem } from "@/lib/types";
+import type { LimitItem, Region } from "@/lib/types";
+import { provincePrefix } from "@/lib/provinces";
 
 // Copy-format preferences. Defaults are what the bookie asked for — open the
 // card, hit Copy, get "00b15dd15, ..." with no clicks. Any change the user
@@ -14,6 +15,8 @@ interface CopyPrefs {
   withDe: boolean;
   keepNSuffix: boolean;
   skipZero: boolean;
+  /** Prefix the string with the bookie's province codes: "st tv ag ...: 01b10n". */
+  withProvinces: boolean;
 }
 
 const DEFAULT_PREFS: CopyPrefs = {
@@ -21,6 +24,7 @@ const DEFAULT_PREFS: CopyPrefs = {
   withDe: true,
   keepNSuffix: false,
   skipZero: false,
+  withProvinces: true,
 };
 
 type Filter = "all" | "consecutive" | "cold";
@@ -28,6 +32,8 @@ type CopySep = "space" | "comma" | "newline";
 
 interface Props {
   limits: LimitItem[];
+  /** Whose province codes go in front of the string. */
+  region: Region;
 }
 
 // Note: consecutive_days max = 4 (spec: "qua 4 ngày liên tiếp → reset về 1")
@@ -61,7 +67,7 @@ const DEFAULT_OPTION_KEY: Record<Filter, string> = {
   cold: "0",
 };
 
-export default function StreakCopyCard({ limits }: Props) {
+export default function StreakCopyCard({ limits, region }: Props) {
   const toast = useToast();
   const [filterMode, setFilterMode] = useState<Filter>("all");
   const [optionKey, setOptionKey] = useState<string>("all");
@@ -76,6 +82,7 @@ export default function StreakCopyCard({ limits }: Props) {
   // the whole bet line rejected.
   const [withDe, setWithDe] = useState(DEFAULT_PREFS.withDe);
   const [keepNSuffix, setKeepNSuffix] = useState(DEFAULT_PREFS.keepNSuffix);
+  const [withProvinces, setWithProvinces] = useState(DEFAULT_PREFS.withProvinces);
 
   // Hydrate after mount — reading localStorage during render would desync SSR.
   useEffect(() => {
@@ -87,6 +94,7 @@ export default function StreakCopyCard({ limits }: Props) {
       if (typeof p.withDe === "boolean") setWithDe(p.withDe);
       if (typeof p.keepNSuffix === "boolean") setKeepNSuffix(p.keepNSuffix);
       if (typeof p.skipZero === "boolean") setSkipZero(p.skipZero);
+      if (typeof p.withProvinces === "boolean") setWithProvinces(p.withProvinces);
     } catch {
       /* corrupt/unavailable storage — defaults are fine */
     }
@@ -96,12 +104,12 @@ export default function StreakCopyCard({ limits }: Props) {
     try {
       window.localStorage.setItem(
         PREFS_KEY,
-        JSON.stringify({ withAmount, withDe, keepNSuffix, skipZero })
+        JSON.stringify({ withAmount, withDe, keepNSuffix, skipZero, withProvinces })
       );
     } catch {
       /* storage full or blocked — preferences just won't persist */
     }
-  }, [withAmount, withDe, keepNSuffix, skipZero]);
+  }, [withAmount, withDe, keepNSuffix, skipZero, withProvinces]);
 
   const options =
     filterMode === "all"
@@ -121,20 +129,27 @@ export default function StreakCopyCard({ limits }: Props) {
   }, [limits, currentOption, withAmount, skipZero]);
 
   const formatted = useMemo(() => {
+    // The province list belongs inside the copied text, not beside it: a
+    // pasted bet string has to say which provinces it covers on its own.
+    const lead = withProvinces ? `${provincePrefix(region)}: ` : "";
+
     if (withAmount) {
       // Plain lô keeps the "n" it always had; the đề variant follows the
       // bookie's example, where the suffix is dropped unless asked for.
       const unit = withDe && !keepNSuffix ? "" : "n";
-      return filtered
-        .map((l) => {
-          const lo = `${l.lo_number}b${l.current_limit}${unit}`;
-          return withDe ? `${lo}dd${l.current_limit}${unit}` : lo;
-        })
-        .join(", ");
+      return (
+        lead +
+        filtered
+          .map((l) => {
+            const lo = `${l.lo_number}b${l.current_limit}${unit}`;
+            return withDe ? `${lo}dd${l.current_limit}${unit}` : lo;
+          })
+          .join(", ")
+      );
     }
     const sepChar = sep === "space" ? " " : sep === "comma" ? ", " : "\n";
-    return filtered.map((l) => l.lo_number).join(sepChar);
-  }, [filtered, sep, withAmount, withDe, keepNSuffix]);
+    return lead + filtered.map((l) => l.lo_number).join(sepChar);
+  }, [filtered, sep, withAmount, withDe, keepNSuffix, withProvinces, region]);
 
   const totalPoints = useMemo(
     () => filtered.reduce((s, l) => s + l.current_limit, 0),
@@ -273,6 +288,18 @@ export default function StreakCopyCard({ limits }: Props) {
             </button>
           </div>
         </div>
+
+        {/* Applies to both modes: the receiver needs the provinces either way */}
+        <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none mb-2">
+          <input
+            type="checkbox"
+            checked={withProvinces}
+            onChange={(e) => setWithProvinces(e.target.checked)}
+            className="accent-emerald-500"
+          />
+          Kèm tên tỉnh ở đầu chuỗi
+          <span className="text-slate-500 truncate">({provincePrefix(region).slice(0, 22)}…:)</span>
+        </label>
 
         {/* Format options — separator only matters for the plain-number mode */}
         {withAmount ? (

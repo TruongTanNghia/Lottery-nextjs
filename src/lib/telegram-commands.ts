@@ -15,6 +15,7 @@ import {
 } from "@/lib/limit-engine";
 import { query } from "@/lib/db";
 import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
+import { provincePrefix } from "@/lib/provinces";
 import { esc } from "@/lib/telegram";
 import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
 
@@ -259,11 +260,16 @@ export async function copyString(region: Region, withDe: boolean): Promise<strin
   const skipped = summary.length - rows.length;
   const total = rows.reduce((s, l) => s + l.current_limit, 0);
 
+  // The province list rides inside the copied block, not above it: the point
+  // is that whoever receives the pasted message knows which provinces it
+  // covers without having to ask.
+  const line = `${provincePrefix(region)}: ${body}`;
+
   return [
     `<b>${label(region)}</b> · ${rows.length} lô · tổng ${num(total)}n${withDe ? " · kèm đề" : ""}`,
     skipped > 0 ? `<i>bỏ qua ${skipped} lô đang khoá</i>` : "",
     "",
-    `<code>${esc(body)}</code>`,
+    `<code>${esc(line)}</code>`,
   ]
     .filter(Boolean)
     .join("\n");

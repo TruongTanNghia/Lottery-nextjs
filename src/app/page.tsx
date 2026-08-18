@@ -397,7 +397,7 @@ function Dashboard() {
                 }}
               />
             </section>
-            <StreakCopyCard limits={limits} />
+            <StreakCopyCard limits={limits} region={region} />
 
             <StatsBar stats={profit} />
             <TrackingBoard
