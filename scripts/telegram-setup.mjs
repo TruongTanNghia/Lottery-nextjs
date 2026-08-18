@@ -62,11 +62,10 @@ if (hook.ok) {
 
 const cmds = await api("setMyCommands", {
   commands: [
-    { command: "hm", description: "Hạn mức 1 lô cả 3 miền — /hm 27" },
+    { command: "copy", description: "Chuỗi cược CẢ 3 MIỀN — /copy hoặc /copy de" },
     { command: "mn", description: "Tóm tắt Miền Nam" },
     { command: "mb", description: "Tóm tắt Miền Bắc" },
     { command: "mt", description: "Tóm tắt Miền Trung" },
-    { command: "copy", description: "Chuỗi cược — /copy mn" },
     { command: "top", description: "Lô đang bị chia đôi — /top mn" },
     { command: "kq", description: "Kết quả kỳ mới nhất — /kq mn" },
     { command: "help", description: "Hướng dẫn" },

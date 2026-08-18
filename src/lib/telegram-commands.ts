@@ -20,7 +20,9 @@ import { freshness, freshnessText } from "@/lib/freshness";
 import { esc } from "@/lib/telegram";
 import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
 
-const REGIONS: Region[] = ["xsmn", "xsmb", "xsmt"];
+// Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
+// list is read side by side with theirs.
+const REGIONS: Region[] = ["xsmn", "xsmt", "xsmb"];
 
 /** Everything the operator might type for a region. */
 const REGION_WORDS: Record<string, Region> = {
@@ -97,14 +99,13 @@ export function helpText(isAdmin = false): string {
   return [
     "<b>🐔 Gà Con — tra hạn mức</b>",
     "",
-    "<b>Tra một lô</b>",
-    "<code>27</code> — gõ luôn 2 số, không cần lệnh",
-    "<code>/hm 27</code> — hạn mức lô 27 cả 3 miền",
+    "<b>Lấy chuỗi cược</b>",
+    "<code>/copy</code> — cả 3 miền một lượt",
+    "<code>/copy de</code> — cả 3 miền, kèm đề",
+    "<code>/copy mn</code> — riêng một miền",
     "",
-    "<b>Theo miền</b>",
+    "<b>Xem thêm</b>",
     "<code>/mn</code> <code>/mb</code> <code>/mt</code> — tóm tắt miền",
-    "<code>/copy mn</code> — chuỗi cược dán thẳng",
-    "<code>/copy mn de</code> — kèm đề",
     "<code>/top mn</code> — các lô đang bị chia đôi",
     "<code>/kq mn</code> — kết quả kỳ mới nhất",
     "",
@@ -169,14 +170,9 @@ export async function removeUser(raw: string | undefined): Promise<string> {
 export async function loReport(lo: string): Promise<string> {
   const lines = [`<b>🎯 Lô ${esc(lo)}</b>`];
 
-  // This one spans all three regions, so it warns on the worst of them —
-  // a single stale region is enough to make the answer misleading.
-  const stale = (
-    await Promise.all(REGIONS.map(async (r) => freshness(await latestDrawDate(r))))
-  ).sort((a, b) => b.behind - a.behind)[0];
-  if (stale.level !== "ok") {
-    lines.unshift(`${stale.level === "alarm" ? "🔴" : "⚠️"} <b>${freshnessText(stale)}</b>`, "");
-  }
+  // Spans all three regions, so it warns on the worst of them.
+  const warn = await staleWarningAll();
+  if (warn) lines.unshift(warn.trimEnd());
 
   for (const r of REGIONS) {
     const summary = await getLimitSummary(r);
@@ -248,14 +244,22 @@ export async function regionReport(region: Region): Promise<string> {
 
 // ---- /copy <miền> [de] --------------------------------------------------
 
-export async function copyString(region: Region, withDe: boolean): Promise<string> {
+interface BetLine {
+  /** The whole paste-ready string, provinces included. */
+  line: string;
+  count: number;
+  total: number;
+  skipped: number;
+}
+
+async function betLine(region: Region, withDe: boolean): Promise<BetLine | null> {
   const summary = await getLimitSummary(region);
   // A lô at 0 takes no bets, so listing it would only invite a typo.
   const rows = summary
     .filter((l) => l.current_limit > 0)
     .sort((a, b) => a.lo_number.localeCompare(b.lo_number));
 
-  if (rows.length === 0) return `${label(region)} — không có lô nào nhận cược.`;
+  if (rows.length === 0) return null;
 
   // Same format as the web board's copy card, so a string from the bot and a
   // string from the screen are identical.
@@ -267,23 +271,74 @@ export async function copyString(region: Region, withDe: boolean): Promise<strin
     )
     .join(", ");
 
-  const skipped = summary.length - rows.length;
-  const total = rows.reduce((s, l) => s + l.current_limit, 0);
+  return {
+    // The province list rides inside the copied block, not above it: the point
+    // is that whoever receives the pasted message knows which provinces it
+    // covers without having to ask.
+    line: `${provincePrefix(region)}: ${body}`,
+    count: rows.length,
+    total: rows.reduce((s, l) => s + l.current_limit, 0),
+    skipped: summary.length - rows.length,
+  };
+}
 
-  // The province list rides inside the copied block, not above it: the point
-  // is that whoever receives the pasted message knows which provinces it
-  // covers without having to ask.
-  const line = `${provincePrefix(region)}: ${body}`;
+export async function copyString(region: Region, withDe: boolean): Promise<string> {
+  const bet = await betLine(region, withDe);
+  if (!bet) return `${label(region)} — không có lô nào nhận cược.`;
 
   return [
-    `<b>${label(region)}</b> · ${rows.length} lô · tổng ${num(total)}n${withDe ? " · kèm đề" : ""}`,
-    skipped > 0 ? `<i>bỏ qua ${skipped} lô đang khoá</i>` : "",
+    `<b>${label(region)}</b> · ${bet.count} lô · tổng ${num(bet.total)}n${
+      withDe ? " · kèm đề" : ""
+    }`,
+    bet.skipped > 0 ? `<i>bỏ qua ${bet.skipped} lô đang khoá</i>` : "",
     "",
-    `<code>${esc(line)}</code>`,
+    `<code>${esc(bet.line)}</code>`,
   ]
     .filter(Boolean)
     .join("\n");
 }
+
+/**
+ * All three regions in one reply — what the operator actually sends out each
+ * day, so making them ask three times was busywork.
+ *
+ * Each region keeps its own <code> block: Telegram copies a block on tap, and
+ * if the message is long enough to be split it breaks between regions rather
+ * than through the middle of a bet string.
+ */
+export async function copyAll(withDe: boolean): Promise<string> {
+  const parts = await Promise.all(
+    REGIONS.map(async (r) => ({ region: r, bet: await betLine(r, withDe) }))
+  );
+
+  const head = [
+    `<b>📋 Chuỗi cược cả 3 miền</b>${withDe ? " · kèm đề" : ""}`,
+    parts
+      .map((p) =>
+        p.bet ? `${REGION_ICONS[p.region]} ${p.bet.count} lô · ${num(p.bet.total)}n` : ""
+      )
+      .filter(Boolean)
+      .join("   "),
+  ].join("\n");
+
+  const lines = parts.filter((p) => p.bet).map((p) => esc(p.bet!.line));
+  if (lines.length === 0) return `${head}\n\nKhông miền nào có lô nhận cược.`;
+
+  // One block, one tap, all three regions — that is the whole point of the
+  // command. Only split it apart when the combined block would run past the
+  // message limit, because a hard cut through a <code> tag makes Telegram
+  // reject the message outright.
+  const combined = lines.join("\n");
+  const body =
+    combined.length <= SAFE_BLOCK
+      ? `<code>${combined}</code>`
+      : lines.map((l) => `<code>${l}</code>`).join("\n\n");
+
+  return `${head}\n\n${body}`;
+}
+
+/** Headroom under Telegram's 4096, leaving room for the header and warning. */
+const SAFE_BLOCK = 3400;
 
 // ---- /top <miền> --------------------------------------------------------
 
@@ -369,10 +424,23 @@ async function withWarning(
 }
 
 async function staleWarning(region: Region): Promise<string> {
-  const f = freshness(await latestDrawDate(region));
+  return warningFor(freshness(await latestDrawDate(region)));
+}
+
+/**
+ * Worst of the three, for answers that span every region: one stale region is
+ * enough to make the whole reply misleading.
+ */
+async function staleWarningAll(): Promise<string> {
+  const all = await Promise.all(
+    REGIONS.map(async (r) => freshness(await latestDrawDate(r)))
+  );
+  return warningFor(all.sort((a, b) => b.behind - a.behind)[0]);
+}
+
+function warningFor(f: ReturnType<typeof freshness>): string {
   if (f.level === "ok") return "";
-  const mark = f.level === "alarm" ? "🔴" : "⚠️";
-  return `${mark} <b>${freshnessText(f)}</b>
+  return `${f.level === "alarm" ? "🔴" : "⚠️"} <b>${freshnessText(f)}</b>
 
 `;
 }
@@ -383,7 +451,9 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
   const cmd = head.toLowerCase().replace(/@.*$/, "");
   const args = rest.map((a) => a.toLowerCase());
 
-  // Bare two digits is the most common question there is, so it needs no verb.
+  // Undocumented on purpose: the bookie said the single-lô lookup is not
+  // useful to them, so it is off the menu and out of /help — but typing it
+  // still works rather than answering "unknown command" to an old habit.
   if (/^\d{1,2}$/.test(cmd)) return loReport(cmd.padStart(2, "0"));
 
   switch (cmd) {
@@ -407,9 +477,11 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
       return withWarning("xsmt", regionReport);
 
     case "/copy": {
+      const withDe = args.some((a) => a === "de" || a === "dd");
       const region = parseRegion(args);
-      if (!region) return "Thiếu miền. Ví dụ: <code>/copy mn</code> hoặc <code>/copy mn de</code>";
-      const withDe = args.slice(1).some((a) => a === "de" || a === "dd");
+      // No region named means all three — the common case, so it is the one
+      // that needs no argument at all.
+      if (!region) return (await staleWarningAll()) + (await copyAll(withDe));
       return withWarning(region, (r) => copyString(r, withDe));
     }
 
