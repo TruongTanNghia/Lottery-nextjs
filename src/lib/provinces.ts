@@ -56,7 +56,9 @@ export const PROVINCE_CODES: Record<Region, ProvinceCode[]> = {
     { code: "qnam", province: "Quảng Nam" },
     { code: "dlak", province: "Đắc Lắc" },
     { code: "glai", province: "Gia Lai" },
-    { code: "kkhoa", province: "Khánh Hòa" },
+    // "khoa", not "kkhoa" — the bookie corrected this one after seeing the
+    // first output; it is what the receiving end actually reads.
+    { code: "khoa", province: "Khánh Hòa" },
   ],
   // One draw, no province list to spell out.
   xsmb: [{ code: "mb", province: "Mien Bac" }],
