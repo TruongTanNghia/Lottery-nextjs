@@ -10,7 +10,9 @@ const PUBLIC_PATHS = new Set([
   "/favicon.ico",
 ]);
 
-const PUBLIC_PREFIXES = ["/api/cron/", "/api/init-db", "/_next/"];
+// The Telegram webhook has no browser cookie to present. It is not open,
+// though: it checks Telegram's secret header and a chat-id whitelist itself.
+const PUBLIC_PREFIXES = ["/api/cron/", "/api/init-db", "/api/telegram/", "/_next/"];
 
 // Images in /public carry nothing secret, and gating them breaks things that
 // cannot log in: the favicon on the login page itself, and link-preview
