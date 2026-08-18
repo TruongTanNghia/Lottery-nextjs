@@ -12,6 +12,7 @@ import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import StatsBar from "@/components/StatsBar";
 import StreakCopyCard from "@/components/StreakCopyCard";
+import StaleBanner from "@/components/StaleBanner";
 import TopBoard from "@/components/TopBoard";
 import TrackingBoard from "@/components/TrackingBoard";
 import { ToastProvider, useToast } from "@/components/Toast";
@@ -383,6 +384,12 @@ function Dashboard() {
       />
 
       <main className="max-w-[1600px] mx-auto px-3 sm:px-5 md:px-7 py-3 md:py-6">
+        {/* Above every view: a stale board is wrong on the results page too. */}
+        <StaleBanner
+          latestScraped={latestScraped}
+          onUpdate={handleQuickUpdate}
+          isUpdating={isQuickUpdating}
+        />
         {view === "dashboard" ? (
           <>
             {/* The two things touched every session lead: set the money, then

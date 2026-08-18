@@ -16,6 +16,7 @@ import {
 import { query } from "@/lib/db";
 import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
 import { provincePrefix } from "@/lib/provinces";
+import { freshness, freshnessText } from "@/lib/freshness";
 import { esc } from "@/lib/telegram";
 import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
 
@@ -167,6 +168,15 @@ export async function removeUser(raw: string | undefined): Promise<string> {
 
 export async function loReport(lo: string): Promise<string> {
   const lines = [`<b>🎯 Lô ${esc(lo)}</b>`];
+
+  // This one spans all three regions, so it warns on the worst of them —
+  // a single stale region is enough to make the answer misleading.
+  const stale = (
+    await Promise.all(REGIONS.map(async (r) => freshness(await latestDrawDate(r))))
+  ).sort((a, b) => b.behind - a.behind)[0];
+  if (stale.level !== "ok") {
+    lines.unshift(`${stale.level === "alarm" ? "🔴" : "⚠️"} <b>${freshnessText(stale)}</b>`, "");
+  }
 
   for (const r of REGIONS) {
     const summary = await getLimitSummary(r);
@@ -344,6 +354,29 @@ export async function resultsReport(region: Region): Promise<string> {
  * Lives here rather than in the route so it can be exercised directly, with
  * no HTTP and no Telegram account in the loop.
  */
+/**
+ * A red line above any answer built on an old draw.
+ *
+ * Pasting a bet string from a stale board costs real money, and on a phone
+ * the date alone is far too easy to skim past — so the warning goes first,
+ * before the numbers, every single time.
+ */
+async function withWarning(
+  region: Region,
+  build: (r: Region) => Promise<string>
+): Promise<string> {
+  return (await staleWarning(region)) + (await build(region));
+}
+
+async function staleWarning(region: Region): Promise<string> {
+  const f = freshness(await latestDrawDate(region));
+  if (f.level === "ok") return "";
+  const mark = f.level === "alarm" ? "🔴" : "⚠️";
+  return `${mark} <b>${freshnessText(f)}</b>
+
+`;
+}
+
 export async function answer(text: string, isAdmin = false): Promise<string> {
   // "/copy@GaConBot mn" — group chats append the bot name to every command.
   const [head, ...rest] = text.trim().split(/\s+/);
@@ -367,29 +400,29 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
     }
 
     case "/mn":
-      return regionReport("xsmn");
+      return withWarning("xsmn", regionReport);
     case "/mb":
-      return regionReport("xsmb");
+      return withWarning("xsmb", regionReport);
     case "/mt":
-      return regionReport("xsmt");
+      return withWarning("xsmt", regionReport);
 
     case "/copy": {
       const region = parseRegion(args);
       if (!region) return "Thiếu miền. Ví dụ: <code>/copy mn</code> hoặc <code>/copy mn de</code>";
       const withDe = args.slice(1).some((a) => a === "de" || a === "dd");
-      return copyString(region, withDe);
+      return withWarning(region, (r) => copyString(r, withDe));
     }
 
     case "/top": {
       const region = parseRegion(args);
       if (!region) return "Thiếu miền. Ví dụ: <code>/top mn</code>";
-      return topReport(region);
+      return withWarning(region, topReport);
     }
 
     case "/kq": {
       const region = parseRegion(args);
       if (!region) return "Thiếu miền. Ví dụ: <code>/kq mn</code>";
-      return resultsReport(region);
+      return withWarning(region, resultsReport);
     }
 
     case "/ai":
