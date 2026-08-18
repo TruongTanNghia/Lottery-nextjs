@@ -48,8 +48,9 @@ console.log(`✅ Bot: @${me.result.username}`);
 const hook = await api("setWebhook", {
   url: `${appUrl}/api/telegram/webhook`,
   secret_token: secret,
-  // Anything else Telegram sends would only be dropped on the floor.
-  allowed_updates: ["message", "edited_message"],
+  // callback_query carries the Duyệt / Từ chối button taps; anything else
+  // Telegram sends would only be dropped on the floor.
+  allowed_updates: ["message", "edited_message", "callback_query"],
   drop_pending_updates: true,
 });
 if (hook.ok) {
@@ -69,6 +70,7 @@ const cmds = await api("setMyCommands", {
     { command: "top", description: "Lô đang bị chia đôi — /top mn" },
     { command: "kq", description: "Kết quả kỳ mới nhất — /kq mn" },
     { command: "help", description: "Hướng dẫn" },
+    { command: "ai", description: "Ai đang dùng bot (quản trị)" },
   ],
 });
 console.log(cmds.ok ? "✅ Menu lệnh đã cài" : `❌ Menu: ${cmds.description}`);

@@ -19,27 +19,6 @@ function token(): string {
   return t;
 }
 
-/**
- * Chats allowed to talk to the bot. A Telegram bot is public — anyone who
- * knows its @name can message it — so this list is the only thing standing
- * between a stranger and the limit board.
- *
- * Empty means nobody: fail closed, never open.
- */
-export function allowedChats(): Set<string> {
-  const raw = process.env.TELEGRAM_ALLOWED_CHAT_IDS ?? "";
-  return new Set(
-    raw
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-  );
-}
-
-export function isAllowed(chatId: number | string): boolean {
-  return allowedChats().has(String(chatId));
-}
-
 /** Telegram's HTML mode only special-cases these three. */
 export function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -71,12 +50,20 @@ export function splitMessage(text: string, max: number = MAX_MESSAGE): string[] 
   return out;
 }
 
+/** One row of tappable buttons under a message. */
+export interface Button {
+  text: string;
+  /** Comes back verbatim as callback_query.data when tapped. */
+  data: string;
+}
+
 export async function sendMessage(
   chatId: number | string,
   text: string,
-  opts: { replyTo?: number } = {}
+  opts: { replyTo?: number; buttons?: Button[] } = {}
 ): Promise<void> {
-  for (const chunk of splitMessage(text)) {
+  const chunks = splitMessage(text);
+  for (const chunk of chunks) {
     const res = await fetch(`${API_ROOT}/bot${token()}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -88,6 +75,11 @@ export async function sendMessage(
         // phone-number links otherwise.
         link_preview_options: { is_disabled: true },
         ...(opts.replyTo ? { reply_to_message_id: opts.replyTo } : {}),
+        // Buttons ride on the last chunk only, so a split message does not
+        // repeat the same approve/deny pair three times.
+        ...(opts.buttons && chunk === chunks[chunks.length - 1]
+          ? { reply_markup: { inline_keyboard: [opts.buttons.map((b) => ({ text: b.text, callback_data: b.data }))] } }
+          : {}),
       }),
     });
     if (!res.ok) {
@@ -104,4 +96,45 @@ export interface TelegramMessage {
   chat: { id: number; type: string };
   from?: { id: number; first_name?: string; username?: string };
   text?: string;
+}
+
+/** Stops the little spinner on a tapped button. */
+export async function answerCallback(id: string, text?: string): Promise<void> {
+  await call("answerCallbackQuery", { callback_query_id: id, ...(text ? { text } : {}) });
+}
+
+/**
+ * Rewrites an already-sent message, dropping its buttons.
+ *
+ * Used so an approval prompt turns into a record of what was decided instead
+ * of staying tappable forever.
+ */
+export async function editMessageText(
+  chatId: number | string,
+  messageId: number,
+  text: string
+): Promise<void> {
+  await call("editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    parse_mode: "HTML",
+  });
+}
+
+async function call(method: string, body: Record<string, unknown>): Promise<void> {
+  const res = await fetch(`${API_ROOT}/bot${token()}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) console.error(`[telegram] ${method} failed:`, res.status, await res.text());
+}
+
+/** The callback_query field of an update, for button taps. */
+export interface TelegramCallback {
+  id: string;
+  data?: string;
+  from: { id: number; first_name?: string; username?: string };
+  message?: { message_id: number; chat: { id: number } };
 }

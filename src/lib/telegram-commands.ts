@@ -16,6 +16,7 @@ import {
 import { query } from "@/lib/db";
 import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
 import { esc } from "@/lib/telegram";
+import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
 
 const REGIONS: Region[] = ["xsmn", "xsmb", "xsmt"];
 
@@ -80,7 +81,17 @@ async function latestDrawDate(region: Region): Promise<string | null> {
 
 // ---- /help --------------------------------------------------------------
 
-export function helpText(): string {
+export function helpText(isAdmin = false): string {
+  const admin = isAdmin
+    ? [
+        "",
+        "<b>Quản trị</b>",
+        "<code>/ai</code> — ai đang dùng bot",
+        "<code>/duyet 123456</code> — cho phép",
+        "<code>/cam 123456</code> — chặn",
+        "<code>/xoa 123456</code> — xoá hẳn khỏi danh sách",
+      ]
+    : [];
   return [
     "<b>🐔 Gà Con — tra hạn mức</b>",
     "",
@@ -96,7 +107,59 @@ export function helpText(): string {
     "<code>/kq mn</code> — kết quả kỳ mới nhất",
     "",
     "<i>Bot chỉ đọc số, không sửa gì. Muốn đổi cài đặt thì vào web.</i>",
+    ...admin,
   ].join("\n");
+}
+
+// ---- lệnh quản trị ------------------------------------------------------
+
+const STATUS_LABEL = {
+  allowed: "✅ được dùng",
+  pending: "⏳ chờ duyệt",
+  blocked: "🚫 bị chặn",
+} as const;
+
+export async function userList(): Promise<string> {
+  const users = await loadUsers();
+  if (users.length === 0) return "Chưa có ai ngoài quản trị viên.";
+
+  // Waiting first: that is the row the admin opened the list to act on.
+  const order = { pending: 0, allowed: 1, blocked: 2 } as const;
+  const rows = users
+    .slice()
+    .sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name))
+    .map(
+      (u) =>
+        `${STATUS_LABEL[u.status]}  <b>${esc(u.name)}</b>` +
+        (u.username ? ` @${esc(u.username)}` : "") +
+        `\n     <code>${u.id}</code> · từ ${u.since}`
+    );
+
+  const waiting = users.filter((u) => u.status === "pending").length;
+  return [
+    `<b>👥 ${users.length} người</b>` + (waiting ? ` · ${waiting} đang chờ duyệt` : ""),
+    "",
+    ...rows,
+  ].join("\n");
+}
+
+export async function changeStatus(
+  raw: string | undefined,
+  status: "allowed" | "blocked"
+): Promise<string> {
+  const id = raw?.replace(/\D/g, "");
+  if (!id) return "Thiếu chat ID. Ví dụ: <code>/duyet 123456789</code>";
+  const user = await setStatus(id, status);
+  if (!user) return `Không tìm thấy ai có ID <code>${esc(id)}</code>. Gõ /ai để xem danh sách.`;
+  return `${STATUS_LABEL[status]} — <b>${esc(user.name)}</b> (<code>${user.id}</code>)`;
+}
+
+export async function removeUser(raw: string | undefined): Promise<string> {
+  const id = raw?.replace(/\D/g, "");
+  if (!id) return "Thiếu chat ID. Ví dụ: <code>/xoa 123456789</code>";
+  return (await forgetUser(id))
+    ? `Đã xoá <code>${esc(id)}</code>. Lần sau người này nhắn sẽ xin duyệt lại từ đầu.`
+    : `Không tìm thấy ai có ID <code>${esc(id)}</code>.`;
 }
 
 // ---- /hm <lô> -----------------------------------------------------------
@@ -275,7 +338,7 @@ export async function resultsReport(region: Region): Promise<string> {
  * Lives here rather than in the route so it can be exercised directly, with
  * no HTTP and no Telegram account in the loop.
  */
-export async function answer(text: string): Promise<string> {
+export async function answer(text: string, isAdmin = false): Promise<string> {
   // "/copy@GaConBot mn" — group chats append the bot name to every command.
   const [head, ...rest] = text.trim().split(/\s+/);
   const cmd = head.toLowerCase().replace(/@.*$/, "");
@@ -287,7 +350,7 @@ export async function answer(text: string): Promise<string> {
   switch (cmd) {
     case "/start":
     case "/help":
-      return helpText();
+      return helpText(isAdmin);
 
     case "/hm":
     case "/lo": {
@@ -323,7 +386,24 @@ export async function answer(text: string): Promise<string> {
       return resultsReport(region);
     }
 
-    default:
-      return `Không hiểu lệnh <code>${esc(cmd)}</code>.\n\n${helpText()}`;
+    case "/ai":
+      if (isAdmin) return userList();
+      break;
+
+    case "/duyet":
+      if (isAdmin) return changeStatus(args[0], "allowed");
+      break;
+
+    case "/cam":
+      if (isAdmin) return changeStatus(args[0], "blocked");
+      break;
+
+    case "/xoa":
+      if (isAdmin) return removeUser(args[0]);
+      break;
   }
+
+  // Admin commands fall through to here for everyone else, so a normal user
+  // gets the same answer as for a typo and learns nothing extra.
+  return `Không hiểu lệnh <code>${esc(cmd)}</code>.\n\n${helpText(isAdmin)}`;
 }
