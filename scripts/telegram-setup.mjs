@@ -1,17 +1,28 @@
 /**
  * One-time Telegram bot setup.
  *
- *   node scripts/telegram-setup.mjs <BOT_TOKEN> <WEBHOOK_SECRET> [APP_URL]
+ *   node --env-file=.env.local scripts/telegram-setup.mjs
+ *
+ * Reads TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET from the environment,
+ * so the token can live in .env.local (gitignored) instead of shell history.
+ * Passing them as arguments still works when there is no env file around.
  *
  * Points the bot at our webhook and registers the command menu so the
  * operator gets autocomplete instead of having to remember anything.
  *
  * Safe to re-run — setWebhook and setMyCommands both overwrite.
  */
-const [token, secret, appUrl = "https://gacon.vercel.app"] = process.argv.slice(2);
+const [argToken, argSecret, argUrl] = process.argv.slice(2);
+
+const token = argToken || process.env.TELEGRAM_BOT_TOKEN;
+const secret = argSecret || process.env.TELEGRAM_WEBHOOK_SECRET;
+const appUrl = argUrl || process.env.NEXT_PUBLIC_APP_URL || "https://gacon.vercel.app";
 
 if (!token || !secret) {
-  console.error("Cách dùng: node scripts/telegram-setup.mjs <BOT_TOKEN> <WEBHOOK_SECRET> [APP_URL]");
+  console.error("Thiếu TELEGRAM_BOT_TOKEN hoặc TELEGRAM_WEBHOOK_SECRET.");
+  console.error("Cách 1: điền vào .env.local rồi chạy");
+  console.error("  node --env-file=.env.local scripts/telegram-setup.mjs");
+  console.error("Cách 2: node scripts/telegram-setup.mjs <TOKEN> <SECRET> [APP_URL]");
   process.exit(1);
 }
 
