@@ -4,7 +4,6 @@
  * issues since Turso is the persistent layer (not the function filesystem).
  */
 import { createClient, type Client, type ResultSet } from "@libsql/client";
-import { countsToward, loadStationConfig } from "@/lib/stations";
 
 export const VALID_REGIONS = ["xsmn", "xsmb", "xsmt"] as const;
 export type Region = (typeof VALID_REGIONS)[number];
@@ -223,6 +222,11 @@ export async function saveLotteryResults(args: {
   // The raw draw is always recorded. Whether it counts toward the lô board is
   // a separate question — the bookie only takes bets on two đài a day, so an
   // uncounted đài must not make a lô read as "về".
+  //
+  // Imported here rather than at the top because stations.ts reads its config
+  // through this module: a static import both ways is a cycle, and a cycle
+  // resolves to undefined at load time in some bundles.
+  const { countsToward, loadStationConfig } = await import("@/lib/stations");
   const counts = countsToward(
     await loadStationConfig(args.region),
     args.date,
@@ -336,6 +340,7 @@ export async function setConfigValue(key: string, value: string): Promise<void> 
  * behind would mean the board disagrees with its own rule.
  */
 export async function rebuildLoDaily(region: Region): Promise<{ days: number; rows: number }> {
+  const { countsToward, loadStationConfig } = await import("@/lib/stations");
   const cfg = await loadStationConfig(region);
 
   const raw = await query<{ date: string; province: string; lo_number: string }>(
