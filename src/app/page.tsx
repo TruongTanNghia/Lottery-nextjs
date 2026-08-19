@@ -13,6 +13,7 @@ import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import StatsBar from "@/components/StatsBar";
 import StreakCopyCard from "@/components/StreakCopyCard";
 import StaleBanner from "@/components/StaleBanner";
+import StationBoard from "@/components/StationBoard";
 import TopBoard from "@/components/TopBoard";
 import TrackingBoard from "@/components/TrackingBoard";
 import { ToastProvider, useToast } from "@/components/Toast";
@@ -404,6 +405,7 @@ function Dashboard() {
                 }}
               />
             </section>
+            <StationBoard region={region} onChanged={loadAll} />
             <StreakCopyCard limits={limits} region={region} />
 
             <StatsBar stats={profit} />

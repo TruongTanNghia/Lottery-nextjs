@@ -37,6 +37,16 @@ export interface Schedule {
   consecutive_reset_after: number;
 }
 
+/**
+ * 20 slots, not 10.
+ *
+ * Once only two đài a day count, a lô goes far longer between hits: across
+ * 181 draws the longest wait in Miền Nam went from 14 to 24, and the number of
+ * lô that ever ran past slot 9 jumped from 25 to 78. A table that stops at 9
+ * would drop most of the board onto min_limit.
+ */
+export const SCHEDULE_SLOTS = 20;
+
 const DEFAULT_SCHEDULE: Schedule = {
   base: { 0: 200, 1: 180, 2: 160, 3: 140, 4: 120, 5: 100, 6: 80, 7: 60, 8: 40, 9: 20 },
   min_limit: 10,

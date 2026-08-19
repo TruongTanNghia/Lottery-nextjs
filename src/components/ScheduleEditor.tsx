@@ -2,6 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { REGION_LABELS, type Region } from "@/lib/types";
+import { SCHEDULE_SLOTS } from "@/lib/limit-engine";
+
+// Slots 0…19. Days-since-last runs much higher now that only two đài a day
+// count, so a 10-row table would leave most lô on min_limit.
+const DAY_SLOTS = Array.from({ length: SCHEDULE_SLOTS }, (_, i) => i);
 
 interface ScheduleData {
   base: Record<string, number>;
@@ -109,7 +114,7 @@ export default function ScheduleEditor({
 
       <div className="grid gap-1" style={{ gridTemplateColumns: "50px repeat(11, 1fr)" }}>
         <div className="text-xs text-center py-1 font-semibold text-slate-500">Ngày</div>
-        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
+        {DAY_SLOTS.map((d) => (
           <div key={d} className="text-xs text-center py-1 font-semibold text-slate-500">
             {d}
           </div>
@@ -117,7 +122,7 @@ export default function ScheduleEditor({
         <div className="text-xs text-center py-1 font-semibold text-slate-500">10+</div>
 
         <div className="text-xs text-center py-1.5 font-semibold text-slate-400">Max</div>
-        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
+        {DAY_SLOTS.map((d) => (
           <input
             key={d}
             type="number"

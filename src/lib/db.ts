@@ -4,6 +4,7 @@
  * issues since Turso is the persistent layer (not the function filesystem).
  */
 import { createClient, type Client, type ResultSet } from "@libsql/client";
+import { countsToward, loadStationConfig } from "@/lib/stations";
 
 export const VALID_REGIONS = ["xsmn", "xsmb", "xsmt"] as const;
 export type Region = (typeof VALID_REGIONS)[number];
@@ -218,20 +219,33 @@ export async function saveLotteryResults(args: {
   results: { prize_type: string; number: string }[];
 }): Promise<void> {
   const db = getDb();
+
+  // The raw draw is always recorded. Whether it counts toward the lô board is
+  // a separate question — the bookie only takes bets on two đài a day, so an
+  // uncounted đài must not make a lô read as "về".
+  const counts = countsToward(
+    await loadStationConfig(args.region),
+    args.date,
+    args.province
+  );
+
   const stmts = args.results.flatMap((r) => {
     const number = r.number.trim();
     const lo = number.slice(-2);
-    return [
+    const rows = [
       {
         sql: `INSERT INTO lottery_results (date, province, prize_type, number, lo_number, region) VALUES (?, ?, ?, ?, ?, ?)`,
         args: [args.date, args.province, r.prize_type, number, lo, args.region],
       },
-      {
+    ];
+    if (counts) {
+      rows.push({
         sql: `INSERT INTO lo_daily (date, lo_number, count, region) VALUES (?, ?, 1, ?)
               ON CONFLICT(date, lo_number, region) DO UPDATE SET count = count + 1`,
         args: [args.date, lo, args.region],
-      },
-    ];
+      });
+    }
+    return rows;
   });
 
   if (stmts.length === 0) return;
@@ -311,4 +325,50 @@ export async function setConfigValue(key: string, value: string): Promise<void> 
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
     [key, value]
   );
+}
+
+/**
+ * Rebuilds lo_daily for a region from the raw draws in lottery_results,
+ * applying the current đài rules.
+ *
+ * Needed because turning the rule on or off changes what every past day
+ * counted as — and the limits are replayed from that history, so leaving it
+ * behind would mean the board disagrees with its own rule.
+ */
+export async function rebuildLoDaily(region: Region): Promise<{ days: number; rows: number }> {
+  const cfg = await loadStationConfig(region);
+
+  const raw = await query<{ date: string; province: string; lo_number: string }>(
+    "SELECT date, province, lo_number FROM lottery_results WHERE region = ?",
+    [region]
+  );
+
+  // date → lô → how many times it landed in a counted đài that day.
+  const byDate = new Map<string, Map<string, number>>();
+  for (const r of raw) {
+    if (!countsToward(cfg, r.date, r.province)) continue;
+    let day = byDate.get(r.date);
+    if (!day) byDate.set(r.date, (day = new Map()));
+    day.set(r.lo_number, (day.get(r.lo_number) ?? 0) + 1);
+  }
+
+  const db = getDb();
+  await exec("DELETE FROM lo_daily WHERE region = ?", [region]);
+
+  const stmts: { sql: string; args: (string | number)[] }[] = [];
+  for (const [date, los] of byDate) {
+    for (const [lo, count] of los) {
+      stmts.push({
+        sql: "INSERT INTO lo_daily (date, lo_number, count, region) VALUES (?, ?, ?, ?)",
+        args: [date, lo, count, region],
+      });
+    }
+  }
+
+  // libSQL caps how much one batch may carry; 500 rows a time stays well under.
+  for (let i = 0; i < stmts.length; i += 500) {
+    await db.batch(stmts.slice(i, i + 500), "write");
+  }
+
+  return { days: byDate.size, rows: stmts.length };
 }
