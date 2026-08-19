@@ -7,6 +7,9 @@ const PUBLIC_PATHS = new Set([
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/me",
+  // Reports only the running commit id — needed precisely when nothing else
+  // can be reached, to tell a stuck deploy from a stale browser.
+  "/api/version",
   "/favicon.ico",
 ]);
 
