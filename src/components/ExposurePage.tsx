@@ -59,7 +59,10 @@ export default function ExposurePage({ region }: { region: Region }) {
       })
       .catch(() => toast.show("error", "Không tải được sổ cược"))
       .finally(() => setLoading(false));
-  }, [region, date, toast]);
+    // `toast` is stable and intentionally not a dependency: re-running this
+    // would refetch and discard unsaved work.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [region, date]);
 
   const book = useMemo(() => analyseBook({ points, region }), [points, region]);
 

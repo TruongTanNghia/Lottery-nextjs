@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
 type ToastType = "success" | "error" | "info";
 interface ToastItem {
@@ -32,8 +32,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => setItems((prev) => prev.filter((t) => t.id !== id)), 5000);
   }, []);
 
+  // Memoised, and not a nicety: an object literal here is a new reference on
+  // every render, so any effect listing `toast` in its dependencies re-runs
+  // each time a toast appears. On the exposure page that meant showing a
+  // toast re-fetched the book and wiped whatever had just been loaded.
+  const ctx = useMemo(() => ({ show }), [show]);
+
   return (
-    <Ctx.Provider value={{ show }}>
+    <Ctx.Provider value={ctx}>
       {children}
       <div className="fixed bottom-6 right-6 z-[300] flex flex-col gap-2 pointer-events-none">
         {items.map((t) => {
