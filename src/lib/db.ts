@@ -61,6 +61,17 @@ export async function initDb(): Promise<void> {
          scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
          PRIMARY KEY (date, region)
        )`,
+      // Money actually taken per lô, per draw. Separate from every other table
+      // because it is the only one that records what customers did, not what
+      // the lottery did — and exposure cannot be computed without it.
+      `CREATE TABLE IF NOT EXISTS bets (
+         date TEXT NOT NULL,
+         region TEXT NOT NULL,
+         lo_number TEXT NOT NULL,
+         points INTEGER NOT NULL DEFAULT 0,
+         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+         PRIMARY KEY (date, region, lo_number)
+       )`,
       `CREATE TABLE IF NOT EXISTS lottery_config (
          key TEXT PRIMARY KEY,
          value TEXT NOT NULL,
@@ -376,4 +387,53 @@ export async function rebuildLoDaily(region: Region): Promise<{ days: number; ro
   }
 
   return { days: byDate.size, rows: stmts.length };
+}
+
+// ─────────────────────────────────────────────
+// Bets taken (exposure)
+// ─────────────────────────────────────────────
+
+/** Points taken per lô for one draw. Missing lô simply are not in the map. */
+export async function getBets(date: string, region: Region): Promise<Record<string, number>> {
+  const rows = await query<{ lo_number: string; points: number }>(
+    "SELECT lo_number, points FROM bets WHERE date = ? AND region = ?",
+    [date, region]
+  );
+  return Object.fromEntries(rows.map((r) => [r.lo_number, Number(r.points)]));
+}
+
+/**
+ * Replaces the book for one draw.
+ *
+ * A full replace rather than a merge: the screen always sends the whole book,
+ * and merging would make a removed lô silently linger at its old stake.
+ */
+export async function saveBets(
+  date: string,
+  region: Region,
+  points: Record<string, number>
+): Promise<number> {
+  const db = getDb();
+  await exec("DELETE FROM bets WHERE date = ? AND region = ?", [date, region]);
+
+  const stmts = Object.entries(points)
+    .filter(([, v]) => Number(v) > 0)
+    .map(([lo, v]) => ({
+      sql: "INSERT INTO bets (date, region, lo_number, points) VALUES (?, ?, ?, ?)",
+      args: [date, region, lo, Math.round(Number(v))] as (string | number)[],
+    }));
+
+  for (let i = 0; i < stmts.length; i += 500) {
+    await db.batch(stmts.slice(i, i + 500), "write");
+  }
+  return stmts.length;
+}
+
+/** Draw dates that already have a book, newest first. */
+export async function getBetDates(region: Region, limit = 30): Promise<string[]> {
+  const rows = await query<{ date: string }>(
+    "SELECT DISTINCT date FROM bets WHERE region = ? ORDER BY date DESC LIMIT ?",
+    [region, limit]
+  );
+  return rows.map((r) => r.date);
 }

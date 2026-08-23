@@ -14,6 +14,7 @@ import StatsBar from "@/components/StatsBar";
 import StreakCopyCard from "@/components/StreakCopyCard";
 import StaleBanner from "@/components/StaleBanner";
 import StationBoard from "@/components/StationBoard";
+import ExposurePage from "@/components/ExposurePage";
 import TopBoard from "@/components/TopBoard";
 import TrackingBoard from "@/components/TrackingBoard";
 import { ToastProvider, useToast } from "@/components/Toast";
@@ -53,7 +54,7 @@ function Dashboard() {
   const toast = useToast();
 
   const [region, setRegion] = useState<Region>("xsmn");
-  const [view, setView] = useState<"dashboard" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling">("dashboard");
+  const [view, setView] = useState<"dashboard" | "exposure" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling">("dashboard");
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -524,6 +525,8 @@ function Dashboard() {
               </aside>
             </div>
           </>
+        ) : view === "exposure" ? (
+          <ExposurePage region={region} />
         ) : view === "results" ? (
           <ResultsPage region={region} />
         ) : view === "prediction" ? (
