@@ -182,6 +182,14 @@ export default function ExposurePage({ region }: { region: Region }) {
           <strong>{vnd(fairPrice(region))}</strong>/điểm, đang thu{" "}
           <strong>{vnd(STAKE_PRICE[region])}</strong>/điểm.
           <br />
+          <span className="text-[var(--text-secondary)]">
+            Mỗi kỳ <strong>luôn có đúng {POSITIONS[region]} lần trúng</strong> — số con trúng thì
+            thay đổi, nhưng số LẦN thì không, vì có đúng {POSITIONS[region]} vị trí giải. Nhận đều
+            1 điểm × 100 lô: thu {vnd(100 * STAKE_PRICE[region])}, trả {POSITIONS[region]} ×
+            75.000 = {vnd(POSITIONS[region] * WIN_PER_POINT)}. Đã kiểm trên toàn bộ kỳ đã cào,
+            không kỳ nào khác.
+          </span>
+          <br />
           Muốn biên 3%: thu <strong>{vnd(priceForMargin(region, 0.03))}</strong> — hoặc giữ giá,
           hạ trả trúng còn <strong>{vnd(payoutForMargin(region, 0.03))}</strong>.
         </div>
