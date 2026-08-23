@@ -73,6 +73,34 @@ export default function ExposurePage({ region }: { region: Region }) {
     return { payout, net: book.taken - payout };
   }, [hasDraw, drawn, points, book.taken]);
 
+  /**
+   * Fills the book with each lô's current limit.
+   *
+   * Not a demo with made-up numbers: this is the largest book the limit table
+   * actually permits, so it answers "if every customer bets the maximum I
+   * allow, what am I carrying?" — and it gives the page something real to show
+   * before a single bet has been typed in.
+   */
+  async function loadMaxLimits() {
+    try {
+      const res = await fetch(`/api/limits?region=${region}`);
+      const d = await res.json();
+      const next: Record<string, number> = {};
+      for (const l of d.data ?? []) {
+        if (l.current_limit > 0) next[l.lo_number] = l.current_limit;
+      }
+      if (Object.keys(next).length === 0) {
+        toast.show("info", "Chưa có hạn mức nào để nạp");
+        return;
+      }
+      setPoints(next);
+      setDirty(true);
+      toast.show("success", `Đã nạp hạn mức tối đa của ${Object.keys(next).length} lô`);
+    } catch {
+      toast.show("error", "Không tải được hạn mức");
+    }
+  }
+
   function applyPaste() {
     const { points: p, entries, hasDe, bad } = parseBetString(paste);
     if (entries === 0) {
@@ -171,16 +199,24 @@ export default function ExposurePage({ region }: { region: Region }) {
         </div>
 
         <div className="p-3 md:p-4 space-y-2">
+          <div className="text-[0.7rem] text-[var(--text-muted)]">
+            Ví dụ đoạn dán vào:{" "}
+            <code className="numeric text-[#9fd0ff]">27b50n, 51b30n, 08b10n</code>{" "}
+            — nghĩa là lô 27 nhận 50 điểm, lô 51 nhận 30 điểm, lô 08 nhận 10 điểm.
+          </div>
           <textarea
             value={paste}
             onChange={(e) => setPaste(e.target.value)}
             rows={3}
-            placeholder="27b50n, 51b30n, 08b10n …   (dán cả tiền tố tỉnh cũng được)"
+            placeholder="Dán tin nhắn cược của khách vào đây rồi bấm Cộng vào sổ…"
             className="numeric w-full px-3 py-2 rounded-lg text-xs bg-[rgba(255,255,255,0.05)] border border-[var(--hairline)] text-white placeholder:text-[var(--text-muted)]"
           />
           <div className="flex flex-wrap gap-2">
             <button onClick={applyPaste} disabled={!paste.trim()} className="btn-chrome px-4 py-2 rounded-lg text-xs disabled:opacity-40">
               ➕ Cộng vào sổ
+            </button>
+            <button onClick={loadMaxLimits} className="btn-ghost px-3 py-2 rounded-lg text-xs">
+              📊 Nạp hạn mức tối đa
             </button>
             <button
               onClick={() => {
@@ -202,9 +238,43 @@ export default function ExposurePage({ region }: { region: Region }) {
       {loading ? (
         <div className="py-12 text-center text-sm text-[var(--text-muted)]">Đang tải…</div>
       ) : book.totalPoints === 0 ? (
-        <div className="plate p-10 text-center text-sm text-[var(--text-muted)]">
-          Chưa có cược nào cho ngày này. Dán tin nhắn khách vào ô trên.
-        </div>
+        <section className="plate p-5 md:p-8">
+          <h3 className="chrome text-base mb-1">Trang này trả lời một câu</h3>
+          <p className="text-sm text-[var(--text-secondary)] mb-5">
+            <strong className="text-white">
+              &ldquo;Nếu mai lô 27 về, tôi mất bao nhiêu?&rdquo;
+            </strong>{" "}
+            — nhưng muốn trả lời thì máy phải biết mình đã nhận bao nhiêu tiền trên từng lô.
+          </p>
+
+          <div className="space-y-3 text-sm">
+            <Step n={1} title="Muốn xem thử ngay">
+              Bấm{" "}
+              <button
+                onClick={loadMaxLimits}
+                className="btn-chrome px-3 py-1 rounded-md text-xs align-middle mx-0.5"
+              >
+                📊 Nạp hạn mức tối đa
+              </button>{" "}
+              ở trên. Nó lấy đúng hạn mức đang đặt cho 100 lô và tính xem{" "}
+              <em>nếu khách đánh kịch trần thì mình đang gánh bao nhiêu</em>. Số thật, không phải
+              số giả.
+            </Step>
+
+            <Step n={2} title="Dùng thật hằng ngày">
+              Khách nhắn cược → anh copy nguyên tin nhắn → dán vào ô trên → bấm{" "}
+              <strong>Cộng vào sổ</strong>. Nhiều tin nhắn thì dán tiếp, máy tự cộng dồn.
+            </Step>
+
+            <Step n={3} title="Bấm Lưu sổ">
+              Lưu xong, hôm sau có kết quả là trang tự hiện lãi/lỗ thật của ngày đó.
+            </Step>
+          </div>
+
+          <p className="mt-5 text-[0.7rem] text-[var(--text-muted)] leading-relaxed">
+            Ngày đang chọn: <strong>{date}</strong> — đổi ở ô ngày phía trên. Mỗi miền có sổ riêng.
+          </p>
+        </section>
       ) : (
         <>
           {/* ── Tổng quan ───────────────────────────────────────── */}
@@ -374,6 +444,22 @@ function Stat({
     <div className="rounded-xl border border-[var(--hairline)] bg-[rgba(255,255,255,0.04)] px-3 py-2.5">
       <div className="eyebrow">{label}</div>
       <div className={`numeric text-base md:text-lg font-bold mt-0.5 ${color}`}>{value}</div>
+    </div>
+  );
+}
+
+function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <span className="numeric flex-shrink-0 w-6 h-6 rounded-full bg-[rgba(77,166,255,0.2)] border border-[rgba(77,166,255,0.5)] text-[#9fd0ff] text-xs font-bold flex items-center justify-center">
+        {n}
+      </span>
+      <div className="min-w-0">
+        <div className="font-bold text-white text-[0.8rem]">{title}</div>
+        <div className="text-[0.78rem] text-[var(--text-secondary)] leading-relaxed mt-0.5">
+          {children}
+        </div>
+      </div>
     </div>
   );
 }
