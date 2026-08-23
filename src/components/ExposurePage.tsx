@@ -412,19 +412,28 @@ export default function ExposurePage({ region }: { region: Region }) {
                       r={riskNow}
                     />
                     <Scenario
+                      name={`Giá hiện tại ${vnd(STAKE_PRICE[region])} · sổ CÂN BẰNG hoàn hảo`}
+                      r={{ avg: m, worst: m, lossRate: 0 }}
+                      highlight
+                    />
+                    <Scenario
                       name={`Giá ${vnd(priceForMargin(region, TARGET_MARGIN))} · sổ như đang có`}
                       r={riskAt5}
                     />
                     <Scenario
                       name={`Giá ${vnd(priceForMargin(region, TARGET_MARGIN))} · sổ CÂN BẰNG hoàn hảo`}
                       r={{ avg: TARGET_MARGIN, worst: TARGET_MARGIN, lossRate: 0 }}
-                      highlight
                     />
                   </tbody>
                 </table>
               </div>
 
               <div className="rounded-lg border border-[rgba(16,185,129,0.45)] bg-[rgba(16,185,129,0.1)] px-3 py-2.5 text-[0.78rem] text-[#c9f4e0] leading-relaxed">
+                <strong>Cân bằng KHÔNG làm tăng lãi trung bình</strong> — lãi trung bình luôn
+                đúng bằng biên lợi nhuận, dù sổ đều hay lệch. Cân bằng xoá <em>biến động</em>:
+                sổ đều thì ngày nào cũng ra đúng con số đó, không còn ngày cháy.
+                <br />
+                <br />
                 <strong>Muốn lời {TARGET_MARGIN * 100}% chắc chắn cần đủ 2 điều:</strong>
                 <br />
                 1️⃣ Thu <strong>{vnd(priceForMargin(region, TARGET_MARGIN))}</strong>/điểm thay vì{" "}
