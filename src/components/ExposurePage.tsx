@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useToast } from "./Toast";
 import {
   analyseBook,
+  balancePlan,
+  simulateDay,
   fairPrice,
   margin,
   parseBetString,
@@ -17,6 +19,9 @@ import {
 import { REGION_LABELS, type Region } from "@/lib/types";
 
 const LOS = Array.from({ length: 100 }, (_, i) => String(i).padStart(2, "0"));
+
+/** The margin the operator asked to hit. */
+const TARGET_MARGIN = 0.05;
 
 function vnd(n: number): string {
   const sign = n < 0 ? "−" : "";
@@ -65,6 +70,13 @@ export default function ExposurePage({ region }: { region: Region }) {
   }, [region, date]);
 
   const book = useMemo(() => analyseBook({ points, region }), [points, region]);
+  const balance = useMemo(() => balancePlan(points), [points]);
+  /** Risk at today's price, and at a price carrying the target margin. */
+  const riskNow = useMemo(() => simulateDay(points, region), [points, region]);
+  const riskAt5 = useMemo(
+    () => simulateDay(points, region, priceForMargin(region, TARGET_MARGIN)),
+    [points, region]
+  );
 
   /** What actually happened, once the draw is in. */
   const settled = useMemo(() => {
@@ -235,6 +247,17 @@ export default function ExposurePage({ region }: { region: Region }) {
               <span className="self-center text-[0.65rem] text-[#ffd24a]">chưa lưu</span>
             )}
           </div>
+
+          {/* Right under the buttons: proof that the click did something.
+              Everything below needs scrolling, and a page that looks unchanged
+              after a click reads as broken. */}
+          {book.totalPoints > 0 && (
+            <div className="mt-1 rounded-lg border border-[rgba(16,185,129,0.4)] bg-[rgba(16,185,129,0.1)] px-3 py-2 text-xs text-[#c9f4e0]">
+              ✅ Đang gánh <strong>{book.totalPoints.toLocaleString("vi-VN")}</strong> điểm · thu{" "}
+              <strong>{vnd(book.taken)}</strong> · cân bằng{" "}
+              <strong>{(balance.score * 100).toFixed(0)}%</strong> — chi tiết ở dưới ↓
+            </div>
+          )}
         </div>
       </section>
 
@@ -324,6 +347,139 @@ export default function ExposurePage({ region }: { region: Region }) {
               </div>
             </section>
           )}
+
+          {/* ── Công thức lời 5% chắc chắn ──────────────────────── */}
+          <section className="plate rise rise-2 mb-4 md:mb-6">
+            <div className="plate-hd">
+              <div>
+                <h2 className="plate-title">⚖️ Cân Bằng Sổ — Đường Tới Lời {TARGET_MARGIN * 100}%</h2>
+                <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
+                  Sổ càng đều, lãi càng chắc. Đều tuyệt đối thì lãi cố định, không phụ thuộc kết
+                  quả xổ.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 md:p-4 space-y-4">
+              {/* Thanh cân bằng */}
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-[var(--text-secondary)]">Độ cân bằng của sổ</span>
+                  <span
+                    className={`numeric font-bold ${
+                      balance.score > 0.9
+                        ? "text-[#7ff0c0]"
+                        : balance.score > 0.75
+                        ? "text-[#ffd24a]"
+                        : "text-[#ff9d9d]"
+                    }`}
+                  >
+                    {(balance.score * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="h-2.5 rounded-full bg-[rgba(255,255,255,0.08)] overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.max(2, balance.score * 100)}%`,
+                      background:
+                        balance.score > 0.9 ? "#10b981" : balance.score > 0.75 ? "#f59e0b" : "#dc2626",
+                    }}
+                  />
+                </div>
+                <div className="text-[0.68rem] text-[var(--text-muted)] mt-1.5">
+                  Cân bằng hoàn hảo = mỗi lô đúng{" "}
+                  <strong className="numeric">{balance.target.toFixed(1)}</strong> điểm. Hiện đang
+                  thừa <strong className="numeric">{Math.round(balance.excessTotal)}</strong> điểm ở{" "}
+                  {balance.over.length} lô.
+                </div>
+              </div>
+
+              {/* So sánh 4 kịch bản */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">
+                      <th className="px-2 py-2 text-left font-bold">Kịch bản</th>
+                      <th className="px-2 py-2 text-right font-bold">Lãi TB</th>
+                      <th className="px-2 py-2 text-right font-bold">Ngày tệ nhất</th>
+                      <th className="px-2 py-2 text-right font-bold">Tỉ lệ ngày lỗ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <Scenario
+                      name={`Giá hiện tại ${vnd(STAKE_PRICE[region])} · sổ như đang có`}
+                      r={riskNow}
+                    />
+                    <Scenario
+                      name={`Giá ${vnd(priceForMargin(region, TARGET_MARGIN))} · sổ như đang có`}
+                      r={riskAt5}
+                    />
+                    <Scenario
+                      name={`Giá ${vnd(priceForMargin(region, TARGET_MARGIN))} · sổ CÂN BẰNG hoàn hảo`}
+                      r={{ avg: TARGET_MARGIN, worst: TARGET_MARGIN, lossRate: 0 }}
+                      highlight
+                    />
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="rounded-lg border border-[rgba(16,185,129,0.45)] bg-[rgba(16,185,129,0.1)] px-3 py-2.5 text-[0.78rem] text-[#c9f4e0] leading-relaxed">
+                <strong>Muốn lời {TARGET_MARGIN * 100}% chắc chắn cần đủ 2 điều:</strong>
+                <br />
+                1️⃣ Thu <strong>{vnd(priceForMargin(region, TARGET_MARGIN))}</strong>/điểm thay vì{" "}
+                {vnd(STAKE_PRICE[region])} — hoặc giữ giá và hạ trả trúng còn{" "}
+                <strong>{vnd(payoutForMargin(region, TARGET_MARGIN))}</strong>.
+                <br />
+                2️⃣ Giữ sổ <strong>cân bằng</strong> — mỗi lô nhận quanh{" "}
+                {balance.target.toFixed(0)} điểm, đừng để con nào phình to.
+                <br />
+                <span className="text-[var(--text-muted)]">
+                  Thiếu điều 1 thì không bao giờ có lãi. Thiếu điều 2 thì có lãi nhưng vẫn có ngày
+                  cháy.
+                </span>
+              </div>
+
+              {/* Cần chặn / còn nhận được */}
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <div className="eyebrow mb-1.5 text-[#ff9d9d]">🛑 Ngừng nhận — đang thừa</div>
+                  {balance.over.length === 0 ? (
+                    <div className="text-xs text-[var(--text-muted)]">Không lô nào vượt mức.</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {balance.over.slice(0, 24).map((o) => (
+                        <span
+                          key={o.lo}
+                          title={`Lô ${o.lo}: ${o.points} điểm, thừa ${Math.round(o.excess)}`}
+                          className="numeric text-[0.7rem] px-1.5 py-1 rounded bg-[rgba(220,38,38,0.2)] border border-[rgba(248,113,113,0.4)] text-[#ffb4b4]"
+                        >
+                          {o.lo} <span className="opacity-70">+{Math.round(o.excess)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="eyebrow mb-1.5 text-[#7ff0c0]">✅ Nhận thêm được</div>
+                  <div className="flex flex-wrap gap-1">
+                    {balance.room
+                      .filter((r) => r.room >= 1)
+                      .slice(0, 24)
+                      .map((r) => (
+                        <span
+                          key={r.lo}
+                          title={`Lô ${r.lo}: ${r.points} điểm, còn nhận ${Math.round(r.room)}`}
+                          className="numeric text-[0.7rem] px-1.5 py-1 rounded bg-[rgba(16,185,129,0.16)] border border-[rgba(16,185,129,0.4)] text-[#7ff0c0]"
+                        >
+                          {r.lo} <span className="opacity-70">−{Math.round(r.room)}</span>
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
 
           {/* ── Lô nguy hiểm nhất ───────────────────────────────── */}
           <section className="plate rise rise-3 mb-4 md:mb-6">
@@ -464,5 +620,35 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
         </div>
       </div>
     </div>
+  );
+}
+
+function Scenario({
+  name,
+  r,
+  highlight,
+}: {
+  name: string;
+  r: { avg: number; worst: number; lossRate: number };
+  highlight?: boolean;
+}) {
+  const pct = (x: number) => (x * 100).toFixed(2) + "%";
+  const tone = (x: number) => (x >= 0 ? "text-[#7ff0c0]" : "text-[#ff9d9d]");
+  return (
+    <tr
+      className={`border-t border-[var(--hairline)] ${
+        highlight ? "bg-[rgba(16,185,129,0.1)]" : ""
+      }`}
+    >
+      <td className="px-2 py-2 text-[0.75rem]">
+        {highlight && "⭐ "}
+        {name}
+      </td>
+      <td className={`px-2 py-2 text-right numeric font-bold ${tone(r.avg)}`}>{pct(r.avg)}</td>
+      <td className={`px-2 py-2 text-right numeric font-bold ${tone(r.worst)}`}>{pct(r.worst)}</td>
+      <td className="px-2 py-2 text-right numeric text-[var(--text-secondary)]">
+        {pct(r.lossRate)}
+      </td>
+    </tr>
   );
 }
