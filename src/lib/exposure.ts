@@ -301,3 +301,74 @@ export function simulateDay(
     lossRate: losses / runs,
   };
 }
+
+// ─────────────────────────────────────────────
+// Nạp sổ cược nhiều ngày một lượt
+// ─────────────────────────────────────────────
+
+export interface BulkDay {
+  date: string;
+  points: Record<string, number>;
+  entries: number;
+  bad: string[];
+}
+
+/** "20/8", "20/08/2026", "2026-08-20" — all the ways a date shows up in chat. */
+function readDate(token: string, fallbackYear: number): string | null {
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(token);
+  if (iso) return token;
+
+  const dmy = /^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2,4}))?$/.exec(token);
+  if (!dmy) return null;
+
+  const d = Number(dmy[1]);
+  const m = Number(dmy[2]);
+  let y = dmy[3] ? Number(dmy[3]) : fallbackYear;
+  if (y < 100) y += 2000;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+
+  const t = new Date(Date.UTC(y, m - 1, d));
+  if (t.getUTCMonth() !== m - 1 || t.getUTCDate() !== d) return null;
+  return t.toISOString().slice(0, 10);
+}
+
+/**
+ * Reads a pile of pasted messages into one book per draw date.
+ *
+ * Written for what actually gets pasted: a month of Telegram history, each
+ * day led by a date in whichever format the sender happened to use, bet
+ * strings possibly spread over several lines, and the province prefix still
+ * attached. Lines before any date are ignored rather than guessed at — a bet
+ * filed under the wrong draw is worse than a bet not filed at all.
+ */
+export function parseBulkBets(text: string, fallbackYear = new Date().getUTCFullYear()): BulkDay[] {
+  const days = new Map<string, BulkDay>();
+  let current: string | null = null;
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // A date may lead the line and be followed by that day's bets.
+    const head = line.split(/[\s:]+/)[0];
+    const found = readDate(head, fallbackYear);
+    let body = line;
+    if (found) {
+      current = found;
+      if (!days.has(found)) days.set(found, { date: found, points: {}, entries: 0, bad: [] });
+      body = line.slice(head.length).replace(/^[\s:]+/, "");
+    }
+
+    if (!current || !body) continue;
+
+    const parsed = parseBetString(body);
+    const day = days.get(current)!;
+    for (const [lo, v] of Object.entries(parsed.points)) {
+      day.points[lo] = (day.points[lo] ?? 0) + v;
+    }
+    day.entries += parsed.entries;
+    day.bad.push(...parsed.bad);
+  }
+
+  return [...days.values()].filter((d) => d.entries > 0).sort((a, b) => a.date.localeCompare(b.date));
+}

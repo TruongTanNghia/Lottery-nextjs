@@ -175,3 +175,96 @@ export function backtest(
     turnover: turnover / profits.length,
   };
 }
+
+// ─────────────────────────────────────────────
+// Chạy trên sổ cược THẬT
+// ─────────────────────────────────────────────
+
+/** What customers actually put down on one draw. */
+export interface Book {
+  date: string;
+  points: Record<string, number>;
+}
+
+export interface RealResult extends Result {
+  /** Draws that had both a book and a result. */
+  draws: number;
+  /** Money the rule turned away, summed over the run. */
+  refused: number;
+  /** Total profit in đồng, not a percentage — what actually landed. */
+  profitVnd: number;
+}
+
+/**
+ * Replays a limit rule over the books that really came in.
+ *
+ * A limit is a ceiling, not an order: whatever a customer wanted is accepted
+ * up to the cap and refused above it. So the question this answers is the only
+ * one that matters — "had I been running this rule, what would have happened
+ * to MY money?" — rather than what a hypothetical flat book would have done.
+ */
+export function backtestReal(
+  strategy: Strategy,
+  draws: Draw[],
+  books: Book[],
+  price: number,
+  winPerPoint: number,
+  base = 100,
+  warmup = 10
+): RealResult {
+  const bookBy = new Map(books.map((b) => [b.date, b.points]));
+  const profits: number[] = [];
+  let turnover = 0;
+  let refused = 0;
+  let profitVnd = 0;
+
+  for (let i = warmup; i < draws.length; i++) {
+    const book = bookBy.get(draws[i].date);
+    if (!book) continue;
+
+    const limits = strategy.limits(draws.slice(0, i), base);
+
+    let taken = 0;
+    let payout = 0;
+    const accepted: Record<string, number> = {};
+    for (const lo of LOS) {
+      const wanted = Math.max(0, book[lo] ?? 0);
+      const cap = Math.max(0, limits[lo] ?? 0);
+      const take = Math.min(wanted, cap);
+      accepted[lo] = take;
+      refused += wanted - take;
+      taken += take * price;
+    }
+    if (taken <= 0) continue;
+
+    for (const [lo, count] of Object.entries(draws[i].hits)) {
+      payout += (accepted[lo] ?? 0) * winPerPoint * count;
+    }
+
+    profits.push((taken - payout) / taken);
+    turnover += taken;
+    profitVnd += taken - payout;
+  }
+
+  if (profits.length === 0) {
+    return { avg: 0, worst: 0, best: 0, lossRate: 0, turnover: 0, draws: 0, refused, profitVnd: 0 };
+  }
+  return {
+    avg: profits.reduce((a, b) => a + b, 0) / profits.length,
+    worst: Math.min(...profits),
+    best: Math.max(...profits),
+    lossRate: profits.filter((p) => p < 0).length / profits.length,
+    turnover: turnover / profits.length,
+    draws: profits.length,
+    refused,
+    profitVnd,
+  };
+}
+
+/** No rule at all — accept everything, which is what happened in real life. */
+export const NO_LIMIT: Strategy = {
+  key: "none",
+  name: "Nhận hết, không chặn gì",
+  note: "Đúng những gì đã xảy ra thật",
+  limits: () => Object.fromEntries(LOS.map((lo) => [lo, Number.MAX_SAFE_INTEGER])),
+};

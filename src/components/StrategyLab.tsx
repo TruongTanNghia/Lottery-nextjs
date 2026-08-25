@@ -2,10 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "./Toast";
-import { backtest, LOS, STRATEGIES, type Draw, type Result } from "@/lib/strategy-lab";
+import {
+  backtest,
+  backtestReal,
+  LOS,
+  NO_LIMIT,
+  STRATEGIES,
+  type Book,
+  type Draw,
+} from "@/lib/strategy-lab";
 import { STAKE_PRICE, WIN_PER_POINT, margin } from "@/lib/exposure";
 import { REGION_LABELS, type Region } from "@/lib/types";
 import LayoffCalculator from "./LayoffCalculator";
+import BulkImport from "./BulkImport";
 
 const pct = (x: number) => (x * 100).toFixed(2) + "%";
 
@@ -21,6 +30,10 @@ function tone(x: number, invert = false): string {
 export default function StrategyLab({ region }: { region: Region }) {
   const toast = useToast();
   const [draws, setDraws] = useState<Draw[] | null>(null);
+  const [books, setBooks] = useState<Book[]>([]);
+  /** Real books when they exist; a flat hypothetical book otherwise. */
+  const [dungSoThat, setDungSoThat] = useState(true);
+  const [nap, setNap] = useState(0);
   const [split, setSplit] = useState(0.66);
   const [seeking, setSeeking] = useState(false);
   const [hunt, setHunt] = useState<{ tries: number; train: number; test: number } | null>(null);
@@ -32,24 +45,56 @@ export default function StrategyLab({ region }: { region: Region }) {
       .then((r) => r.json())
       .then((d) => setDraws(d.draws ?? []))
       .catch(() => toast.show("error", "Không tải được lịch sử"));
+
+    fetch(`/api/bets/bulk?region=${region}`)
+      .then((r) => r.json())
+      .then((d) => setBooks(d.books ?? []))
+      .catch(() => setBooks([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [region]);
+  }, [region, nap]);
 
   const price = STAKE_PRICE[region];
 
-  const { train, test, rows } = useMemo(() => {
-    if (!draws || draws.length < 40) return { train: [], test: [], rows: [] };
+  /** Draws that have a book AND a result — the only ones a real run can use. */
+  const coSoThat = useMemo(() => {
+    if (!draws) return 0;
+    const d = new Set(draws.map((x) => x.date));
+    return books.filter((b) => d.has(b.date)).length;
+  }, [draws, books]);
+
+  const theoSoThat = dungSoThat && coSoThat >= 20;
+
+  const { train, test, rows, realRows } = useMemo(() => {
+    if (!draws || draws.length < 40) return { train: [], test: [], rows: [], realRows: [] };
     const cut = Math.floor(draws.length * split);
     const train = draws.slice(0, cut);
     // Overlaps by 10 draws purely as warm-up history the score ignores.
     const test = draws.slice(Math.max(0, cut - 10));
+
     const rows = STRATEGIES.map((s) => ({
       s,
       a: backtest(s, train, price, WIN_PER_POINT),
       b: backtest(s, test, price, WIN_PER_POINT),
     }));
-    return { train, test, rows };
-  }, [draws, split, price]);
+
+    // On real books the cap has to sit near what customers actually staked,
+    // or every rule turns into "accept everything" and they all tie.
+    const mucTB = books.length
+      ? books.reduce(
+          (s, b) => s + Object.values(b.points).reduce((a, v) => a + v, 0) / 100,
+          0
+        ) / books.length
+      : 100;
+
+    const realRows = theoSoThat
+      ? [NO_LIMIT, ...STRATEGIES].map((s) => ({
+          s,
+          r: backtestReal(s, draws, books, price, WIN_PER_POINT, Math.max(1, Math.round(mucTB))),
+        }))
+      : [];
+
+    return { train, test, rows, realRows };
+  }, [draws, split, price, books, theoSoThat]);
 
   /**
    * Tries a pile of random limit tables, keeps whichever wins on the training
@@ -152,6 +197,101 @@ export default function StrategyLab({ region }: { region: Region }) {
       {/* Đặt trước bảng chiến thuật: đây là thứ DUY NHẤT tạo ra lời, phần
           dưới chỉ chứng minh những thứ không tạo ra lời. */}
       <LayoffCalculator region={region} />
+
+      <BulkImport region={region} onImported={() => setNap((n) => n + 1)} />
+
+      {/* Chạy trên sổ cược THẬT — chỉ hiện khi đã có đủ dữ liệu */}
+      {coSoThat >= 20 ? (
+        <section className="plate rise rise-2 mb-4 md:mb-6">
+          <div className="plate-hd flex-wrap gap-2">
+            <div>
+              <h2 className="plate-title">💵 Chạy Trên Sổ Cược THẬT</h2>
+              <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
+                {coSoThat} kỳ có cả sổ cược lẫn kết quả — lãi/lỗ bằng tiền thật
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-[#c2d4ea] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={dungSoThat}
+                onChange={(e) => setDungSoThat(e.target.checked)}
+                className="accent-emerald-500"
+              />
+              Dùng sổ thật
+            </label>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[760px]">
+              <thead>
+                <tr className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">
+                  <th className="px-3 py-2 text-left font-bold">Nếu đã dùng cách này</th>
+                  <th className="px-2 py-2 text-right font-bold text-[#9fd0ff]">Lãi/lỗ<br />tiền thật</th>
+                  <th className="px-2 py-2 text-right font-bold">Biên</th>
+                  <th className="px-2 py-2 text-right font-bold">Ngày<br />tệ nhất</th>
+                  <th className="px-2 py-2 text-right font-bold">Ngày lỗ</th>
+                  <th className="px-3 py-2 text-right font-bold">Từ chối</th>
+                </tr>
+              </thead>
+              <tbody>
+                {realRows.map(({ s, r }) => (
+                  <tr
+                    key={s.key}
+                    className={`border-t border-[var(--hairline)] ${
+                      s.key === "none" ? "bg-[rgba(255,255,255,0.05)]" : ""
+                    }`}
+                  >
+                    <td className="px-3 py-2">
+                      <div className="font-bold text-white text-[0.8rem]">
+                        {s.key === "none" && "📌 "}
+                        {s.name}
+                      </div>
+                      <div className="text-[0.65rem] text-[var(--text-muted)]">{s.note}</div>
+                    </td>
+                    <td
+                      className={`px-2 py-2 text-right numeric font-bold ${
+                        r.profitVnd > 0 ? "text-[#7ff0c0]" : r.profitVnd < 0 ? "text-[#ff9d9d]" : ""
+                      }`}
+                    >
+                      {(r.profitVnd < 0 ? "−" : "+") +
+                        Math.abs(Math.round(r.profitVnd)).toLocaleString("vi-VN") +
+                        "đ"}
+                    </td>
+                    <td className={`px-2 py-2 text-right numeric ${tone(r.avg)}`}>{pct(r.avg)}</td>
+                    <td className={`px-2 py-2 text-right numeric ${tone(r.worst)}`}>
+                      {pct(r.worst)}
+                    </td>
+                    <td className="px-2 py-2 text-right numeric text-[var(--text-secondary)]">
+                      {(r.lossRate * 100).toFixed(0)}%
+                    </td>
+                    <td className="px-3 py-2 text-right numeric text-[var(--text-muted)]">
+                      {Math.round(r.refused).toLocaleString("vi-VN")} đ
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="px-3 md:px-4 py-3 text-[0.7rem] text-[var(--text-muted)] leading-relaxed">
+            Dòng <strong>📌 Nhận hết</strong> là những gì đã xảy ra thật. Các dòng dưới là{" "}
+            <em>&ldquo;nếu hồi đó đã chặn theo cách này&rdquo;</em> — hạn mức chỉ là trần, khách
+            đánh dưới trần thì nhận đủ, vượt thì từ chối phần dư.
+          </p>
+        </section>
+      ) : (
+        <section className="plate p-5 md:p-6 mb-4 md:mb-6">
+          <h3 className="chrome text-base mb-1">💵 Chạy Trên Sổ Cược Thật</h3>
+          <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+            Mình đã có <strong className="text-white">{draws.length} kỳ kết quả</strong>, nhưng mới{" "}
+            <strong className="text-white">{coSoThat} kỳ có sổ cược</strong>. Cần ít nhất{" "}
+            <strong>20 kỳ</strong> để chạy được.
+            <br />
+            <br />
+            Dán tin nhắn cược cũ vào ô <strong>📚 Nạp Sổ Cược Cũ</strong> ở trên — càng nhiều ngày
+            càng chắc. Có đủ rồi thì bảng này tự hiện, và nó sẽ nói bằng{" "}
+            <strong>tiền thật của anh</strong>, không phải phần trăm giả định.
+          </p>
+        </section>
+      )}
 
       <section className="plate rise rise-2 mb-4 md:mb-6">
         <div className="plate-hd">
