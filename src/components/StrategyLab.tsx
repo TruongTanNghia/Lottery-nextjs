@@ -5,6 +5,7 @@ import { useToast } from "./Toast";
 import { backtest, LOS, STRATEGIES, type Draw, type Result } from "@/lib/strategy-lab";
 import { STAKE_PRICE, WIN_PER_POINT, margin } from "@/lib/exposure";
 import { REGION_LABELS, type Region } from "@/lib/types";
+import LayoffCalculator from "./LayoffCalculator";
 
 const pct = (x: number) => (x * 100).toFixed(2) + "%";
 
@@ -147,6 +148,10 @@ export default function StrategyLab({ region }: { region: Region }) {
           là <strong>DỮ LIỆU MỚI</strong> — cột kia chiến thuật nào cũng đẹp được.
         </div>
       </section>
+
+      {/* Đặt trước bảng chiến thuật: đây là thứ DUY NHẤT tạo ra lời, phần
+          dưới chỉ chứng minh những thứ không tạo ra lời. */}
+      <LayoffCalculator region={region} />
 
       <section className="plate rise rise-2 mb-4 md:mb-6">
         <div className="plate-hd">
