@@ -12,8 +12,8 @@
 import { NextResponse } from "next/server";
 import { checkCronAuth, ensureDb, jsonError } from "@/lib/api-utils";
 import { scrapeAllRegionsRange } from "@/lib/scraper";
-import { updateAllLoStatus } from "@/lib/limit-engine";
-import { cleanupOldData, query, VALID_REGIONS } from "@/lib/db";
+import { recalculateAllFromHistory, updateAllLoStatus } from "@/lib/limit-engine";
+import { cleanupOldData, query, VALID_REGIONS, rebuildLoDaily } from "@/lib/db";
 import { computeAndSaveModelPerformance } from "@/lib/prediction";
 
 export const runtime = "nodejs";
@@ -34,6 +34,33 @@ export async function GET(req: Request) {
     const counts = await scrapeAllRegionsRange(2, 600);
     const scrapeMs = Date.now() - t0;
     console.log(`[Cron] Scrape done in ${scrapeMs}ms — counts:`, counts);
+
+    // Guard against lo_daily drifting away from the đài rule.
+    //
+    // New draws are filtered as they are written, but a rule change leaves
+    // every earlier day counted the old way — and nothing complains, because
+    // a wrong hit count still looks like a perfectly ordinary number. That is
+    // exactly how the board came to count every đài against a price built for
+    // two, losing 57% a draw in silence. Cheap to check, so check nightly.
+    const rebuilt: Record<string, number> = {};
+    for (const region of VALID_REGIONS) {
+      const expected = region === "xsmb" ? 27 : 36;
+      const rows = await query<{ tb: number }>(
+        `SELECT AVG(t) AS tb FROM (
+           SELECT SUM(count) AS t FROM lo_daily WHERE region = ? GROUP BY date
+         )`,
+        [region]
+      );
+      const actual = Number(rows[0]?.tb ?? 0);
+      if (actual > 0 && Math.abs(actual - expected) > 0.5) {
+        console.warn(
+          `[Cron] ${region}: đang đếm ${actual.toFixed(1)} lần trúng/kỳ, đáng lẽ ${expected} — dựng lại lo_daily`
+        );
+        const r = await rebuildLoDaily(region);
+        await recalculateAllFromHistory(region);
+        rebuilt[region] = r.days;
+      }
+    }
 
     // Incremental recalc: only the 2 most recent dates per region (fast)
     const t1 = Date.now();
@@ -82,6 +109,7 @@ export async function GET(req: Request) {
       message: `Scraped ${total}, recalc ${recalcMs}ms, cleanup ${deleted}, perf ${perfMs}ms`,
       counts,
       cleanup_deleted: deleted,
+      rebuilt,
       performance_saved: perfResults,
       timing_ms: { scrape: scrapeMs, recalc: recalcMs, perf: perfMs, total: scrapeMs + recalcMs + perfMs },
       ran_at: startedAt,
