@@ -73,9 +73,12 @@ export function weekdayOf(dateStr: string): Weekday {
 export async function loadStationConfig(region: Region): Promise<StationConfig> {
   const raw = await getConfigValue(key(region));
   if (!raw) {
-    // Off until switched on: turning it on rewrites every limit, and that has
-    // to be a decision someone made, not a default that arrived with a deploy.
-    return { enabled: false, exclude: DEFAULT_EXCLUDE[region], excludePrizes: [] };
+    // On by default. It started off so that nobody's limits moved without a
+    // decision — but the decision has since been made, and leaving it off is
+    // not neutral: counting every đài means 56,6 hits a draw in Miền Nam
+    // against a price built for 36, which is a −57% margin on every single
+    // draw. A default that quietly loses money is not a safe default.
+    return { enabled: true, exclude: DEFAULT_EXCLUDE[region], excludePrizes: [] };
   }
   try {
     const p = JSON.parse(raw);
@@ -85,7 +88,7 @@ export async function loadStationConfig(region: Region): Promise<StationConfig> 
       excludePrizes: Array.isArray(p.excludePrizes) ? p.excludePrizes.map(String) : [],
     };
   } catch {
-    return { enabled: false, exclude: DEFAULT_EXCLUDE[region], excludePrizes: [] };
+    return { enabled: true, exclude: DEFAULT_EXCLUDE[region], excludePrizes: [] };
   }
 }
 
