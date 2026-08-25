@@ -1,12 +1,18 @@
 /**
- * Profit Calculator (operator view) — port of backend/profit_calculator.py
+ * Profit Calculator (operator view).
  *
- * Thu = Σ điểm × COST_MULTIPLIER × 75  (tiền cược thu vào, tất cả 100 lô)
- * Bù  = Σ điểm × 75 × occurrences      (chi trả cho lô về)
- * Lãi = Thu - Bù
+ * Thu = Σ điểm × giá bán   (27.000đ mỗi điểm ở MN/MT, 20.250đ ở MB)
+ * Bù  = Σ điểm × 75.000đ × số nháy
+ * Lãi = Thu − Bù
+ *
+ * The old formula multiplied the take by COST_MULTIPLIER but not the payout,
+ * which made a break-even book read as a 98% margin — the dashboard was
+ * reporting hundreds of millions of profit on a position that nets zero. The
+ * prices here are the ones checked against the bookie's own worked example:
+ * 10 điểm cost 270.000đ and pay 750.000đ per nháy.
  */
 import { query, type Region } from "./db";
-import { COST_MULTIPLIER, PRICE_PER_POINT } from "./limit-engine";
+import { STAKE_PRICE, WIN_PER_POINT } from "./exposure";
 
 export interface DailyProfit {
   date: string;
@@ -28,7 +34,7 @@ export async function calculateDailyProfit(
   dateStr: string,
   region: Region
 ): Promise<DailyProfit> {
-  const costMult = COST_MULTIPLIER[region];
+  const gia = STAKE_PRICE[region];
 
   const limits = await query<{ lo_number: string; current_limit: number }>(
     "SELECT lo_number, current_limit FROM lo_status WHERE region = ?",
@@ -52,10 +58,10 @@ export async function calculateDailyProfit(
   let loseCount = 0;
 
   for (const { lo_number, current_limit } of limits) {
-    totalThu += current_limit * costMult * PRICE_PER_POINT;
+    totalThu += current_limit * gia;
     const n = appearMap.get(lo_number) ?? 0;
     if (n > 0) {
-      totalBu += current_limit * PRICE_PER_POINT * n;
+      totalBu += current_limit * WIN_PER_POINT * n;
       winCount++;
     } else {
       loseCount++;

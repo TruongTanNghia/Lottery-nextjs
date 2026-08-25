@@ -5,7 +5,7 @@
 import { NextResponse } from "next/server";
 import { ensureDb, jsonError, validateRegion } from "@/lib/api-utils";
 import { query } from "@/lib/db";
-import { COST_MULTIPLIER, PRICE_PER_POINT } from "@/lib/limit-engine";
+import { STAKE_PRICE, WIN_PER_POINT } from "@/lib/exposure";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
-    const costMult = COST_MULTIPLIER[region];
+    const gia = STAKE_PRICE[region];
 
     const limits = await query<{ lo_number: string; current_limit: number }>(
       "SELECT lo_number, current_limit FROM lo_status WHERE region = ? ORDER BY lo_number",
@@ -46,8 +46,8 @@ export async function GET(req: Request) {
       const a = appMap.get(l.lo_number);
       const appearDays = a?.appear_days ?? 0;
       const totalCount = a?.total_count ?? 0;
-      const cost = l.current_limit * costMult * PRICE_PER_POINT * totalDays;
-      const win = l.current_limit * PRICE_PER_POINT * totalCount;
+      const cost = l.current_limit * gia * totalDays;
+      const win = l.current_limit * WIN_PER_POINT * totalCount;
       return {
         lo_number: l.lo_number,
         limit_points: l.current_limit,
