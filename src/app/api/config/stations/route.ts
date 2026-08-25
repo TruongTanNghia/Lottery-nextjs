@@ -42,11 +42,25 @@ export async function GET(req: Request) {
     }
     for (const wd of Object.keys(schedule)) schedule[wd].sort();
 
+    // Prize structure of one đài, read from the latest draw rather than
+    // hard-coded, so the margin maths follows whatever the source publishes.
+    const prizeRows = await query<{ prize_type: string; n: number }>(
+      `SELECT prize_type, COUNT(*) AS n FROM lottery_results
+       WHERE region = ? AND date = (SELECT MAX(date) FROM lottery_results WHERE region = ?)
+         AND province = (SELECT province FROM lottery_results WHERE region = ?
+                         AND date = (SELECT MAX(date) FROM lottery_results WHERE region = ?) LIMIT 1)
+       GROUP BY prize_type ORDER BY prize_type`,
+      [region, region, region, region]
+    );
+
     return NextResponse.json({
       status: "success",
       region,
       data: await loadStationConfig(region),
       schedule,
+      prizes: prizeRows.map((p) => ({ type: p.prize_type, count: Number(p.n) })),
+      /** How many đài a counted draw has, once the đài rule is on. */
+      stationsPerDraw: region === "xsmb" ? 1 : 2,
     });
   } catch (err) {
     return jsonError(err);
@@ -71,7 +85,13 @@ export async function PUT(req: Request) {
       }
     }
 
-    const cfg = { enabled: body.enabled === true, exclude };
+    // Prize tiers are the finer version of the same lever, and the only one
+    // that changes the margin without touching the price.
+    const excludePrizes = Array.isArray(body.excludePrizes)
+      ? body.excludePrizes.map(String)
+      : [];
+
+    const cfg = { enabled: body.enabled === true, exclude, excludePrizes };
     await saveStationConfig(region, cfg);
 
     // lo_daily is derived, so it is rebuilt from the raw draws; the limits are

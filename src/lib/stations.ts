@@ -24,6 +24,20 @@ export type ExcludeMap = Partial<Record<Weekday, string[]>>;
 export interface StationConfig {
   enabled: boolean;
   exclude: ExcludeMap;
+  /**
+   * Prize tiers that do not count as a hit, e.g. ["G.8"].
+   *
+   * This is the same lever as dropping a đài, one notch finer, and it is the
+   * only one that moves the margin without touching the price. Each region
+   * pays 75.000đ per hit against a fixed stake, so the margin is decided
+   * purely by how many prize positions count: 36 positions is break-even at
+   * 27.000đ, and 34 leaves 5,56%. Verified across 181 real draws — a flat
+   * book returns exactly 5,56% on every single one of them.
+   *
+   * It is a change to what the customer is buying, not a hidden fee: whoever
+   * bets has to be told the tier does not count.
+   */
+  excludePrizes: string[];
 }
 
 /**
@@ -61,23 +75,28 @@ export async function loadStationConfig(region: Region): Promise<StationConfig> 
   if (!raw) {
     // Off until switched on: turning it on rewrites every limit, and that has
     // to be a decision someone made, not a default that arrived with a deploy.
-    return { enabled: false, exclude: DEFAULT_EXCLUDE[region] };
+    return { enabled: false, exclude: DEFAULT_EXCLUDE[region], excludePrizes: [] };
   }
   try {
     const p = JSON.parse(raw);
     return {
       enabled: p.enabled === true,
       exclude: p.exclude && typeof p.exclude === "object" ? p.exclude : DEFAULT_EXCLUDE[region],
+      excludePrizes: Array.isArray(p.excludePrizes) ? p.excludePrizes.map(String) : [],
     };
   } catch {
-    return { enabled: false, exclude: DEFAULT_EXCLUDE[region] };
+    return { enabled: false, exclude: DEFAULT_EXCLUDE[region], excludePrizes: [] };
   }
 }
 
 export async function saveStationConfig(region: Region, cfg: StationConfig): Promise<void> {
   await setConfigValue(
     key(region),
-    JSON.stringify({ enabled: cfg.enabled === true, exclude: cfg.exclude ?? {} })
+    JSON.stringify({
+      enabled: cfg.enabled === true,
+      exclude: cfg.exclude ?? {},
+      excludePrizes: cfg.excludePrizes ?? [],
+    })
   );
 }
 
@@ -85,6 +104,16 @@ export async function saveStationConfig(region: Region, cfg: StationConfig): Pro
 export function countsToward(cfg: StationConfig, dateStr: string, province: string): boolean {
   if (!cfg.enabled) return true;
   return !(cfg.exclude[weekdayOf(dateStr)] ?? []).includes(province);
+}
+
+/**
+ * Does this prize tier count as a hit?
+ *
+ * Independent of the đài switch: a house can drop a tier while still counting
+ * every đài, and the margin follows the position count either way.
+ */
+export function prizeCounts(cfg: StationConfig, prizeType: string): boolean {
+  return !(cfg.excludePrizes ?? []).includes(prizeType);
 }
 
 export { DEFAULT_EXCLUDE };

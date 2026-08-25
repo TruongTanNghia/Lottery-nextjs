@@ -237,12 +237,9 @@ export async function saveLotteryResults(args: {
   // Imported here rather than at the top because stations.ts reads its config
   // through this module: a static import both ways is a cycle, and a cycle
   // resolves to undefined at load time in some bundles.
-  const { countsToward, loadStationConfig } = await import("@/lib/stations");
-  const counts = countsToward(
-    await loadStationConfig(args.region),
-    args.date,
-    args.province
-  );
+  const { countsToward, loadStationConfig, prizeCounts } = await import("@/lib/stations");
+  const cfg = await loadStationConfig(args.region);
+  const counts = countsToward(cfg, args.date, args.province);
 
   const stmts = args.results.flatMap((r) => {
     const number = r.number.trim();
@@ -253,7 +250,7 @@ export async function saveLotteryResults(args: {
         args: [args.date, args.province, r.prize_type, number, lo, args.region],
       },
     ];
-    if (counts) {
+    if (counts && prizeCounts(cfg, r.prize_type)) {
       rows.push({
         sql: `INSERT INTO lo_daily (date, lo_number, count, region) VALUES (?, ?, 1, ?)
               ON CONFLICT(date, lo_number, region) DO UPDATE SET count = count + 1`,
@@ -351,11 +348,11 @@ export async function setConfigValue(key: string, value: string): Promise<void> 
  * behind would mean the board disagrees with its own rule.
  */
 export async function rebuildLoDaily(region: Region): Promise<{ days: number; rows: number }> {
-  const { countsToward, loadStationConfig } = await import("@/lib/stations");
+  const { countsToward, loadStationConfig, prizeCounts } = await import("@/lib/stations");
   const cfg = await loadStationConfig(region);
 
-  const raw = await query<{ date: string; province: string; lo_number: string }>(
-    "SELECT date, province, lo_number FROM lottery_results WHERE region = ?",
+  const raw = await query<{ date: string; province: string; prize_type: string; lo_number: string }>(
+    "SELECT date, province, prize_type, lo_number FROM lottery_results WHERE region = ?",
     [region]
   );
 
@@ -363,6 +360,7 @@ export async function rebuildLoDaily(region: Region): Promise<{ days: number; ro
   const byDate = new Map<string, Map<string, number>>();
   for (const r of raw) {
     if (!countsToward(cfg, r.date, r.province)) continue;
+    if (!prizeCounts(cfg, r.prize_type)) continue;
     let day = byDate.get(r.date);
     if (!day) byDate.set(r.date, (day = new Map()));
     day.set(r.lo_number, (day.get(r.lo_number) ?? 0) + 1);
