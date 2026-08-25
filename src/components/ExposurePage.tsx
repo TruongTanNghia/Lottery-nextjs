@@ -17,6 +17,7 @@ import {
   POSITIONS,
 } from "@/lib/exposure";
 import { REGION_LABELS, type Region } from "@/lib/types";
+import { provincePrefix } from "@/lib/provinces";
 
 const LOS = Array.from({ length: 100 }, (_, i) => String(i).padStart(2, "0"));
 
@@ -153,6 +154,35 @@ export default function ExposurePage({ region }: { region: Region }) {
       toast.show("error", `Lỗi lưu: ${err instanceof Error ? err.message : err}`);
     } finally {
       setSaving(false);
+    }
+  }
+
+  /**
+   * Exactly the excess over a flat book, as a paste-ready bet string.
+   *
+   * The third party charges what the customer paid, so handing them this
+   * costs nothing and leaves behind a book whose payout is fixed before the
+   * draw. It is the one move available that improves anything without
+   * touching the price or the rules.
+   */
+  const chuoiDay = useMemo(
+    () =>
+      balance.over
+        .map((o) => ({ lo: o.lo, diem: Math.round(o.excess) }))
+        .filter((o) => o.diem > 0)
+        .sort((a, b) => a.lo.localeCompare(b.lo))
+        .map((o) => `${o.lo}b${o.diem}n`)
+        .join(", "),
+    [balance.over]
+  );
+
+  async function copyDay() {
+    if (!chuoiDay) return;
+    try {
+      await navigator.clipboard.writeText(`${provincePrefix(region)}: ${chuoiDay}`);
+      toast.show("success", `Đã copy chuỗi đẩy ${balance.over.length} lô`);
+    } catch {
+      toast.show("error", "Trình duyệt chặn copy");
     }
   }
 
@@ -456,6 +486,34 @@ export default function ExposurePage({ region }: { region: Region }) {
                   cháy.
                 </span>
               </div>
+
+              {/* Chuỗi đẩy bên thứ 3 — chỗ duy nhất có giá trị thật */}
+              {balance.over.length > 0 && (
+                <div className="rounded-lg border border-[rgba(77,166,255,0.45)] bg-[rgba(77,166,255,0.1)] px-3 py-2.5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
+                    <div className="text-sm font-bold text-[#9fd0ff]">
+                      📤 Đẩy phần dư cho bên thứ 3
+                    </div>
+                    <button onClick={copyDay} className="btn-ghost px-3 py-1.5 rounded-lg text-xs">
+                      📋 Copy chuỗi đẩy
+                    </button>
+                  </div>
+                  <div className="text-[0.75rem] text-[var(--text-secondary)] leading-relaxed">
+                    Đẩy <strong>{Math.round(balance.excessTotal).toLocaleString("vi-VN")}</strong>{" "}
+                    điểm ({vnd(balance.excessTotal * STAKE_PRICE[region])}) là sổ còn lại{" "}
+                    <strong>cân bằng hoàn toàn</strong>.
+                    <br />
+                    Bên thứ 3 tính đúng giá mình thu, nên đẩy{" "}
+                    <strong className="text-[#9fd0ff]">không mất đồng nào</strong> — chỉ đổi{" "}
+                    {(riskNow.lossRate * 100).toFixed(0)}% ngày lỗ (ngày tệ nhất{" "}
+                    {(riskNow.worst * 100).toFixed(1)}%) thành{" "}
+                    <strong className="text-[#7ff0c0]">0 ngày lỗ</strong>.
+                  </div>
+                  <div className="numeric mt-2 max-h-24 overflow-y-auto text-[0.7rem] text-[#c9e4ff] bg-[rgba(0,0,0,0.25)] rounded p-2 break-all">
+                    {chuoiDay || "—"}
+                  </div>
+                </div>
+              )}
 
               {/* Cần chặn / còn nhận được */}
               <div className="grid gap-3 md:grid-cols-2">
