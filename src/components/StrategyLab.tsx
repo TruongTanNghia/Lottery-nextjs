@@ -11,7 +11,7 @@ import {
   type Book,
   type Draw,
 } from "@/lib/strategy-lab";
-import { STAKE_PRICE, WIN_PER_POINT, margin } from "@/lib/exposure";
+import { POSITIONS, STAKE_PRICE, WIN_PER_POINT, margin } from "@/lib/exposure";
 import { REGION_LABELS, type Region } from "@/lib/types";
 import LayoffCalculator from "./LayoffCalculator";
 import BulkImport from "./BulkImport";
@@ -34,6 +34,8 @@ export default function StrategyLab({ region }: { region: Region }) {
   /** Real books when they exist; a flat hypothetical book otherwise. */
   const [dungSoThat, setDungSoThat] = useState(true);
   const [nap, setNap] = useState(0);
+  /** Hits per draw as the data actually holds them, not as assumed. */
+  const [lanTrung, setLanTrung] = useState<number | null>(null);
   const [split, setSplit] = useState(0.66);
   const [seeking, setSeeking] = useState(false);
   const [hunt, setHunt] = useState<{ tries: number; train: number; test: number } | null>(null);
@@ -43,7 +45,10 @@ export default function StrategyLab({ region }: { region: Region }) {
     setHunt(null);
     fetch(`/api/history/hits?region=${region}`)
       .then((r) => r.json())
-      .then((d) => setDraws(d.draws ?? []))
+      .then((d) => {
+        setDraws(d.draws ?? []);
+        setLanTrung(typeof d.hitsPerDraw === "number" ? d.hitsPerDraw : null);
+      })
       .catch(() => toast.show("error", "Không tải được lịch sử"));
 
     fetch(`/api/bets/bulk?region=${region}`)
@@ -159,6 +164,37 @@ export default function StrategyLab({ region }: { region: Region }) {
 
   return (
     <>
+      {/* Nếu số lần trúng lệch khỏi mức đúng thì MỌI con số dưới đây đều sai —
+          phải nói ra trước, không để người dùng tự đoán. */}
+      {lanTrung !== null && Math.abs(lanTrung - POSITIONS[region]) > 0.5 && (
+        <section className="mb-4 rounded-xl border border-[rgba(248,113,113,0.6)] bg-[rgba(220,38,38,0.18)] px-4 py-3">
+          <div className="text-sm font-bold text-[#ffb4b4]">
+            🔴 SỐ LIỆU ĐANG SAI — đang đếm {lanTrung.toFixed(1)} lần trúng/kỳ, đáng lẽ{" "}
+            {POSITIONS[region]}
+          </div>
+          <div className="text-[0.75rem] text-[#ffd9d9] mt-1 leading-relaxed">
+            Nghĩa là app đang tính <strong>tất cả đài</strong> chứ không phải 2 đài. Kỳ vọng phải
+            trả thành{" "}
+            <strong>{Math.round((lanTrung / 100) * WIN_PER_POINT).toLocaleString("vi-VN")}đ</strong>{" "}
+            trong khi chỉ thu {STAKE_PRICE[region].toLocaleString("vi-VN")}đ → biên{" "}
+            <strong>
+              {(
+                ((STAKE_PRICE[region] - (lanTrung / 100) * WIN_PER_POINT) /
+                  STAKE_PRICE[region]) *
+                100
+              ).toFixed(2)}
+              %
+            </strong>{" "}
+            — nên cách nào cũng LUÔN THUA.
+            <br />
+            <strong>
+              Sửa: vào Dashboard → thẻ 📻 Đài Tính Kết Quả → bật &ldquo;Bỏ bớt đài&rdquo;.
+            </strong>{" "}
+            Mọi con số dưới đây chỉ đúng sau khi bật.
+          </div>
+        </section>
+      )}
+
       <section className="plate rise rise-1 mb-4 md:mb-6">
         <div className="plate-hd flex-wrap gap-2">
           <div>

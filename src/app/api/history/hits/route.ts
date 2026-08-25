@@ -31,10 +31,23 @@ export async function GET(req: Request) {
       d[r.lo_number] = Number(r.count);
     }
 
+    const draws = [...byDate.entries()].map(([date, hits]) => ({ date, hits }));
+
+    // Hits per draw, straight from what lo_daily holds. Every margin the lab
+    // reports follows from this one number, so it travels with the data: if
+    // the đài rule is off it lands near 56 instead of 36 and every figure on
+    // the page is wrong by half. Better the page says so than the operator
+    // discovers it from a losing month.
+    const tongLan = draws.reduce(
+      (s, d) => s + Object.values(d.hits).reduce((a, v) => a + v, 0),
+      0
+    );
+
     return NextResponse.json({
       status: "success",
       region,
-      draws: [...byDate.entries()].map(([date, hits]) => ({ date, hits })),
+      draws,
+      hitsPerDraw: draws.length ? tongLan / draws.length : 0,
     });
   } catch (err) {
     return jsonError(err);
