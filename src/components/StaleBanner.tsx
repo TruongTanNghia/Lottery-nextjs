@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { freshness, freshnessText, formatDayMonth } from "@/lib/freshness";
 
 /**
@@ -18,8 +19,14 @@ export default function StaleBanner({
   onUpdate?: () => void;
   isUpdating?: boolean;
 }) {
+  // Rendered only after mount. Freshness is measured against the clock, and
+  // the server's clock is not the browser's — rendering it during SSR made
+  // React find different text on hydration and throw the whole tree away.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const f = freshness(latestScraped);
-  if (f.level === "ok") return null;
+  if (!mounted || f.level === "ok") return null;
 
   const alarm = f.level === "alarm";
 

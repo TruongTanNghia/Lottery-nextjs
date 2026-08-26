@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "./Toast";
+import { provincePrefix } from "@/lib/provinces";
 import {
   FEATURES,
+  LOS,
+  policyLimits,
   FLAT_WEIGHTS,
   play,
   summarise,
@@ -89,6 +92,56 @@ export default function SimAiPage({ region }: { region: Region }) {
         setDangHoc(false);
       }
     }, 30);
+  }
+
+  /**
+   * What the trained agent would accept on the next draw, and the ladder that
+   * implies. The ladder answers "tăng giảm như nào" directly: bucket every lô
+   * by how long it has been quiet, then read off what the agent chose.
+   */
+  const deXuat = useMemo(() => {
+    if (!kq || !draws) return null;
+    const limits = policyLimits(kq.w, draws, base);
+
+    const gapOf = (lo: string) => {
+      for (let i = draws.length - 1, back = 0; i >= 0; i--, back++) {
+        if ((draws[i].hits[lo] ?? 0) > 0) return back;
+      }
+      return 99;
+    };
+
+    const buckets = new Map<number, number[]>();
+    for (const lo of LOS) {
+      const g = Math.min(gapOf(lo), 9);
+      const arr = buckets.get(g);
+      if (arr) arr.push(limits[lo]);
+      else buckets.set(g, [limits[lo]]);
+    }
+
+    const thang = [...buckets.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([gap, vals]) => ({
+        gap,
+        soLo: vals.length,
+        tb: Math.round(vals.reduce((x, y) => x + y, 0) / vals.length),
+        min: Math.min(...vals),
+        max: Math.max(...vals),
+      }));
+
+    return { limits, thang, tong: LOS.reduce((a, lo) => a + limits[lo], 0), gapOf };
+  }, [kq, draws, base]);
+
+  async function copyDeXuat() {
+    if (!deXuat) return;
+    const chuoi = LOS.filter((lo) => deXuat.limits[lo] > 0)
+      .map((lo) => `${lo}b${deXuat.limits[lo]}n`)
+      .join(", ");
+    try {
+      await navigator.clipboard.writeText(`${provincePrefix(region)}: ${chuoi}`);
+      toast.show("success", "Đã copy hạn mức AI đề xuất");
+    } catch {
+      toast.show("error", "Trình duyệt chặn copy");
+    }
   }
 
   if (!draws) {
@@ -280,6 +333,111 @@ export default function SimAiPage({ region }: { region: Region }) {
               </p>
             </div>
           </section>
+
+          {deXuat && (
+            <>
+              <section className="plate rise rise-3 mb-4 md:mb-6">
+                <div className="plate-hd">
+                  <div>
+                    <h2 className="plate-title">📊 AI Tăng Giảm Theo Số Ngày Chưa Về</h2>
+                    <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
+                      Đây chính là bậc thang mà AI tự rút ra sau khi học
+                    </p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[520px]">
+                    <thead>
+                      <tr className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">
+                        <th className="px-3 py-2 text-left font-bold">Ngày chưa về</th>
+                        <th className="px-2 py-2 text-right font-bold">Số lô</th>
+                        <th className="px-2 py-2 text-right font-bold text-[#9fd0ff]">AI nhận (TB)</th>
+                        <th className="px-2 py-2 text-right font-bold">Thấp–cao</th>
+                        <th className="px-3 py-2 text-right font-bold">So với phẳng</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deXuat.thang.map((r) => {
+                        const lech = ((r.tb - base) / base) * 100;
+                        return (
+                          <tr key={r.gap} className="border-t border-[var(--hairline)]">
+                            <td className="px-3 py-2 numeric text-white">
+                              {r.gap === 9 ? "9+ ngày" : `${r.gap} ngày`}
+                            </td>
+                            <td className="px-2 py-2 text-right numeric text-[var(--text-secondary)]">
+                              {r.soLo}
+                            </td>
+                            <td className="px-2 py-2 text-right numeric font-bold text-[#9fd0ff]">
+                              {r.tb}n
+                            </td>
+                            <td className="px-2 py-2 text-right numeric text-[var(--text-muted)]">
+                              {r.min}–{r.max}
+                            </td>
+                            <td
+                              className={`px-3 py-2 text-right numeric ${
+                                Math.abs(lech) < 3
+                                  ? "text-[var(--text-muted)]"
+                                  : lech > 0
+                                  ? "text-[#7ff0c0]"
+                                  : "text-[#ff9d9d]"
+                              }`}
+                            >
+                              {lech >= 0 ? "+" : ""}
+                              {lech.toFixed(0)}%
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="px-3 md:px-4 py-3 text-[0.7rem] text-[var(--text-muted)] leading-relaxed">
+                  Cột cuối gần 0% ở mọi dòng nghĩa là AI <strong>không tăng giảm theo ngày chưa
+                  về</strong> — nó nhận đều. Còn nếu chênh lệch lớn thì đối chiếu với ô chơi thật ở
+                  trên: học vẹt hay quy luật thật, con số đó nói hết.
+                </p>
+              </section>
+
+              <section className="plate rise rise-4 mb-4 md:mb-6">
+                <div className="plate-hd flex-wrap gap-2">
+                  <div>
+                    <h2 className="plate-title">🎯 Kỳ Tới AI Nhận Con Nào, Bao Nhiêu</h2>
+                    <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
+                      Tổng {deXuat.tong.toLocaleString("vi-VN")} điểm = {tr(deXuat.tong * price)} ·
+                      ô đậm hơn = nhận nhiều hơn
+                    </p>
+                  </div>
+                  <button onClick={copyDeXuat} className="btn-ghost px-3 py-1.5 rounded-lg text-xs">
+                    📋 Copy chuỗi
+                  </button>
+                </div>
+                <div className="p-2 md:p-4 grid grid-cols-10 gap-1 md:gap-1.5">
+                  {LOS.map((lo) => {
+                    const v = deXuat.limits[lo];
+                    const heat = Math.min(1, v / (base * 2));
+                    return (
+                      <div
+                        key={lo}
+                        title={`Lô ${lo}: nhận tối đa ${v} điểm · chưa về ${deXuat.gapOf(lo)} ngày`}
+                        className="rounded-md px-1 py-1.5 text-center leading-tight border"
+                        style={{
+                          background: `rgba(77,166,255,${(0.08 + heat * 0.55).toFixed(3)})`,
+                          borderColor: `rgba(140,180,240,${(0.2 + heat * 0.45).toFixed(3)})`,
+                        }}
+                      >
+                        <div className="numeric text-[0.7rem] md:text-sm font-bold text-white">
+                          {lo}
+                        </div>
+                        <div className="numeric text-[0.5rem] md:text-[0.62rem] text-[#c9e4ff]">
+                          {v}n
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            </>
+          )}
         </>
       )}
     </>
