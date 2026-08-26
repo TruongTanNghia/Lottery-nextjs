@@ -17,6 +17,7 @@ import {
 } from "@/lib/sim-ai";
 import { POSITIONS, STAKE_PRICE, WIN_PER_POINT } from "@/lib/exposure";
 import { REGION_LABELS, type Region } from "@/lib/types";
+import NeuralPanel from "./NeuralPanel";
 
 const tr = (n: number) => {
   const a = Math.abs(n);
@@ -209,6 +210,8 @@ export default function SimAiPage({ region }: { region: Region }) {
           </p>
         </div>
       </section>
+
+      <NeuralPanel region={region} draws={draws} />
 
       {kq && (
         <>
