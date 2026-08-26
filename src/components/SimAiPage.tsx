@@ -146,12 +146,20 @@ export default function SimAiPage({ region }: { region: Region }) {
         max: Math.max(...vals),
       }));
 
+    const vals = LOS.map((lo) => limits[lo]);
     return {
       limits,
       thang,
-      tong: LOS.reduce((a, lo) => a + limits[lo], 0),
+      tong: vals.reduce((a, b) => a + b, 0),
       gapOf,
       daHoc: !!kq,
+      // How many distinct levels the policy actually produced. One level means
+      // the agent decided every lô deserves the same money — a conclusion, not
+      // a setting, and worth saying out loud because on screen it looks exactly
+      // like a hard-coded number.
+      soMuc: new Set(vals).size,
+      thap: Math.min(...vals),
+      cao: Math.max(...vals),
     };
   }, [kq, draws, base]);
 
@@ -254,6 +262,34 @@ export default function SimAiPage({ region }: { region: Region }) {
                   📋 Copy chuỗi
                 </button>
               </div>
+              <div
+                className={`mx-3 md:mx-4 mt-3 rounded-lg border px-3 py-2 text-[0.75rem] leading-relaxed ${
+                  deXuat.soMuc === 1
+                    ? "border-[rgba(16,185,129,0.45)] bg-[rgba(16,185,129,0.1)] text-[#c9f4e0]"
+                    : "border-[rgba(140,180,240,0.4)] bg-[rgba(77,166,255,0.1)] text-[#c9e4ff]"
+                }`}
+              >
+                {deXuat.soMuc === 1 ? (
+                  <>
+                    <strong>AI chọn nhận ĐỀU cả 100 lô ({deXuat.thap}n mỗi con).</strong> Đây là
+                    kết luận của nó chứ không phải mức cố định — nó thử đủ cách chia rồi mới bỏ.
+                    {deXuat.daHoc && (
+                      <>
+                        {" "}
+                        Muốn thấy nó chia khác nhau thì chọn mục tiêu{" "}
+                        <strong>&ldquo;Chỉ tối đa LỜI&rdquo;</strong> rồi học lại — lúc đó nó chia
+                        từ 0n tới 154n, nhưng chơi thật thì lỗ.
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    AI chia thành <strong>{deXuat.soMuc} mức khác nhau</strong> — thấp nhất{" "}
+                    <strong>{deXuat.thap}n</strong>, cao nhất <strong>{deXuat.cao}n</strong>.
+                  </>
+                )}
+              </div>
+
               <div className="p-2 md:p-4 grid grid-cols-10 gap-1 md:gap-1.5">
                 {LOS.map((lo) => {
                   const v = deXuat.limits[lo];
