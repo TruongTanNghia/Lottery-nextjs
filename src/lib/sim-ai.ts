@@ -81,6 +81,10 @@ export interface DayResult {
   profit: number;
   bankroll: number;
   points: number;
+  /** Points accepted on each lô that day — the decision, kept for inspection. */
+  limits: Record<string, number>;
+  /** How many times each lô landed. Empty entries did not land. */
+  hits: Record<string, number>;
 }
 
 /**
@@ -113,7 +117,14 @@ export function play(
 
     const profit = taken - payout;
     money += profit;
-    days.push({ date: draws[i].date, taken, payout, profit, bankroll: money, points });
+    // Kept whole rather than summarised: the operator has to be able to open
+    // any single day and see which number took which money.
+    days.push({
+      date: draws[i].date,
+      taken, payout, profit, bankroll: money, points,
+      limits,
+      hits: { ...draws[i].hits },
+    });
     if (money <= 0) return { days, broke: true };
   }
   return { days, broke: false };

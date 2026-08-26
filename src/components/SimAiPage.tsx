@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useToast } from "./Toast";
 import { provincePrefix } from "@/lib/provinces";
 import {
@@ -12,6 +12,7 @@ import {
   summarise,
   train,
   type Draw,
+  type DayResult,
   type RunSummary,
   type Weights,
 } from "@/lib/sim-ai";
@@ -47,7 +48,9 @@ export default function SimAiPage({ region }: { region: Region }) {
     trainScore: number;
     ai: RunSummary;
     phang: RunSummary;
+    days: DayResult[];
   } | null>(null);
+  const [moNgay, setMoNgay] = useState<string | null>(null);
 
   useEffect(() => {
     setDraws(null);
@@ -86,6 +89,7 @@ export default function SimAiPage({ region }: { region: Region }) {
           trainScore: t.trainScore,
           ai: summarise(a.days, a.broke, von),
           phang: summarise(f.days, f.broke, von),
+          days: a.days,
         });
       } catch {
         toast.show("error", "Huấn luyện lỗi");
@@ -334,6 +338,130 @@ export default function SimAiPage({ region }: { region: Region }) {
                   </>
                 )}
               </p>
+            </div>
+          </section>
+
+          {/* Nhật ký từng ngày — mở ra là thấy từng lô */}
+          <section className="plate rise rise-3 mb-4 md:mb-6">
+            <div className="plate-hd">
+              <div>
+                <h2 className="plate-title">📅 Nhật Ký Từng Ngày</h2>
+                <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
+                  Bấm vào một ngày để xem nhận con nào, bao nhiêu tiền, con nào về
+                </p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[680px]">
+                <thead>
+                  <tr className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">
+                    <th className="px-3 py-2 text-left font-bold">Ngày</th>
+                    <th className="px-2 py-2 text-right font-bold">Số lô nhận</th>
+                    <th className="px-2 py-2 text-right font-bold">Tổng điểm</th>
+                    <th className="px-2 py-2 text-right font-bold">Thu vào</th>
+                    <th className="px-2 py-2 text-right font-bold">Trả ra</th>
+                    <th className="px-2 py-2 text-right font-bold">Lãi/lỗ</th>
+                    <th className="px-3 py-2 text-right font-bold">Vốn còn</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {kq.days.map((d) => {
+                    const nhan = LOS.filter((lo) => (d.limits[lo] ?? 0) > 0);
+                    const mo = moNgay === d.date;
+                    return (
+                      <Fragment key={d.date}>
+                        <tr
+                          onClick={() => setMoNgay(mo ? null : d.date)}
+                          className={`border-t border-[var(--hairline)] cursor-pointer hover:bg-white/[0.06] ${
+                            mo ? "bg-white/[0.07]" : ""
+                          }`}
+                        >
+                          <td className="px-3 py-2 numeric text-white">
+                            {mo ? "▾ " : "▸ "}
+                            {d.date.slice(8, 10)}/{d.date.slice(5, 7)}
+                          </td>
+                          <td className="px-2 py-2 text-right numeric text-[var(--text-secondary)]">
+                            {nhan.length}
+                          </td>
+                          <td className="px-2 py-2 text-right numeric text-[var(--text-secondary)]">
+                            {d.points.toLocaleString("vi-VN")}
+                          </td>
+                          <td className="px-2 py-2 text-right numeric text-[#7ff0c0]">
+                            {tr(d.taken)}
+                          </td>
+                          <td className="px-2 py-2 text-right numeric text-[#ff9d9d]">
+                            {tr(d.payout)}
+                          </td>
+                          <td
+                            className={`px-2 py-2 text-right numeric font-bold ${
+                              d.profit > 0 ? "text-[#7ff0c0]" : d.profit < 0 ? "text-[#ff9d9d]" : ""
+                            }`}
+                          >
+                            {(d.profit >= 0 ? "+" : "") + tr(d.profit)}
+                          </td>
+                          <td className="px-3 py-2 text-right numeric text-white">
+                            {tr(d.bankroll)}
+                          </td>
+                        </tr>
+
+                        {mo && (
+                          <tr className="bg-[rgba(0,0,0,0.25)]">
+                            <td colSpan={7} className="px-3 py-3">
+                              <div className="text-[0.7rem] text-[var(--text-muted)] mb-2">
+                                {nhan.length} lô nhận cược · {Object.keys(d.hits).length} lô về ·
+                                nền đỏ = lô về và phải trả tiền
+                              </div>
+                              <div className="grid grid-cols-10 gap-1">
+                                {LOS.map((lo) => {
+                                  const diem = d.limits[lo] ?? 0;
+                                  const ve = d.hits[lo] ?? 0;
+                                  const traLo = diem * WIN_PER_POINT * ve;
+                                  const laiLo = diem * price - traLo;
+                                  return (
+                                    <div
+                                      key={lo}
+                                      title={`Lô ${lo}: nhận ${diem} điểm = ${tr(
+                                        diem * price
+                                      )}${ve ? ` · về ${ve} nháy, trả ${tr(traLo)}` : " · không về"}`}
+                                      className={`rounded px-1 py-1 text-center leading-tight border ${
+                                        diem === 0
+                                          ? "bg-white/[0.03] border-[var(--hairline)] opacity-50"
+                                          : ve > 0
+                                          ? "bg-[rgba(220,38,38,0.25)] border-[rgba(248,113,113,0.5)]"
+                                          : "bg-[rgba(16,185,129,0.16)] border-[rgba(16,185,129,0.4)]"
+                                      }`}
+                                    >
+                                      <div className="numeric text-[0.68rem] font-bold text-white">
+                                        {lo}
+                                        {ve > 1 && (
+                                          <span className="text-[#ffd24a]">×{ve}</span>
+                                        )}
+                                      </div>
+                                      <div className="numeric text-[0.55rem] text-[var(--text-secondary)]">
+                                        {diem === 0 ? "—" : `${diem}n`}
+                                      </div>
+                                      {diem > 0 && (
+                                        <div
+                                          className={`numeric text-[0.52rem] font-bold ${
+                                            laiLo >= 0 ? "text-[#7ff0c0]" : "text-[#ff9d9d]"
+                                          }`}
+                                        >
+                                          {laiLo >= 0 ? "+" : ""}
+                                          {tr(laiLo)}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </section>
 
