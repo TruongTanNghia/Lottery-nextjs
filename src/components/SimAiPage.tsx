@@ -115,8 +115,11 @@ export default function SimAiPage({ region }: { region: Region }) {
    * by how long it has been quiet, then read off what the agent chose.
    */
   const deXuat = useMemo(() => {
-    if (!kq || !draws) return null;
-    const limits = policyLimits(kq.w, draws, base);
+    if (!draws || draws.length === 0) return null;
+    // Before any training this is the flat book — which is a real, usable
+    // answer, not a placeholder. A page that shows nothing until a button is
+    // pressed reads as broken to whoever opens it looking for tomorrow.
+    const limits = policyLimits(kq?.w ?? FLAT_WEIGHTS, draws, base);
 
     const gapOf = (lo: string) => {
       for (let i = draws.length - 1, back = 0; i >= 0; i--, back++) {
@@ -143,7 +146,13 @@ export default function SimAiPage({ region }: { region: Region }) {
         max: Math.max(...vals),
       }));
 
-    return { limits, thang, tong: LOS.reduce((a, lo) => a + limits[lo], 0), gapOf };
+    return {
+      limits,
+      thang,
+      tong: LOS.reduce((a, lo) => a + limits[lo], 0),
+      gapOf,
+      daHoc: !!kq,
+    };
   }, [kq, draws, base]);
 
   async function copyDeXuat() {
@@ -226,6 +235,51 @@ export default function SimAiPage({ region }: { region: Region }) {
       </section>
 
       <NeuralPanel region={region} draws={draws} />
+
+          {deXuat && (
+            <section className="plate rise rise-4 mb-4 md:mb-6">
+              <div className="plate-hd flex-wrap gap-2">
+                <div>
+                  <h2 className="plate-title">
+                    🎯 NGÀY MAI {ngayMai?.hienThi ?? "—"} — AI Định Nhận Thế Này
+                  </h2>
+                  <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
+                    {REGION_LABELS[region]} · tổng {deXuat.tong.toLocaleString("vi-VN")} điểm ={" "}
+                    {tr(deXuat.tong * price)} ·{" "}
+                    {deXuat.daHoc ? "AI đã học xong" : "mức phẳng — bấm học để AI tự chỉnh"} ·
+                    ô đậm hơn = nhận nhiều hơn
+                  </p>
+                </div>
+                <button onClick={copyDeXuat} className="btn-ghost px-3 py-1.5 rounded-lg text-xs">
+                  📋 Copy chuỗi
+                </button>
+              </div>
+              <div className="p-2 md:p-4 grid grid-cols-10 gap-1 md:gap-1.5">
+                {LOS.map((lo) => {
+                  const v = deXuat.limits[lo];
+                  const heat = Math.min(1, v / (base * 2));
+                  return (
+                    <div
+                      key={lo}
+                      title={`Lô ${lo}: nhận tối đa ${v} điểm · chưa về ${deXuat.gapOf(lo)} ngày`}
+                      className="rounded-md px-1 py-1.5 text-center leading-tight border"
+                      style={{
+                        background: `rgba(77,166,255,${(0.08 + heat * 0.55).toFixed(3)})`,
+                        borderColor: `rgba(140,180,240,${(0.2 + heat * 0.45).toFixed(3)})`,
+                      }}
+                    >
+                      <div className="numeric text-[0.7rem] md:text-sm font-bold text-white">
+                        {lo}
+                      </div>
+                      <div className="numeric text-[0.5rem] md:text-[0.62rem] text-[#c9e4ff]">
+                        {v}n
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
       {kq && (
         <>
@@ -351,48 +405,6 @@ export default function SimAiPage({ region }: { region: Region }) {
             </div>
           </section>
 
-          {deXuat && (
-            <section className="plate rise rise-4 mb-4 md:mb-6">
-              <div className="plate-hd flex-wrap gap-2">
-                <div>
-                  <h2 className="plate-title">
-                    🎯 NGÀY MAI {ngayMai?.hienThi ?? "—"} — AI Định Nhận Thế Này
-                  </h2>
-                  <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-                    {REGION_LABELS[region]} · tổng {deXuat.tong.toLocaleString("vi-VN")} điểm = {tr(deXuat.tong * price)} ·
-                    ô đậm hơn = nhận nhiều hơn
-                  </p>
-                </div>
-                <button onClick={copyDeXuat} className="btn-ghost px-3 py-1.5 rounded-lg text-xs">
-                  📋 Copy chuỗi
-                </button>
-              </div>
-              <div className="p-2 md:p-4 grid grid-cols-10 gap-1 md:gap-1.5">
-                {LOS.map((lo) => {
-                  const v = deXuat.limits[lo];
-                  const heat = Math.min(1, v / (base * 2));
-                  return (
-                    <div
-                      key={lo}
-                      title={`Lô ${lo}: nhận tối đa ${v} điểm · chưa về ${deXuat.gapOf(lo)} ngày`}
-                      className="rounded-md px-1 py-1.5 text-center leading-tight border"
-                      style={{
-                        background: `rgba(77,166,255,${(0.08 + heat * 0.55).toFixed(3)})`,
-                        borderColor: `rgba(140,180,240,${(0.2 + heat * 0.45).toFixed(3)})`,
-                      }}
-                    >
-                      <div className="numeric text-[0.7rem] md:text-sm font-bold text-white">
-                        {lo}
-                      </div>
-                      <div className="numeric text-[0.5rem] md:text-[0.62rem] text-[#c9e4ff]">
-                        {v}n
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
 
           {/* Nhật ký từng ngày — mở ra là thấy từng lô */}
           <section className="plate rise rise-3 mb-4 md:mb-6">
