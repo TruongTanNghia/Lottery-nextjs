@@ -7,6 +7,7 @@ import {
   backtestReal,
   LOS,
   NO_LIMIT,
+  SHAPE_STRATEGIES,
   STRATEGIES,
   type Book,
   type Draw,
@@ -76,7 +77,7 @@ export default function StrategyLab({ region }: { region: Region }) {
     // Overlaps by 10 draws purely as warm-up history the score ignores.
     const test = draws.slice(Math.max(0, cut - 10));
 
-    const rows = STRATEGIES.map((s) => ({
+    const rows = [...STRATEGIES, ...SHAPE_STRATEGIES].map((s) => ({
       s,
       a: backtest(s, train, price, WIN_PER_POINT),
       b: backtest(s, test, price, WIN_PER_POINT),
@@ -92,7 +93,7 @@ export default function StrategyLab({ region }: { region: Region }) {
       : 100;
 
     const realRows = theoSoThat
-      ? [NO_LIMIT, ...STRATEGIES].map((s) => ({
+      ? [NO_LIMIT, ...STRATEGIES, ...SHAPE_STRATEGIES].map((s) => ({
           s,
           r: backtestReal(s, draws, books, price, WIN_PER_POINT, Math.max(1, Math.round(mucTB))),
         }))
@@ -345,12 +346,13 @@ export default function StrategyLab({ region }: { region: Region }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ s, a, b }) => (
+              {rows.map(({ s, a, b }, i) => (
                 <tr
                   key={s.key}
+                  data-group={i === STRATEGIES.length ? "shape" : undefined}
                   className={`border-t border-[var(--hairline)] ${
                     s.key === "flat" ? "bg-[rgba(16,185,129,0.09)]" : "hover:bg-white/[0.05]"
-                  }`}
+                  } ${i === STRATEGIES.length ? "border-t-2 border-t-[rgba(140,180,240,0.35)]" : ""}`}
                 >
                   <td className="px-3 py-2">
                     <div className="font-bold text-white text-[0.8rem]">

@@ -126,6 +126,78 @@ export const STRATEGIES: Strategy[] = [
   },
 ];
 
+// ─────────────────────────────────────────────
+// Theo DẠNG SỐ — kép, đầu, đuôi, tổng
+// ─────────────────────────────────────────────
+
+/**
+ * Shape families, the way a bookie talks about numbers.
+ *
+ * Worth testing even though every two-digit number is equally likely: the
+ * question is empirical, and "kép hay về hơn" is the kind of belief that only
+ * dies when someone measures it. Measured over 181 draws, no family lands
+ * outside its own noise band.
+ */
+const SHAPES: Record<string, (lo: string) => boolean> = {
+  kepBang: (lo) => lo[0] === lo[1],
+  kepLech: (lo) => (+lo[0] - +lo[1] + 10) % 10 === 5,
+  kepAm: (lo) => (+lo[1] - +lo[0] + 10) % 10 === 1,
+  dauCao: (lo) => +lo[0] >= 5,
+  tongChan: (lo) => (+lo[0] + +lo[1]) % 10 % 2 === 0,
+  haiChan: (lo) => +lo[0] % 2 === 0 && +lo[1] % 2 === 0,
+};
+
+function byShape(shape: keyof typeof SHAPES, base: number, factor: number) {
+  return Object.fromEntries(
+    LOS.map((lo) => [lo, SHAPES[shape](lo) ? Math.round(base * factor) : base])
+  );
+}
+
+export const SHAPE_STRATEGIES: Strategy[] = [
+  {
+    key: "noKepBang",
+    name: "Chặn số kép bằng",
+    note: "Không nhận 00, 11, 22 … 99",
+    limits: (_h, base) => byShape("kepBang", base, 0),
+  },
+  {
+    key: "moreKepBang",
+    name: "Nhận GẤP ĐÔI số kép bằng",
+    note: "Làm ngược lại — ăn nhiều hơn ở kép",
+    limits: (_h, base) => byShape("kepBang", base, 2),
+  },
+  {
+    key: "noKepAm",
+    name: "Chặn kép âm (01, 12, 23…)",
+    note: "Dạng ra nhỉnh nhất trong 181 kỳ (+4,2%)",
+    limits: (_h, base) => byShape("kepAm", base, 0),
+  },
+  {
+    key: "noKepLech",
+    name: "Chặn kép lệch (05, 16, 27…)",
+    note: "Hai chữ số cách nhau 5",
+    limits: (_h, base) => byShape("kepLech", base, 0),
+  },
+  {
+    key: "noDauCao",
+    name: "Chặn nửa bảng — đầu 5 đến 9",
+    note: "Chỉ nhận lô có chữ số đầu từ 0 đến 4",
+    limits: (_h, base) => byShape("dauCao", base, 0),
+  },
+  {
+    key: "noTongChan",
+    name: "Chặn tổng chẵn",
+    note: "Không nhận lô có tổng 2 chữ số là chẵn",
+    limits: (_h, base) => byShape("tongChan", base, 0),
+  },
+  {
+    key: "noHaiChan",
+    name: "Chặn số có cả 2 chữ số chẵn",
+    note: "Dạng ra ít nhất trong 181 kỳ (−2,3%)",
+    limits: (_h, base) => byShape("haiChan", base, 0),
+  },
+];
+
 export interface Result {
   /** Mean profit as a share of money taken. */
   avg: number;
