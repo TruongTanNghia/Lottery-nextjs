@@ -2,19 +2,19 @@
 
 import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
 
-type ViewKey = "dashboard" | "exposure" | "lab" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling";
+type ViewKey = "dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling";
 
 // Every view the app can render, in tab order. Kept as the full list so the
 // pages stay wired up and nothing has to be rebuilt to bring one back.
 const ALL_VIEWS = [
-  "dashboard", "exposure", "lab", "results", "prediction", "vip", "golden", "pair", "three",
+  "dashboard", "exposure", "lab", "simai", "results", "prediction", "vip", "golden", "pair", "three",
   "four", "sim", "watcher", "today", "accuracy", "history", "rolling",
 ] as const;
 
 // Which of those actually show up. The app now runs a chặn-số (limit) workflow
 // rather than a betting one, so only the limit board is exposed — add a key
 // back to this list to restore its tab.
-const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard", "exposure", "lab", "results"];
+const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard", "exposure", "lab", "simai", "results"];
 
 interface Props {
   current: Region;
@@ -70,6 +70,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
             dashboard: "📊 Dashboard",
             exposure: "💰 Rủi Ro Tiền",
             lab: "🔬 Thử Chiến Thuật",
+            simai: "🤖 SIM-AI",
             results: "📋 Kết Quả",
             prediction: "🔮 Dự Đoán",
             vip: "👑 Dự Đoán VIP",
@@ -88,6 +89,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
             dashboard: "bg-blue-900 shadow-[0_1px_6px_rgba(59,130,246,0.25)]",
             exposure: "bg-rose-800 shadow-[0_1px_6px_rgba(244,63,94,0.35)]",
             lab: "bg-violet-800 shadow-[0_1px_6px_rgba(139,92,246,0.35)]",
+            simai: "bg-cyan-800 shadow-[0_1px_6px_rgba(34,211,238,0.35)]",
             results: "bg-emerald-700 shadow-[0_1px_6px_rgba(16,185,129,0.35)]",
             prediction: "bg-blue-900 shadow-[0_1px_6px_rgba(59,130,246,0.25)]",
             vip: "bg-yellow-700 shadow-[0_1px_6px_rgba(245,158,11,0.35)]",
