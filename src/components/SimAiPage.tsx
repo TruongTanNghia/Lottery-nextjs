@@ -24,6 +24,7 @@ import {
 import { POSITIONS, STAKE_PRICE, WIN_PER_POINT } from "@/lib/exposure";
 import { REGION_LABELS, type Region } from "@/lib/types";
 import NeuralPanel from "./NeuralPanel";
+import PatternPanel from "./PatternPanel";
 import TierEditor from "./TierEditor";
 
 const tr = (n: number) => {
@@ -316,6 +317,8 @@ export default function SimAiPage({ region }: { region: Region }) {
           </p>
         </div>
       </section>
+
+      <PatternPanel draws={draws} price={price} />
 
       <NeuralPanel region={region} draws={draws} />
 
