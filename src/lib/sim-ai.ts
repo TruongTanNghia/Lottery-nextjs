@@ -347,3 +347,86 @@ export function tierLimits(
 export function tierTotal(tiers: Tier[]): number {
   return tiers.reduce((s, t) => s + t.soLo * t.tien, 0);
 }
+
+export interface SpreadTest {
+  lan: number;
+  trungBinh: number;
+  bienDo: number;
+  xauNhat: number;
+  totNhat: number;
+  tyLeLoi: number;
+  ngayTeNhatTB: number;
+}
+
+/**
+ * How much of a tier table's result is the ranking, and how much is luck.
+ *
+ * Keeps the real draws and the real tier table and shuffles only *which* lô
+ * sits in which tier. Every shuffle accepts the same money on the same days,
+ * so whatever spread comes out is pure variance — and the average across
+ * shuffles is what the table is actually worth. Without this the operator sees
+ * one 30-day number and reads it as a verdict on the table.
+ */
+export function tierSpread(
+  draws: Draw[],
+  tiers: Tier[],
+  price: number,
+  winPerPoint: number,
+  lan = 400,
+  seed = 20260827
+): SpreadTest | null {
+  if (draws.length === 0) return null;
+
+  const thang: number[] = [];
+  for (const t of tiers) for (let i = 0; i < t.soLo && thang.length < 100; i++) thang.push(t.tien);
+  while (thang.length < 100) thang.push(0);
+
+  let s = seed;
+  const rnd = () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  const tongs: number[] = [];
+  let tongTeNhat = 0;
+  let loi = 0;
+
+  for (let k = 0; k < lan; k++) {
+    const thuTu = [...LOS];
+    for (let i = thuTu.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      [thuTu[i], thuTu[j]] = [thuTu[j], thuTu[i]];
+    }
+    const lim: Record<string, number> = {};
+    thuTu.forEach((lo, i) => (lim[lo] = thang[i]));
+
+    // The take is the same every day, so it comes out of the loop.
+    const thu = LOS.reduce((a, lo) => a + lim[lo], 0) * price;
+    let tong = 0;
+    let teNhat = Infinity;
+    for (const d of draws) {
+      let tra = 0;
+      for (const [lo, c] of Object.entries(d.hits)) tra += (lim[lo] ?? 0) * winPerPoint * c;
+      const p = thu - tra;
+      tong += p;
+      if (p < teNhat) teNhat = p;
+    }
+    tongs.push(tong);
+    tongTeNhat += teNhat;
+    if (tong > 0) loi++;
+  }
+
+  const tb = tongs.reduce((a, b) => a + b, 0) / lan;
+  const bienDo = Math.sqrt(tongs.reduce((a, b) => a + (b - tb) ** 2, 0) / lan);
+  return {
+    lan,
+    trungBinh: tb,
+    bienDo,
+    xauNhat: Math.min(...tongs),
+    totNhat: Math.max(...tongs),
+    tyLeLoi: loi / lan,
+    ngayTeNhatTB: tongTeNhat / lan,
+  };
+}

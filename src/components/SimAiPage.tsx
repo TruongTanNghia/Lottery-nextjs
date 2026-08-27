@@ -13,6 +13,7 @@ import {
   train,
   type Draw,
   tierLimits,
+  tierSpread,
   tierTotal,
   DEFAULT_TIERS,
   type DayResult,
@@ -79,6 +80,18 @@ export default function SimAiPage({ region }: { region: Region }) {
   const price = STAKE_PRICE[region];
   // Both modes accept the same total, so the comparison is about shape only.
   const base = theoBac ? Math.max(1, Math.round(tierTotal(tiers) / 100)) : baseTuDo;
+
+  /**
+   * The same tier table, dealt out 400 different ways over the same draws.
+   * One 30-day number on its own tells the operator nothing about whether a
+   * loss was the table or the month.
+   */
+  const bienDo = useMemo(() => {
+    if (!theoBac || !draws || !kq) return null;
+    return tierSpread(draws.slice(-kq.ai.days), tiers, price, WIN_PER_POINT, 400);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theoBac, draws, kq, tiers, region]);
+
 
   /** The draw after the last one on record — the day these limits are for. */
   const ngayMai = useMemo(() => {
@@ -427,6 +440,52 @@ export default function SimAiPage({ region }: { region: Region }) {
                   </tbody>
                 </table>
               </div>
+
+              {bienDo && (
+                <div className="rounded-lg border border-[rgba(251,191,36,0.4)] bg-[rgba(245,158,11,0.09)] px-3 py-2.5 space-y-1.5">
+                  <div className="eyebrow text-[#ffe0a8]">
+                    Lỗ vậy là do chia sai hay do xui?
+                  </div>
+                  <p className="text-[0.78rem] leading-relaxed text-[#ffe9c4]">
+                    Vẫn bảng bậc này, vẫn {kq.ai.days} kỳ đó, chỉ đổi xem con nào nằm bậc
+                    nào — thử <b>{bienDo.lan} cách xếp khác nhau</b>:
+                  </p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[0.72rem]">
+                    <div>
+                      <div className="text-[var(--text-muted)]">Trung bình</div>
+                      <div className="numeric font-bold text-white">
+                        {(bienDo.trungBinh >= 0 ? "+" : "") + tr(bienDo.trungBinh)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[var(--text-muted)]">Biên độ</div>
+                      <div className="numeric font-bold text-[#ffd24a]">±{tr(bienDo.bienDo)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[var(--text-muted)]">Xấu nhất ↔ tốt nhất</div>
+                      <div className="numeric font-bold text-white">
+                        {tr(bienDo.xauNhat)} ↔ {tr(bienDo.totNhat)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[var(--text-muted)]">Số lần có lời</div>
+                      <div className="numeric font-bold text-white">
+                        {(bienDo.tyLeLoi * 100).toFixed(0)}%
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[0.72rem] leading-relaxed text-[#ffe9c4]">
+                    Trung bình gần 0 — bảng bậc <b>không tự làm mình lỗ</b>, cũng không tự
+                    làm mình lời. Nhưng nó ném kết quả đi xa tới ±{tr(bienDo.bienDo)}, và chỉ{" "}
+                    {(bienDo.tyLeLoi * 100).toFixed(0)}% số cách xếp là có lời — gần đúng
+                    tung đồng xu. Con số {(kq.ai.profit >= 0 ? "+" : "") + tr(kq.ai.profit)}{" "}
+                    ở trên chỉ là <b>một lần bốc</b> trong khoảng đó, không phải bằng chứng
+                    cách xếp tốt hay xấu. Muốn hết chuyện này thì bấm{" "}
+                    <b>Thu hẹp khoảng cách bậc</b>: chênh giảm bao nhiêu, biên độ giảm đúng
+                    bấy nhiêu — phẳng hẳn thì biên độ về 0.
+                  </p>
+                </div>
+              )}
             </div>
           </section>
 
@@ -565,10 +624,69 @@ export default function SimAiPage({ region }: { region: Region }) {
                         {mo && (
                           <tr className="bg-[rgba(0,0,0,0.25)]">
                             <td colSpan={7} className="px-3 py-3">
-                              <div className="text-[0.7rem] text-[var(--text-muted)] mb-2">
-                                {nhan.length} lô nhận cược · {Object.keys(d.hits).length} lô về ·
-                                nền đỏ = lô về và phải trả tiền
-                              </div>
+                              {/* Trước khi nhìn bảng 100 ô, chỉ thẳng ra con nào
+                                  làm mất tiền — đó là câu hỏi thật sự. */}
+                              {(() => {
+                                const chiTiet = nhan
+                                  .map((lo) => {
+                                    const diem = d.limits[lo];
+                                    const ve = d.hits[lo] ?? 0;
+                                    return {
+                                      lo,
+                                      diem,
+                                      ve,
+                                      thu: diem * price,
+                                      tra: diem * WIN_PER_POINT * ve,
+                                      lai: diem * price - diem * WIN_PER_POINT * ve,
+                                    };
+                                  })
+                                  .sort((a, b) => a.lai - b.lai);
+                                const thua = chiTiet.filter((c) => c.lai < 0).slice(0, 6);
+                                const an = [...chiTiet].reverse().slice(0, 6);
+                                const Chip = ({ c, do_ }: { c: (typeof chiTiet)[0]; do_: boolean }) => (
+                                  <span
+                                    className={`inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 numeric text-[0.66rem] border ${
+                                      do_
+                                        ? "bg-[rgba(220,38,38,0.2)] border-[rgba(248,113,113,0.45)] text-[#ffd9d9]"
+                                        : "bg-[rgba(16,185,129,0.14)] border-[rgba(16,185,129,0.4)] text-[#c9f4e0]"
+                                    }`}
+                                  >
+                                    <b className="text-white">{c.lo}</b>
+                                    {c.ve > 0 && <span className="text-[#ffd24a]">×{c.ve}</span>}
+                                    <span className="opacity-70">{c.diem}n</span>
+                                    <b>{(c.lai >= 0 ? "+" : "") + tr(c.lai)}</b>
+                                  </span>
+                                );
+                                return (
+                                  <div className="space-y-2 mb-3">
+                                    <div className="text-[0.7rem] text-[var(--text-muted)]">
+                                      {nhan.length} lô nhận cược · {Object.keys(d.hits).length} lô về ·
+                                      thu {tr(d.taken)} − trả {tr(d.payout)} ={" "}
+                                      <b className={d.profit >= 0 ? "text-[#7ff0c0]" : "text-[#ff9d9d]"}>
+                                        {(d.profit >= 0 ? "+" : "") + tr(d.profit)}
+                                      </b>
+                                    </div>
+                                    {thua.length > 0 && (
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="eyebrow text-[#ff9d9d]">Mất tiền nhiều nhất</span>
+                                        {thua.map((c) => (
+                                          <Chip key={c.lo} c={c} do_ />
+                                        ))}
+                                      </div>
+                                    )}
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="eyebrow text-[#7ff0c0]">Ăn nhiều nhất</span>
+                                      {an.map((c) => (
+                                        <Chip key={c.lo} c={c} do_={false} />
+                                      ))}
+                                    </div>
+                                    <div className="text-[0.66rem] text-[var(--text-muted)]">
+                                      Nền đỏ = lô về, phải trả tiền. Con nào nhận nhiều điểm mà về là mất
+                                      đậm nhất — mỗi điểm về phải trả 75n trong khi thu vào chỉ 27n.
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                               <div className="grid grid-cols-10 gap-1">
                                 {LOS.map((lo) => {
                                   const diem = d.limits[lo] ?? 0;
