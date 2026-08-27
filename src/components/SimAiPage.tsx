@@ -12,13 +12,18 @@ import {
   summarise,
   train,
   type Draw,
+  tierLimits,
+  tierTotal,
+  DEFAULT_TIERS,
   type DayResult,
   type RunSummary,
+  type Tier,
   type Weights,
 } from "@/lib/sim-ai";
 import { POSITIONS, STAKE_PRICE, WIN_PER_POINT } from "@/lib/exposure";
 import { REGION_LABELS, type Region } from "@/lib/types";
 import NeuralPanel from "./NeuralPanel";
+import TierEditor from "./TierEditor";
 
 const tr = (n: number) => {
   const a = Math.abs(n);
@@ -39,7 +44,7 @@ export default function SimAiPage({ region }: { region: Region }) {
   const toast = useToast();
   const [draws, setDraws] = useState<Draw[] | null>(null);
   const [von, setVon] = useState(200_000_000);
-  const [base, setBase] = useState(77);
+  const [baseTuDo, setBaseTuDo] = useState(77);
   const [soNgay, setSoNgay] = useState(30);
   const [mucTieu, setMucTieu] = useState<number>(3);
   const [dangHoc, setDangHoc] = useState(false);
@@ -51,6 +56,9 @@ export default function SimAiPage({ region }: { region: Region }) {
     days: DayResult[];
   } | null>(null);
   const [moNgay, setMoNgay] = useState<string | null>(null);
+  /** Tier mode fixes the money per level and leaves the agent only the order. */
+  const [theoBac, setTheoBac] = useState(false);
+  const [tiers, setTiers] = useState<Tier[]>(DEFAULT_TIERS);
 
   useEffect(() => {
     setDraws(null);
@@ -62,7 +70,15 @@ export default function SimAiPage({ region }: { region: Region }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [region]);
 
+  // A result trained in one mode says nothing about the other, so clearing it
+  // is more honest than leaving last mode's numbers on screen.
+  useEffect(() => {
+    setKq(null);
+  }, [theoBac]);
+
   const price = STAKE_PRICE[region];
+  // Both modes accept the same total, so the comparison is about shape only.
+  const base = theoBac ? Math.max(1, Math.round(tierTotal(tiers) / 100)) : baseTuDo;
 
   /** The draw after the last one on record — the day these limits are for. */
   const ngayMai = useMemo(() => {
@@ -87,12 +103,17 @@ export default function SimAiPage({ region }: { region: Region }) {
     setDangHoc(true);
     setTimeout(() => {
       try {
-        const t = train(hoc, price, WIN_PER_POINT, base, von, {
-          riskAversion: mucTieu,
-          rounds: 300,
-          restarts: 5,
-        });
-        const a = play(t.weights, choi, price, WIN_PER_POINT, base, von);
+        const bac = theoBac ? tiers : undefined;
+        const t = train(
+          hoc, price, WIN_PER_POINT, base, von,
+          { riskAversion: mucTieu, rounds: 300, restarts: 5 },
+          20260826,
+          bac
+        );
+        const a = play(t.weights, choi, price, WIN_PER_POINT, base, von, 30, bac);
+        // The benchmark is always a genuinely flat book, never a flat ranking
+        // inside an uneven table — otherwise tier mode would be compared to
+        // itself and always look even.
         const f = play(FLAT_WEIGHTS, choi, price, WIN_PER_POINT, base, von);
         setKq({
           w: t.weights,
@@ -119,7 +140,8 @@ export default function SimAiPage({ region }: { region: Region }) {
     // Before any training this is the flat book — which is a real, usable
     // answer, not a placeholder. A page that shows nothing until a button is
     // pressed reads as broken to whoever opens it looking for tomorrow.
-    const limits = policyLimits(kq?.w ?? FLAT_WEIGHTS, draws, base);
+    const w = kq?.w ?? FLAT_WEIGHTS;
+    const limits = theoBac ? tierLimits(w, draws, tiers) : policyLimits(w, draws, base);
 
     const gapOf = (lo: string) => {
       for (let i = draws.length - 1, back = 0; i >= 0; i--, back++) {
@@ -161,7 +183,7 @@ export default function SimAiPage({ region }: { region: Region }) {
       thap: Math.min(...vals),
       cao: Math.max(...vals),
     };
-  }, [kq, draws, base]);
+  }, [kq, draws, base, theoBac, tiers]);
 
   async function copyDeXuat() {
     if (!deXuat) return;
@@ -202,9 +224,44 @@ export default function SimAiPage({ region }: { region: Region }) {
         <div className="p-3 md:p-4 space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
             <Field label="Vốn ban đầu" value={von} onChange={setVon} step={50_000_000} hint={tr(von)} />
-            <Field label="Mức nhận cơ bản" value={base} onChange={setBase} step={10} hint={`AI được nhận 0 → ${base * 2} điểm mỗi lô`} />
+            <Field
+              label="Mức nhận cơ bản"
+              value={base}
+              onChange={setBaseTuDo}
+              step={10}
+              hint={
+                theoBac
+                  ? "đang theo bậc — mức này do bảng bậc quyết định"
+                  : `AI được nhận 0 → ${base * 2} điểm mỗi lô`
+              }
+            />
             <Field label="Số ngày chơi thật" value={soNgay} onChange={setSoNgay} step={10} hint={`học trên ${hoc.length - 30} kỳ trước đó`} />
           </div>
+
+          <div>
+            <div className="eyebrow mb-1.5">Cách chia tiền</div>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { on: false, ten: "Tự do", note: "AI tự đặt mức từng lô" },
+                { on: true, ten: "Theo bậc", note: "Anh định bậc, AI chỉ xếp số vào bậc" },
+              ].map((m) => (
+                <button
+                  key={m.ten}
+                  onClick={() => setTheoBac(m.on)}
+                  className={`px-3 py-2 rounded-lg text-xs font-bold text-left transition-colors ${
+                    theoBac === m.on
+                      ? "bg-[#2563eb] text-white"
+                      : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16]"
+                  }`}
+                >
+                  {m.ten}
+                  <div className="font-normal opacity-70 text-[0.65rem]">{m.note}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {theoBac && <TierEditor tiers={tiers} onChange={setTiers} />}
 
           <div>
             <div className="eyebrow mb-1.5">Mục tiêu giao cho AI</div>

@@ -100,13 +100,16 @@ export function play(
   winPerPoint: number,
   base: number,
   bankroll: number,
-  warmup = 30
+  warmup = 30,
+  /** When given, money comes from the table and the policy only ranks. */
+  tiers?: Tier[]
 ): { days: DayResult[]; broke: boolean } {
   const days: DayResult[] = [];
   let money = bankroll;
 
   for (let i = warmup; i < draws.length; i++) {
-    const limits = policyLimits(w, draws.slice(0, i), base);
+    const hist = draws.slice(0, i);
+    const limits = tiers ? tierLimits(w, hist, tiers) : policyLimits(w, hist, base);
     const points = LOS.reduce((s, lo) => s + limits[lo], 0);
     const taken = points * price;
 
@@ -173,7 +176,8 @@ export function train(
   base: number,
   bankroll: number,
   opts: TrainOptions,
-  seed = 20260826
+  seed = 20260826,
+  tiers?: Tier[]
 ): TrainResult {
   let s = seed;
   const rnd = () => {
@@ -184,7 +188,7 @@ export function train(
   };
 
   const evaluate = (w: Weights) => {
-    const r = play(w, draws, price, winPerPoint, base, bankroll);
+    const r = play(w, draws, price, winPerPoint, base, bankroll, 30, tiers);
     return score(r.days, r.broke, opts.riskAversion);
   };
 
@@ -255,4 +259,91 @@ export function summarise(
     lossDays: rets.filter((r) => r < 0).length,
     curve: [bankroll, ...days.map((d) => d.bankroll)],
   };
+}
+
+// ─────────────────────────────────────────────
+// Chế độ BẬC — khách định sẵn mỗi bậc bao nhiêu số, bao nhiêu tiền
+// ─────────────────────────────────────────────
+
+export interface Tier {
+  /** How many lô sit in this tier. */
+  soLo: number;
+  /** Points accepted on each lô in it. */
+  tien: number;
+}
+
+/**
+ * The bookie's own tier table: twenty steps from 250 điểm down to 5.
+ *
+ * Splits the job in two. The table fixes how much money exists at each level —
+ * a business decision about how much unevenness to carry. The agent only
+ * decides the ORDER numbers are ranked in, which is the part they asked to
+ * have researched.
+ *
+ * Worth keeping in view while reading any result from this mode: the total
+ * accepted is fixed by the table, so no ordering can change the expected
+ * profit. What the ordering changes is which days hurt.
+ */
+export const DEFAULT_TIERS: Tier[] = [
+  { soLo: 1, tien: 250 }, { soLo: 1, tien: 225 }, { soLo: 2, tien: 200 },
+  { soLo: 2, tien: 175 }, { soLo: 3, tien: 150 },
+  { soLo: 3, tien: 140 }, { soLo: 4, tien: 130 }, { soLo: 4, tien: 120 },
+  { soLo: 4, tien: 110 }, { soLo: 5, tien: 100 },
+  { soLo: 5, tien: 90 }, { soLo: 6, tien: 80 }, { soLo: 6, tien: 70 },
+  { soLo: 6, tien: 60 }, { soLo: 7, tien: 50 },
+  { soLo: 7, tien: 41 }, { soLo: 8, tien: 32 }, { soLo: 8, tien: 23 },
+  { soLo: 9, tien: 14 }, { soLo: 9, tien: 5 },
+];
+
+/** Score per lô from the same policy — used only to rank, never as money. */
+function scoreOf(w: Weights, history: Draw[], lo: string): number {
+  const f = featuresFor(history, lo);
+  let z = 0;
+  for (let i = 0; i < w.length; i++) z += w[i] * f[i];
+  return z;
+}
+
+/** Draws since this lô last landed. */
+function gapOf(history: Draw[], lo: string): number {
+  for (let i = history.length - 1, back = 0; i >= 0; i--, back++) {
+    if ((history[i].hits[lo] ?? 0) > 0) return back;
+  }
+  return history.length;
+}
+
+/**
+ * Ranks every lô by the policy, then pours them into the tiers top-down.
+ *
+ * The agent very often settles on weights near zero — that is its honest
+ * answer, since no ordering beats another on average. But zero weights tie all
+ * hundred lô, and breaking that tie on the number alone would hand the top tier
+ * to lô 00 for no reason other than being first, which reads as a broken table.
+ * So ties fall back to the longest dry spell, then to the number. Deterministic
+ * either way, and the fallback is the ordering the operator already thinks in.
+ */
+export function tierLimits(
+  w: Weights,
+  history: Draw[],
+  tiers: Tier[]
+): Record<string, number> {
+  const ranked = [...LOS].sort((a, b) => {
+    const d = scoreOf(w, history, b) - scoreOf(w, history, a);
+    if (d !== 0) return d;
+    const g = gapOf(history, b) - gapOf(history, a);
+    return g !== 0 ? g : a.localeCompare(b);
+  });
+
+  const out: Record<string, number> = {};
+  let k = 0;
+  for (const t of tiers) {
+    for (let i = 0; i < t.soLo && k < ranked.length; i++) out[ranked[k++]] = t.tien;
+  }
+  // Anything the table did not cover takes nothing.
+  for (; k < ranked.length; k++) out[ranked[k]] = 0;
+  return out;
+}
+
+/** Total points the table accepts, regardless of who lands where. */
+export function tierTotal(tiers: Tier[]): number {
+  return tiers.reduce((s, t) => s + t.soLo * t.tien, 0);
 }
