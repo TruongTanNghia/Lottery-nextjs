@@ -1,6 +1,6 @@
 "use client";
 
-import { tierTotal, type Tier } from "@/lib/sim-ai";
+import { DEFAULT_TIERS, tierTotal, type Tier } from "@/lib/sim-ai";
 
 /**
  * The bookie's tier table, editable.
@@ -51,6 +51,14 @@ export default function TierEditor({
             {b.ten}
           </button>
         ))}
+        {/* Squeezing is one-way arithmetic — without this the operator loses
+            their own table the moment they try a preset. */}
+        <button
+          onClick={() => onChange(DEFAULT_TIERS)}
+          className="px-2.5 py-1 rounded text-xs font-bold bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.18]"
+        >
+          ↺ Bảng gốc
+        </button>
       </div>
 
       <div

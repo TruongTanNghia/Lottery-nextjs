@@ -64,6 +64,7 @@ export default function SimAiPage({ region }: { region: Region }) {
   useEffect(() => {
     setDraws(null);
     setKq(null);
+    setMoNgay(null);
     fetch(`/api/history/hits?region=${region}`)
       .then((r) => r.json())
       .then((d) => setDraws(d.draws ?? []))
@@ -71,11 +72,15 @@ export default function SimAiPage({ region }: { region: Region }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [region]);
 
-  // A result trained in one mode says nothing about the other, so clearing it
-  // is more honest than leaving last mode's numbers on screen.
+  // A result belongs to the exact table it was trained on. Change the mode or
+  // touch a single tier and those numbers describe a book that no longer
+  // exists — worse, the variance panel would recompute on the new table and sit
+  // next to a profit figure from the old one. Clear the lot, and close the open
+  // day with it so the detail underneath cannot outlive its own row.
   useEffect(() => {
     setKq(null);
-  }, [theoBac]);
+    setMoNgay(null);
+  }, [theoBac, tiers]);
 
   const price = STAKE_PRICE[region];
   // Both modes accept the same total, so the comparison is about shape only.
