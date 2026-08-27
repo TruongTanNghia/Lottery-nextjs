@@ -430,3 +430,70 @@ export function tierSpread(
     ngayTeNhatTB: tongTeNhat / lan,
   };
 }
+
+export interface LyDo {
+  lo: string;
+  gap: number;
+  ve7: number;
+  ve30: number;
+  kep: boolean;
+  chuoi: number;
+  /** Where the policy ranked it, 1 = held heaviest. */
+  hang: number;
+  /** Per-feature push on the limit, biggest mover first. Empty in tier mode. */
+  gop: { ten: string; day: number; giaTri: string }[];
+}
+
+/**
+ * Why this lô got this much money on this day.
+ *
+ * Rebuilt from the draws before that day rather than stored, so it always
+ * matches what the policy actually saw — a reason cached at decision time
+ * drifts out of step with the table the moment anything upstream changes.
+ */
+export function lyDoCua(
+  w: Weights,
+  history: Draw[],
+  lo: string,
+  tiers?: Tier[],
+  base = 77
+): LyDo {
+  const f = featuresFor(history, lo);
+
+  let gap = history.length;
+  for (let i = history.length - 1, back = 0; i >= 0; i--, back++) {
+    if ((history[i].hits[lo] ?? 0) > 0) { gap = back; break; }
+  }
+  const dem = (n: number) => history.slice(-n).reduce((s, d) => s + (d.hits[lo] ?? 0), 0);
+  let chuoi = 0;
+  for (let i = history.length - 1; i >= 0 && (history[i].hits[lo] ?? 0) > 0; i--) chuoi++;
+
+  const diemCua = (x: string) => {
+    const g = featuresFor(history, x);
+    let z = 0;
+    for (let i = 0; i < w.length; i++) z += w[i] * g[i];
+    return z;
+  };
+  const diem = diemCua(lo);
+  const hang = 1 + LOS.filter((x) => x !== lo && diemCua(x) > diem).length;
+
+  // In tier mode the weights only produce an order, so a per-feature breakdown
+  // of the money would be a fiction — the money came from the tier table.
+  const gop = tiers
+    ? []
+    : FEATURES.map((ten, i) => ({
+        ten,
+        day: (w[i] ?? 0) * f[i],
+        giaTri:
+          i === 0 ? "—"
+          : i === 1 ? (gap === 0 ? "vừa về" : `${gap} kỳ`)
+          : i === 2 ? `${dem(7)} lượt`
+          : i === 3 ? `${dem(30)} lượt`
+          : i === 4 ? (lo[0] === lo[1] ? "có" : "không")
+          : `${chuoi} kỳ`,
+      }))
+        .filter((x) => x.ten !== "luôn bật" && Math.abs(x.day) > 0.005)
+        .sort((a, b) => Math.abs(b.day) - Math.abs(a.day));
+
+  return { lo, gap, ve7: dem(7), ve30: dem(30), kep: lo[0] === lo[1], chuoi, hang, gop };
+}

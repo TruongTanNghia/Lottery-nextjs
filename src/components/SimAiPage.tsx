@@ -25,6 +25,7 @@ import { POSITIONS, STAKE_PRICE, WIN_PER_POINT } from "@/lib/exposure";
 import { REGION_LABELS, type Region } from "@/lib/types";
 import NeuralPanel from "./NeuralPanel";
 import PatternPanel from "./PatternPanel";
+import LoReason from "./LoReason";
 import TierEditor from "./TierEditor";
 
 const tr = (n: number) => {
@@ -58,6 +59,7 @@ export default function SimAiPage({ region }: { region: Region }) {
     days: DayResult[];
   } | null>(null);
   const [moNgay, setMoNgay] = useState<string | null>(null);
+  const [moLo, setMoLo] = useState<string | null>(null);
   /** Tier mode fixes the money per level and leaves the agent only the order. */
   const [theoBac, setTheoBac] = useState(false);
   const [tiers, setTiers] = useState<Tier[]>(DEFAULT_TIERS);
@@ -66,6 +68,7 @@ export default function SimAiPage({ region }: { region: Region }) {
     setDraws(null);
     setKq(null);
     setMoNgay(null);
+    setMoLo(null);
     fetch(`/api/history/hits?region=${region}`)
       .then((r) => r.json())
       .then((d) => setDraws(d.draws ?? []))
@@ -81,6 +84,7 @@ export default function SimAiPage({ region }: { region: Region }) {
   useEffect(() => {
     setKq(null);
     setMoNgay(null);
+    setMoLo(null);
   }, [theoBac, tiers]);
 
   const price = STAKE_PRICE[region];
@@ -596,7 +600,7 @@ export default function SimAiPage({ region }: { region: Region }) {
                     return (
                       <Fragment key={d.date}>
                         <tr
-                          onClick={() => setMoNgay(mo ? null : d.date)}
+                          onClick={() => { setMoNgay(mo ? null : d.date); setMoLo(null); }}
                           className={`border-t border-[var(--hairline)] cursor-pointer hover:bg-white/[0.06] ${
                             mo ? "bg-white/[0.07]" : ""
                           }`}
@@ -653,7 +657,11 @@ export default function SimAiPage({ region }: { region: Region }) {
                                 const an = [...chiTiet].reverse().slice(0, 6);
                                 const Chip = ({ c, do_ }: { c: (typeof chiTiet)[0]; do_: boolean }) => (
                                   <span
-                                    className={`inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 numeric text-[0.66rem] border ${
+                                    onClick={() => setMoLo(moLo === c.lo ? null : c.lo)}
+                                    title={`Bấm để xem vì sao ôm lô ${c.lo} mức này`}
+                                    className={`inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 numeric text-[0.66rem] border cursor-pointer hover:brightness-125 ${
+                                      moLo === c.lo ? "ring-2 ring-[#60a5fa] " : ""
+                                    }${
                                       do_
                                         ? "bg-[rgba(220,38,38,0.2)] border-[rgba(248,113,113,0.45)] text-[#ffd9d9]"
                                         : "bg-[rgba(16,185,129,0.14)] border-[rgba(16,185,129,0.4)] text-[#c9f4e0]"
@@ -689,12 +697,27 @@ export default function SimAiPage({ region }: { region: Region }) {
                                       ))}
                                     </div>
                                     <div className="text-[0.66rem] text-[var(--text-muted)]">
-                                      Nền đỏ = lô về, phải trả tiền. Con nào nhận nhiều điểm mà về là mất
-                                      đậm nhất — mỗi điểm về phải trả 75n trong khi thu vào chỉ 27n.
+                                      <b className="text-[#a9c9ff]">Bấm vào con số bất kỳ</b> để xem vì sao
+                                      ôm mức đó và vì sao nó ăn hay thua. Nền đỏ = lô về, phải trả tiền.
                                     </div>
                                   </div>
                                 );
                               })()}
+                              {moLo && draws && (
+                                <LoReason
+                                  lo={moLo}
+                                  ngay={d.date}
+                                  diem={d.limits[moLo] ?? 0}
+                                  ve={d.hits[moLo] ?? 0}
+                                  price={price}
+                                  w={kq.w}
+                                  history={draws.slice(0, draws.findIndex((x) => x.date === d.date))}
+                                  tiers={theoBac ? tiers : undefined}
+                                  base={base}
+                                  onClose={() => setMoLo(null)}
+                                />
+                              )}
+
                               <div className="grid grid-cols-10 gap-1">
                                 {LOS.map((lo) => {
                                   const diem = d.limits[lo] ?? 0;
@@ -704,10 +727,11 @@ export default function SimAiPage({ region }: { region: Region }) {
                                   return (
                                     <div
                                       key={lo}
-                                      title={`Lô ${lo}: nhận ${diem} điểm = ${tr(
-                                        diem * price
-                                      )}${ve ? ` · về ${ve} nháy, trả ${tr(traLo)}` : " · không về"}`}
-                                      className={`rounded px-1 py-1 text-center leading-tight border ${
+                                      onClick={() => setMoLo(moLo === lo ? null : lo)}
+                                      title={`Bấm để xem vì sao ôm lô ${lo} mức này`}
+                                      className={`rounded px-1 py-1 text-center leading-tight border cursor-pointer hover:brightness-125 ${
+                                        moLo === lo ? "ring-2 ring-[#60a5fa] " : ""
+                                      }${
                                         diem === 0
                                           ? "bg-white/[0.03] border-[var(--hairline)] opacity-50"
                                           : ve > 0
