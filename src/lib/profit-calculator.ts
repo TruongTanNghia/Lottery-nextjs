@@ -5,14 +5,36 @@
  * Bù  = Σ điểm × 75.000đ × số nháy
  * Lãi = Thu − Bù
  *
- * The old formula multiplied the take by COST_MULTIPLIER but not the payout,
- * which made a break-even book read as a 98% margin — the dashboard was
- * reporting hundreds of millions of profit on a position that nets zero. The
- * prices here are the ones checked against the bookie's own worked example:
- * 10 điểm cost 270.000đ and pay 750.000đ per nháy.
+ * Which điểm, though, is the whole question. This used to read lo_status —
+ * today's limits — and settle every past draw against them. Today's limits
+ * already say which lô are dry now, and a lô dry now mostly did not land in the
+ * recent past, so that pairing quietly prices quiet days at high limits and
+ * flatters the book with information it could not have had. On the real book it
+ * moved Miền Nam's 30-draw result from +212,4M to −156,3M — the sign flipped.
+ *
+ * So every draw is now settled against the limit the schedule would have set on
+ * that morning, replayed by chayLai(). Same function the dashboard panel calls,
+ * so the API and the screen cannot drift apart.
  */
 import { query, type Region } from "./db";
-import { POSITIONS, STAKE_PRICE, WIN_PER_POINT } from "./exposure";
+import { chayLai, type DrawHits } from "./backtest";
+import { POSITIONS } from "./exposure";
+import { loadSchedule } from "./limit-engine";
+
+/** Every counted draw for a region, oldest first. */
+async function layDraws(region: Region): Promise<DrawHits[]> {
+  const rows = await query<{ date: string; lo_number: string; count: number }>(
+    "SELECT date, lo_number, count FROM lo_daily WHERE region = ? ORDER BY date",
+    [region]
+  );
+  const theoNgay = new Map<string, Record<string, number>>();
+  for (const r of rows) {
+    let d = theoNgay.get(r.date);
+    if (!d) theoNgay.set(r.date, (d = {}));
+    d[r.lo_number] = Number(r.count);
+  }
+  return [...theoNgay.entries()].map(([date, hits]) => ({ date, hits }));
+}
 
 export interface DailyProfit {
   date: string;
@@ -34,55 +56,27 @@ export async function calculateDailyProfit(
   dateStr: string,
   region: Region
 ): Promise<DailyProfit> {
-  const gia = STAKE_PRICE[region];
+  const draws = await layDraws(region);
+  if (draws.length === 0) return emptyDaily(dateStr);
 
-  const limits = await query<{ lo_number: string; current_limit: number }>(
-    "SELECT lo_number, current_limit FROM lo_status WHERE region = ?",
-    [region]
-  );
+  const kq = chayLai(draws, await loadSchedule(region), region);
+  const row = kq?.days.find((d) => d.date === dateStr);
+  if (!row) return emptyDaily(dateStr);
 
-  const appearances = await query<{ lo_number: string; count: number }>(
-    "SELECT lo_number, count FROM lo_daily WHERE date = ? AND region = ?",
-    [dateStr, region]
-  );
-
-  if (limits.length === 0) return emptyDaily(dateStr);
-
-  const appearMap = new Map<string, number>(
-    appearances.map((a) => [a.lo_number, a.count])
-  );
-
-  let totalThu = 0;
-  let totalBu = 0;
-  let winCount = 0;
-  let loseCount = 0;
-
-  for (const { lo_number, current_limit } of limits) {
-    totalThu += current_limit * gia;
-    const n = appearMap.get(lo_number) ?? 0;
-    if (n > 0) {
-      totalBu += current_limit * WIN_PER_POINT * n;
-      winCount++;
-    } else {
-      loseCount++;
-    }
-  }
-
-  const lai = totalThu - totalBu;
-
+  const winCount = row.soLoVe;
   return {
     date: dateStr,
     region,
-    total_thu_vnd: totalThu,
-    total_bu_vnd: totalBu,
-    net_profit_vnd: lai,
-    total_bet_vnd: totalThu,
-    total_win_vnd: totalBu,
-    total_loss_vnd: Math.max(0, totalThu - totalBu),
+    total_thu_vnd: row.thu,
+    total_bu_vnd: row.bu,
+    net_profit_vnd: row.lai,
+    total_bet_vnd: row.thu,
+    total_win_vnd: row.bu,
+    total_loss_vnd: Math.max(0, row.lai),
     win_count: winCount,
-    lose_count: loseCount,
-    total_bets: winCount + loseCount,
-    win_rate: winCount + loseCount > 0 ? (winCount / 100) * 100 : 0,
+    lose_count: 100 - winCount,
+    total_bets: 100,
+    win_rate: winCount,
   };
 }
 
@@ -123,66 +117,80 @@ export interface PeriodProfit extends Omit<DailyProfit, "date"> {
   so_ky: number;
   luot_ve_tb: number;
   luot_chuan: number;
+  /** Draws that closed down — how many of the window went red. */
+  ky_lo: number;
+  /** Deepest fall from a running-total peak inside the window. */
+  sut_sau_nhat: number;
 }
 
+/**
+ * `days` counts draws, not calendar days.
+ *
+ * The operator asks for "30 kỳ" and means thirty draws. A calendar window
+ * silently shrinks whenever results are stale — it was reporting sixteen draws
+ * under a "30 ngày" heading — and a run of missing days would quietly change
+ * what the number covers between one look and the next.
+ */
 export async function calculatePeriodProfit(
   days: number = 30,
   region: Region
 ): Promise<PeriodProfit> {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const draws = await layDraws(region);
+  const kq = chayLai(draws, await loadSchedule(region), region, days);
 
-  const dates = await query<{ date: string }>(
-    "SELECT DISTINCT date FROM lo_daily WHERE region = ? AND date >= ? ORDER BY date DESC",
-    [region, cutoffStr]
-  );
-
-  let totalThu = 0;
-  let totalBu = 0;
-  let totalWins = 0;
-  let totalLosses = 0;
-  let tongLuot = 0;
-  const daily: DailyProfit[] = [];
-
-  const luotRows = await query<{ n: number }>(
-    "SELECT SUM(count) AS n FROM lo_daily WHERE region = ? AND date >= ?",
-    [region, cutoffStr]
-  );
-  tongLuot = Number(luotRows[0]?.n ?? 0);
-
-  for (const { date } of dates) {
-    const d = await calculateDailyProfit(date, region);
-    daily.push(d);
-    totalThu += d.total_thu_vnd;
-    totalBu += d.total_bu_vnd;
-    totalWins += d.win_count;
-    totalLosses += d.lose_count;
+  if (!kq) {
+    return {
+      period_days: days, region,
+      total_thu_vnd: 0, total_bu_vnd: 0, net_profit_vnd: 0,
+      total_bet_vnd: 0, total_win_vnd: 0, total_loss_vnd: 0,
+      win_count: 0, lose_count: 0, total_bets: 0,
+      total_wins: 0, total_losses: 0, win_rate: 0, roi: 0,
+      daily_breakdown: [], so_ky: 0, luot_ve_tb: 0, luot_chuan: POSITIONS[region],
+      ky_lo: 0, sut_sau_nhat: 0,
+    };
   }
 
-  const lai = totalThu - totalBu;
-  const totalBets = totalWins + totalLosses;
+  const daily: DailyProfit[] = kq.days.map((r) => ({
+    date: r.date,
+    region,
+    total_thu_vnd: r.thu,
+    total_bu_vnd: r.bu,
+    net_profit_vnd: r.lai,
+    total_bet_vnd: r.thu,
+    total_win_vnd: r.bu,
+    total_loss_vnd: Math.max(0, r.lai),
+    win_count: r.soLoVe,
+    lose_count: 100 - r.soLoVe,
+    total_bets: 100,
+    win_rate: r.soLoVe,
+  }));
+
+  const veTB = kq.days.length
+    ? kq.days.reduce((s, r) => s + r.soLoVe, 0) / kq.days.length
+    : 0;
 
   return {
     period_days: days,
     region,
-    total_thu_vnd: totalThu,
-    total_bu_vnd: totalBu,
-    net_profit_vnd: lai,
-    total_bet_vnd: totalThu,
-    total_win_vnd: totalBu,
-    total_loss_vnd: Math.max(0, totalThu - totalBu),
+    total_thu_vnd: kq.thu,
+    total_bu_vnd: kq.bu,
+    net_profit_vnd: kq.lai,
+    total_bet_vnd: kq.thu,
+    total_win_vnd: kq.bu,
+    total_loss_vnd: Math.max(0, kq.lai),
     win_count: 0,
     lose_count: 0,
-    total_bets: totalBets,
-    total_wins: totalWins,
-    total_losses: totalLosses,
-    win_rate: totalBets > 0 ? (totalWins / totalBets) * 100 : 0,
-    roi: totalThu > 0 ? (lai / totalThu) * 100 : 0,
+    total_bets: kq.days.length * 100,
+    total_wins: kq.days.reduce((s, r) => s + r.soLoVe, 0),
+    total_losses: kq.days.reduce((s, r) => s + (100 - r.soLoVe), 0),
+    win_rate: veTB,
+    roi: kq.phanTram,
     daily_breakdown: daily,
-    so_ky: dates.length,
-    luot_ve_tb: dates.length ? tongLuot / dates.length : 0,
-    luot_chuan: POSITIONS[region],
+    so_ky: kq.soKy,
+    luot_ve_tb: kq.luotTB,
+    luot_chuan: kq.luotChuan,
+    ky_lo: kq.kyLo,
+    sut_sau_nhat: kq.sut?.sau ?? 0,
   };
 }
 
@@ -202,37 +210,21 @@ export async function getProfitChartData(
   days: number = 30,
   region: Region
 ): Promise<ChartData> {
-  const labels: string[] = [];
-  const thuData: number[] = [];
-  const buData: number[] = [];
-  const netData: number[] = [];
-  const cumData: number[] = [];
-  let cumulative = 0;
-
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
-    const display = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
-
-    const daily = await calculateDailyProfit(dateStr, region);
-    labels.push(display);
-    thuData.push(daily.total_thu_vnd);
-    buData.push(-daily.total_bu_vnd);
-    netData.push(daily.net_profit_vnd);
-    cumulative += daily.net_profit_vnd;
-    cumData.push(cumulative);
-  }
+  // One replay, then read it off. Calling calculateDailyProfit in a loop would
+  // re-walk the whole history once per point.
+  const draws = await layDraws(region);
+  const kq = chayLai(draws, await loadSchedule(region), region, days);
+  const rows = kq?.days ?? [];
 
   return {
-    labels,
+    labels: rows.map((r) => `${r.date.slice(8, 10)}/${r.date.slice(5, 7)}`),
     datasets: {
-      wins: thuData,
-      losses: buData,
-      thu: thuData,
-      bu: buData,
-      net: netData,
-      cumulative: cumData,
+      wins: rows.map((r) => r.thu),
+      losses: rows.map((r) => -r.bu),
+      thu: rows.map((r) => r.thu),
+      bu: rows.map((r) => -r.bu),
+      net: rows.map((r) => r.lai),
+      cumulative: rows.map((r) => r.don),
     },
   };
 }

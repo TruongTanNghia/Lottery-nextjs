@@ -10,7 +10,7 @@ import ResultsPage from "@/components/ResultsPage";
 import RegionTabs from "@/components/RegionTabs";
 import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
-import StatsBar from "@/components/StatsBar";
+import BacktestPanel from "@/components/BacktestPanel";
 import StreakCopyCard from "@/components/StreakCopyCard";
 import StaleBanner from "@/components/StaleBanner";
 import StationBoard from "@/components/StationBoard";
@@ -38,7 +38,6 @@ import {
   type ChartData,
   type ConfigPayload,
   type LimitItem,
-  type ProfitStats,
   type Region,
 } from "@/lib/types";
 
@@ -60,7 +59,8 @@ function Dashboard() {
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
-  const [profit, setProfit] = useState<ProfitStats | null>(null);
+  /** Bumped whenever the schedule or đài rule changes, so the replay re-runs. */
+  const [lanTinhLai, setLanTinhLai] = useState(0);
   const [consecutive, setConsecutive] = useState<{ lo_number: string; consecutive_days: number; current_limit: number }[]>([]);
   const [recent, setRecent] = useState<{ date: string; lo_number: string; count: number }[]>([]);
   const [scrapedDays, setScrapedDays] = useState<number | null>(null);
@@ -91,9 +91,8 @@ function Dashboard() {
       // Chart data is no longer fetched — the chart was replaced by the manual
       // watchlist, and that endpoint replayed profit for every day in the range
       // on each dashboard load.
-      const [limitsRes, profitRes, consecRes, recentRes, statusRes] = await Promise.allSettled([
+      const [limitsRes, consecRes, recentRes, statusRes] = await Promise.allSettled([
         fetch(`/api/limits?region=${region}`).then((r) => r.json()),
-        fetch(`/api/stats/profit?region=${region}&days=30`).then((r) => r.json()),
         fetch(`/api/consecutive?region=${region}`).then((r) => r.json()),
         // 22 calendar days so the last 15 DRAW dates are always covered even if
         // a scrape was missed or a region skipped a day.
@@ -105,7 +104,6 @@ function Dashboard() {
         setLimits(limitsRes.value.data ?? []);
         setConfig(limitsRes.value.config ?? null);
       }
-      if (profitRes.status === "fulfilled") setProfit(profitRes.value.data ?? null);
       if (consecRes.status === "fulfilled") setConsecutive(consecRes.value.data ?? []);
       if (recentRes.status === "fulfilled") setRecent(recentRes.value.data ?? []);
       if (statusRes.status === "fulfilled") {
@@ -404,14 +402,25 @@ function Dashboard() {
                 region={region}
                 onSaved={() => {
                   toast.show("success", `Đã lưu hạn mức ${REGION_LABELS[region]} + tính lại`);
+                  setLanTinhLai((n) => n + 1);
                   loadAll();
                 }}
               />
             </section>
-            <StationBoard region={region} onChanged={loadAll} />
+            <StationBoard
+              region={region}
+              onChanged={() => {
+                setLanTinhLai((n) => n + 1);
+                loadAll();
+              }}
+            />
             <StreakCopyCard limits={limits} region={region} />
 
-            <StatsBar stats={profit} />
+            {/* Một câu hỏi, một chỗ trả lời. StatsBar cũng đề "Lãi / Lỗ 30 kỳ"
+                nhưng đứng yên ở 30 trong khi khối dưới đổi theo 60/90/120 — hai
+                con số khác nhau dưới cùng một cái tên là cách chắc chắn nhất để
+                người đọc tin nhầm con số. Khối dò lại đã có đủ bốn ô đó. */}
+            <BacktestPanel region={region} key={`bt-${region}-${lanTinhLai}`} />
             <TrackingBoard
               limits={limits}
               recent={recent}

@@ -14,7 +14,10 @@ const ALL_VIEWS = [
 // Which of those actually show up. The app now runs a chặn-số (limit) workflow
 // rather than a betting one, so only the limit board is exposed — add a key
 // back to this list to restore its tab.
-const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard", "exposure", "lab", "simai", "results"];
+// Khách chốt 28/08: chỉ tập trung vào dashboard. "Thử Chiến Thuật" và
+// "SIM-AI" chỉ ẩn khỏi thanh tab — code, API và dữ liệu vẫn nguyên, thêm lại
+// tên vào mảng này là hiện lại ngay.
+const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard", "exposure", "results"];
 
 interface Props {
   current: Region;
