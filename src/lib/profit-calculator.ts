@@ -12,7 +12,7 @@
  * 10 điểm cost 270.000đ and pay 750.000đ per nháy.
  */
 import { query, type Region } from "./db";
-import { STAKE_PRICE, WIN_PER_POINT } from "./exposure";
+import { POSITIONS, STAKE_PRICE, WIN_PER_POINT } from "./exposure";
 
 export interface DailyProfit {
   date: string;
@@ -109,6 +109,20 @@ export interface PeriodProfit extends Omit<DailyProfit, "date"> {
   total_losses: number;
   roi: number;
   daily_breakdown: DailyProfit[];
+  /**
+   * How many draws the figures actually cover, and how many lô-hits each one
+   * counted.
+   *
+   * Both travel with the money because both can silently make it wrong. The
+   * window is calendar-based, so stale results quietly shrink "30 ngày" to
+   * whatever is left. And every đồng of Bù is hits × 75.000đ, so if the đài
+   * rule lapses and a draw counts 56 hits instead of 36, the payout inflates by
+   * half and the only visible symptom is a losing month. Reporting the number
+   * next to the money is what turns that from a mystery into a reading.
+   */
+  so_ky: number;
+  luot_ve_tb: number;
+  luot_chuan: number;
 }
 
 export async function calculatePeriodProfit(
@@ -128,7 +142,14 @@ export async function calculatePeriodProfit(
   let totalBu = 0;
   let totalWins = 0;
   let totalLosses = 0;
+  let tongLuot = 0;
   const daily: DailyProfit[] = [];
+
+  const luotRows = await query<{ n: number }>(
+    "SELECT SUM(count) AS n FROM lo_daily WHERE region = ? AND date >= ?",
+    [region, cutoffStr]
+  );
+  tongLuot = Number(luotRows[0]?.n ?? 0);
 
   for (const { date } of dates) {
     const d = await calculateDailyProfit(date, region);
@@ -159,6 +180,9 @@ export async function calculatePeriodProfit(
     win_rate: totalBets > 0 ? (totalWins / totalBets) * 100 : 0,
     roi: totalThu > 0 ? (lai / totalThu) * 100 : 0,
     daily_breakdown: daily,
+    so_ky: dates.length,
+    luot_ve_tb: dates.length ? tongLuot / dates.length : 0,
+    luot_chuan: POSITIONS[region],
   };
 }
 

@@ -79,6 +79,11 @@ export interface ProfitStats {
   total_win_vnd: number;
   win_rate: number;
   roi: number;
+  /** How many draws actually went into the figures above. */
+  so_ky?: number;
+  /** Average lô-hits per counted draw, and what it must be. */
+  luot_ve_tb?: number;
+  luot_chuan?: number;
 }
 
 export interface ChartData {
