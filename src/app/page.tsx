@@ -11,6 +11,7 @@ import RegionTabs from "@/components/RegionTabs";
 import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import BacktestPanel from "@/components/BacktestPanel";
+import SlotPanel from "@/components/SlotPanel";
 import StreakCopyCard from "@/components/StreakCopyCard";
 import StaleBanner from "@/components/StaleBanner";
 import StationBoard from "@/components/StationBoard";
@@ -421,6 +422,7 @@ function Dashboard() {
                 con số khác nhau dưới cùng một cái tên là cách chắc chắn nhất để
                 người đọc tin nhầm con số. Khối dò lại đã có đủ bốn ô đó. */}
             <BacktestPanel region={region} key={`bt-${region}-${lanTinhLai}`} />
+            <SlotPanel region={region} key={`slot-${region}-${lanTinhLai}`} />
             <TrackingBoard
               limits={limits}
               recent={recent}
