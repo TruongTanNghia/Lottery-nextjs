@@ -62,6 +62,15 @@ export interface BacRow {
   bien: number;
   kyLo: number;
   kyCo: number;
+  /**
+   * Tiền thật cho 100 điểm ôm vào một lô trong một kỳ.
+   *
+   * Tỉ lệ phần trăm không trả lời được câu người ôm số hỏi. Họ hỏi "ôm con này
+   * thì thu bao nhiêu, trả bao nhiêu" — nhất là ở nhóm lô vừa về liên tiếp,
+   * chỗ mà bản năng bảo phải né mà con số lại bảo nên ôm.
+   */
+  thu100: number;
+  tra100: number;
   /** Margin in each of the 30/60/90/120 windows, for "lời cả 4 chu kỳ". */
   theoCuaSo: Record<number, number | null>;
 }
@@ -200,6 +209,8 @@ export function thongKeBac(draws: DrawHits[], region: Region): SlotStats | null 
       bien: r.bien,
       kyLo: r.kyLo,
       kyCo: r.kyCo,
+      thu100: 100 * gia,
+      tra100: 100 * WIN_PER_POINT * r.tyLeVe,
       theoCuaSo: Object.fromEntries(
         cuaSo.map((n) => [n, (theo[n][key]?.mau ?? 0) >= 30 ? theo[n][key].bien : null])
       ),

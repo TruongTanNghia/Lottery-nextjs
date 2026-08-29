@@ -15,6 +15,11 @@ import type { Region } from "@/lib/types";
 
 const CUA_SO = [30, 60, 90, 120];
 const pc = (n: number) => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(2) + "%";
+const tien = (n: number) => {
+  const a = Math.abs(n), s = n < 0 ? "−" : "";
+  if (a >= 1_000_000) return `${s}${(a / 1_000_000).toFixed(2)}tr`;
+  return s + Math.round(a).toLocaleString("vi-VN") + "đ";
+};
 /** Tên ngày theo cách khách gọi, không phải chỉ số mảng. */
 const ten = tenBac;
 
@@ -136,9 +141,12 @@ export default function SlotPanel({ region }: { region: Region }) {
                 cụt mất bốn cột cuối — đúng bốn cột quyết định. Nên mỗi ngày giờ
                 là một dòng có nhãn phán rõ, số nằm dưới. */}
             <div className="rounded-lg border border-[var(--hairline)] bg-white/[0.04] px-3 py-2.5 text-[0.78rem] leading-relaxed">
-              Đo trên <b className="text-[var(--text-secondary)]">{tk.soKy} kỳ</b>. Mỗi lô về{" "}
-              <b className="text-[var(--text-secondary)]">{tk.chuan}%</b> số kỳ là mức chung — ngày
-              nào về <b>dưới</b> mức đó thì ôm ngày đó có lời.
+              <b className="text-white">Mình là người ôm số</b>: con nào <b>không về</b> thì mình ăn
+              trọn tiền, con nào <b>về</b> thì mình phải trả 75n cho mỗi điểm mỗi nháy. Nên nhóm nào
+              kỳ tới về <b>ÍT hơn</b> mức chung thì ôm nhóm đó có lời — không phải nhóm nào hay về.
+              <br />
+              Đo trên <b className="text-[var(--text-secondary)]">{tk.soKy} kỳ</b>. Mức chung là{" "}
+              <b className="text-[var(--text-secondary)]">{tk.chuan} nháy trên 100 lô</b> mỗi kỳ.
               <br />
               {bacLoiCaBon.length > 0 ? (
                 <>
@@ -215,9 +223,22 @@ export default function SlotPanel({ region }: { region: Region }) {
                       })}
                     </div>
 
+                    {/* Câu này mới là câu người ôm số cần: bao nhiêu vào, bao
+                        nhiêu ra. Riêng nhóm về liên tiếp thì bản năng bảo né mà
+                        con số bảo ôm — bày tiền ra chứ đừng bắt người ta tin. */}
+                    <div className="text-[0.72rem] mt-1.5 leading-relaxed text-[var(--text-secondary)]">
+                      Ôm <b>100 điểm</b> con này: thu{" "}
+                      <b className="text-[#7ff0c0]">{tien(r.thu100)}</b>, trả trung bình{" "}
+                      <b className="text-[#ff9d9d]">{tien(r.tra100)}</b> →{" "}
+                      <b className={r.thu100 - r.tra100 >= 0 ? "text-[#7ff0c0]" : "text-[#ff9d9d]"}>
+                        {r.thu100 - r.tra100 >= 0 ? "lời" : "lỗ"}{" "}
+                        {tien(Math.abs(r.thu100 - r.tra100))}
+                      </b>
+                    </div>
                     <div className="text-[0.66rem] text-[var(--text-muted)] mt-1 numeric">
-                      {r.mau.toLocaleString("vi-VN")} lượt lô · về {(r.tyLeVe * 100).toFixed(2)}%
-                      (chung {tk.chuan}%) · {r.kyLo}/{r.kyCo} kỳ lỗ
+                      {r.mau.toLocaleString("vi-VN")} lượt lô · kỳ tới về{" "}
+                      {(r.tyLeVe * 100).toFixed(2)} nháy trên 100 lô (mức chung {tk.chuan}) ·{" "}
+                      {r.kyLo}/{r.kyCo} kỳ lỗ
                     </div>
                   </div>
                   </Fragment>
