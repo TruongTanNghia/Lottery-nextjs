@@ -187,7 +187,7 @@ export default function ScheduleEditor({
       </div>
 
       <div className="mt-3 px-3 py-2.5 rounded bg-amber-500/[0.06] border border-amber-500/[0.18] text-xs text-slate-300 flex flex-wrap items-center gap-1.5">
-        <strong className="w-full text-amber-500 mb-1">Lô về liên tiếp (cap):</strong>
+        <strong className="w-full text-amber-500 mb-1">Lô về liên tiếp — mức riêng, không phải trần:</strong>
         <span>2 ngày →</span>
         <input
           type="number"

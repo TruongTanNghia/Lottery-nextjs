@@ -121,15 +121,31 @@ export function calculateConsecutiveLimit(consecutiveDays: number, schedule: Sch
   return schedule.consecutive[consecutiveDays] ?? null;
 }
 
+/**
+ * A lô on a streak gets its own level, not a ceiling on the base one.
+ *
+ * The operator asked to tell three things apart that were being priced as one:
+ * a lô that just landed for the first time, and a lô that has landed two, three
+ * or four kỳ running. Their words: "linh hoạt có thể ko ăn lô vừa về, nhưng có
+ * thể ăn con lô về liên tiếp 2 ngày."
+ *
+ * That is impossible while consecutive only caps — Math.min could never lift a
+ * streak lô above a base of 0. So the consecutive table now *sets* the limit for
+ * the streak it names, and base[0] is left meaning exactly "vừa về, chưa thành
+ * chuỗi". A streak only ever exists at gap 0 (a miss zeroes it in
+ * updateAllLoStatus), so nothing outside that bucket changes.
+ *
+ * No-op for the table in use today: base[0] and every consecutive entry are all
+ * 15n, so min() and set() give the same 15n.
+ */
 export function calculateEffectiveLimit(
   daysSinceLast: number,
   consecutiveDays: number,
   schedule: Schedule
 ): number {
-  const base = calculateBaseLimit(daysSinceLast, schedule);
-  const cap = calculateConsecutiveLimit(consecutiveDays, schedule);
-  if (cap !== null) return Math.min(base, cap);
-  return base;
+  const rieng = calculateConsecutiveLimit(consecutiveDays, schedule);
+  if (rieng !== null) return rieng;
+  return calculateBaseLimit(daysSinceLast, schedule);
 }
 
 // ─────────────────────────────────────────────

@@ -73,14 +73,20 @@ const cachNgay = (sau: string, truocDo: string) => {
   return Math.max(0, Math.round((Date.UTC(y1, m1 - 1, d1) - Date.UTC(y2, m2 - 1, d2)) / 86_400_000));
 };
 
-/** The schedule's answer for one lô, given how it stands this morning. */
+/**
+ * The schedule's answer for one lô, given how it stands this morning.
+ *
+ * Mirrors calculateEffectiveLimit exactly: a streak level replaces the base
+ * level rather than capping it, so "vừa về" and "về liên tiếp 2 kỳ" can carry
+ * different money. Any drift between these two would put the replay and the
+ * live board on different books.
+ */
 export function mucCho(schedule: Schedule, ngayKho: number, chuoi: number): number {
-  const base = schedule.base[ngayKho] ?? schedule.min_limit;
   if (chuoi > 0 && chuoi <= schedule.consecutive_reset_after) {
-    const cap = schedule.consecutive[chuoi];
-    if (cap != null) return Math.min(base, cap);
+    const rieng = schedule.consecutive[chuoi];
+    if (rieng != null) return rieng;
   }
-  return base;
+  return schedule.base[ngayKho] ?? schedule.min_limit;
 }
 
 /**
