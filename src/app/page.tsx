@@ -408,13 +408,6 @@ function Dashboard() {
                 }}
               />
             </section>
-            <StationBoard
-              region={region}
-              onChanged={() => {
-                setLanTinhLai((n) => n + 1);
-                loadAll();
-              }}
-            />
             <StreakCopyCard limits={limits} region={region} />
 
             {/* Một câu hỏi, một chỗ trả lời. StatsBar cũng đề "Lãi / Lỗ 30 kỳ"
@@ -423,6 +416,17 @@ function Dashboard() {
                 người đọc tin nhầm con số. Khối dò lại đã có đủ bốn ô đó. */}
             <BacktestPanel region={region} key={`bt-${region}-${lanTinhLai}`} />
             <SlotPanel region={region} key={`slot-${region}-${lanTinhLai}`} />
+
+            {/* Bảng đài là chỗ cài đặt, mở ra vài tháng một lần. Nó dài, và nằm
+                trên hai khối trả lời "lời hay lỗ" thì trên điện thoại phải cuộn
+                qua nó mỗi lần muốn xem tiền. Đẩy xuống dưới. */}
+            <StationBoard
+              region={region}
+              onChanged={() => {
+                setLanTinhLai((n) => n + 1);
+                loadAll();
+              }}
+            />
             <TrackingBoard
               limits={limits}
               recent={recent}
