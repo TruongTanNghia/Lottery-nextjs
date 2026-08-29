@@ -275,7 +275,10 @@ function ChiTiet({ d, price }: { d: DayRow; price: number }) {
     })
     .sort((a, b) => a.lai - b.lai);
   const thua = ct.filter((c) => c.lai < 0).slice(0, 6);
-  const an = [...ct].reverse().slice(0, 6);
+  // Chỉ con nào THẬT SỰ ăn mới vào hàng ăn. Trước đây lấy sáu con lãi cao nhất
+  // bất kể dấu, nên hôm nào cả sổ chỉ nhận một lô mà lô đó về thì đúng con lỗ
+  // nặng nhất lại đứng luôn ở hàng "ăn nhiều nhất" — nhìn như máy hỏng.
+  const an = ct.filter((c) => c.lai > 0).reverse().slice(0, 6);
 
   const Chip = ({ c, do_ }: { c: (typeof ct)[0]; do_: boolean }) => (
     <span
@@ -295,6 +298,15 @@ function ChiTiet({ d, price }: { d: DayRow; price: number }) {
 
   return (
     <div className="space-y-2">
+      {nhan.length < 20 && (
+        <div className="rounded-lg border border-[rgba(251,191,36,0.5)] bg-[rgba(245,158,11,0.12)] px-2.5 py-2 text-[0.72rem] leading-relaxed text-[#ffe9c4]">
+          ⚠️ Kỳ này <b>cả sổ chỉ nhận {nhan.length} lô</b> — bảng hạn mức đang để hầu hết các
+          ngày về 0n. Thu vào có {tr(d.thu)} mà một con về là phải trả{" "}
+          {tr(Math.max(...nhan.map((lo) => d.limits[lo])) * WIN_PER_POINT)}. Sổ mỏng thế này thì
+          một nháy là gãy cả kỳ.
+        </div>
+      )}
+
       <div className="text-[0.7rem] text-[var(--text-muted)]">
         {nhan.length} lô nhận cược · {d.soLoVe} lô về ({d.luot} lượt) · thu {tr(d.thu)} − bù{" "}
         {tr(d.bu)} ={" "}
@@ -310,7 +322,13 @@ function ChiTiet({ d, price }: { d: DayRow; price: number }) {
       )}
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="eyebrow text-[#7ff0c0]">Ăn nhiều nhất</span>
-        {an.map((c) => <Chip key={c.lo} c={c} do_={false} />)}
+        {an.length > 0 ? (
+          an.map((c) => <Chip key={c.lo} c={c} do_={false} />)
+        ) : (
+          <span className="text-[0.7rem] text-[var(--text-muted)]">
+            không con nào ăn — kỳ này lô nào nhận cược cũng về
+          </span>
+        )}
       </div>
       <div className="text-[0.66rem] text-[var(--text-muted)]">
         Số nhỏ dưới mỗi ô là hạn mức của <b>đúng kỳ này</b>, suy từ số kỳ con đó đã khô tính tới

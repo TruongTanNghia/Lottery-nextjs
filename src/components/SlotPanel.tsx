@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { DrawHits } from "@/lib/backtest";
+import { LOS, type DrawHits } from "@/lib/backtest";
 import { thongKeBac, TRAN_BAC, type SlotStats } from "@/lib/slot-stats";
 import { useToast } from "./Toast";
 import type { Region } from "@/lib/types";
@@ -49,6 +49,30 @@ export default function SlotPanel({ region }: { region: Region }) {
       .filter((r) => CUA_SO.every((n) => (r.theoCuaSo[n] ?? -1) > 0))
       .map((r) => r.bac);
   }, [tk]);
+
+  /**
+   * Nếu cài bảng 100/0 này thì kỳ gần nhất còn nhận bao nhiêu lô.
+   *
+   * Phải hiện TRƯỚC khi bấm. Mấy ngày khô lâu chỉ có dăm ba lô rơi vào, nên
+   * một bảng nhìn rất hợp lý trên giấy có thể rút cả sổ xuống còn một con —
+   * lúc đó thu vài triệu mà một nháy về là trả bảy triệu rưỡi.
+   */
+  const conLai = useMemo(() => {
+    if (!draws || draws.length === 0 || bacLoiCaBon.length === 0) return null;
+    const sap = [...draws].sort((a, b) => a.date.localeCompare(b.date));
+    const cuoi = sap[sap.length - 1];
+    const kho: Record<string, number> = {};
+    for (const lo of LOS) {
+      let g = sap.length;
+      for (let i = sap.length - 1, b = 0; i >= 0; i--, b++) {
+        if ((sap[i].hits[lo] ?? 0) > 0) { g = b; break; }
+      }
+      kho[lo] = Math.min(TRAN_BAC, g);
+    }
+    void cuoi;
+    return LOS.filter((lo) => bacLoiCaBon.includes(kho[lo])).length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draws, bacLoiCaBon]);
 
   const apDung = async () => {
     if (!tk) return;
@@ -247,6 +271,23 @@ export default function SlotPanel({ region }: { region: Region }) {
                 </b>
                 . Bấm là ghi thẳng vào bảng hạn mức và tính lại toàn bộ lịch sử.
               </div>
+              {conLai != null && (
+                <div
+                  className={`rounded-lg border px-2.5 py-2 mb-2 text-[0.74rem] leading-relaxed ${
+                    conLai < 20
+                      ? "border-[rgba(248,113,113,0.55)] bg-[rgba(220,38,38,0.13)] text-[#ffd9d9]"
+                      : "border-[var(--hairline)] bg-white/[0.04] text-[var(--text-secondary)]"
+                  }`}
+                >
+                  {conLai < 20 ? "⚠️ " : ""}Cài xong thì kỳ tới <b>chỉ còn {conLai}/100 lô</b> nhận
+                  cược, mỗi lô 100n.
+                  {conLai < 20 && (
+                    <> Thu vào cả kỳ chỉ {((conLai * 100 * 27000) / 1e6).toFixed(1)}tr, mà một con
+                    về là trả 7,5tr. Sổ mỏng cỡ này thì một nháy gãy cả kỳ.</>
+                  )}
+                </div>
+              )}
+
               {!chacChua ? (
                 <button
                   onClick={() => setChacChua(true)}
