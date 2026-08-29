@@ -8,6 +8,8 @@ import type { Region } from "@/lib/types";
 
 const CUA_SO = [30, 60, 90, 120];
 const pc = (n: number) => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(2) + "%";
+/** Tên ngày theo cách khách gọi, không phải chỉ số mảng. */
+const ten = (b: number) => (b === 0 ? "vừa về" : b === TRAN_BAC ? `${TRAN_BAC}+ ngày` : `${b} ngày`);
 
 /**
  * Answers the operator's question — which bậc made money — and then answers the
@@ -91,73 +93,90 @@ export default function SlotPanel({ region }: { region: Region }) {
 
         {tk && (
           <>
-            <div className="text-[0.72rem] text-[var(--text-muted)]">
-              Đo trên <b className="text-[var(--text-secondary)]">{tk.soKy} kỳ</b> · mức chung mỗi
-              lô về <b className="text-[var(--text-secondary)]">{tk.chuan}%</b> số kỳ · ngày nào về
-              dưới mức chung thì ôm ngày đó có lời
+            {/* Kết luận trước, số liệu sau. Bảng tám cột đọc trên điện thoại là
+                cụt mất bốn cột cuối — đúng bốn cột quyết định. Nên mỗi ngày giờ
+                là một dòng có nhãn phán rõ, số nằm dưới. */}
+            <div className="rounded-lg border border-[var(--hairline)] bg-white/[0.04] px-3 py-2.5 text-[0.78rem] leading-relaxed">
+              Đo trên <b className="text-[var(--text-secondary)]">{tk.soKy} kỳ</b>. Mỗi lô về{" "}
+              <b className="text-[var(--text-secondary)]">{tk.chuan}%</b> số kỳ là mức chung — ngày
+              nào về <b>dưới</b> mức đó thì ôm ngày đó có lời.
+              <br />
+              {bacLoiCaBon.length > 0 ? (
+                <>
+                  Đang có <b className="text-[#7ff0c0]">{bacLoiCaBon.length} ngày NÊN ÔM</b> (lời cả
+                  4 chu kỳ):{" "}
+                  <b className="text-[#7ff0c0]">{bacLoiCaBon.map((x) => ten(x)).join(" · ")}</b>
+                </>
+              ) : (
+                <b className="text-[#ffd24a]">Không ngày nào lời được cả 4 chu kỳ.</b>
+              )}
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[620px]">
-                <thead>
-                  <tr className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">
-                    <th className="px-2 py-2 text-left font-bold">Ngày chưa về</th>
-                    <th className="px-2 py-2 text-right font-bold">Số mẫu</th>
-                    <th className="px-2 py-2 text-right font-bold">Tỉ lệ về</th>
-                    <th className="px-2 py-2 text-right font-bold">Kỳ lỗ</th>
-                    {CUA_SO.map((n) => (
-                      <th key={n} className="px-2 py-2 text-right font-bold">{n} kỳ</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {tk.bang.filter((r) => r.mau >= 60).map((r) => {
-                    const caBon = bacLoiCaBon.includes(r.bac);
-                    return (
-                      <tr
-                        key={r.bac}
-                        className={`border-t border-[var(--hairline)] ${
-                          caBon ? "bg-[rgba(16,185,129,0.1)]" : ""
-                        }`}
+            <div className="space-y-1.5">
+              {tk.bang.filter((r) => r.mau >= 60).map((r) => {
+                const co = CUA_SO.map((n) => r.theoCuaSo[n]).filter((v) => v != null) as number[];
+                const hetLoi = co.length === 4 && co.every((v) => v > 0);
+                const hetLo = co.length === 4 && co.every((v) => v < 0);
+                const itMau = r.mau < 300;
+                const phan = hetLoi
+                  ? { chu: "NÊN ÔM", mau: "#7ff0c0", nen: "rgba(16,185,129,0.16)", vien: "rgba(16,185,129,0.5)" }
+                  : hetLo
+                  ? { chu: "NÉ RA", mau: "#ff9d9d", nen: "rgba(220,38,38,0.16)", vien: "rgba(248,113,113,0.45)" }
+                  : { chu: "CHƯA CHẮC", mau: "#c2d4ea", nen: "rgba(255,255,255,0.07)", vien: "var(--hairline)" };
+                return (
+                  <div
+                    key={r.bac}
+                    className="rounded-lg border px-3 py-2"
+                    style={{ background: phan.nen, borderColor: phan.vien }}
+                  >
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="numeric font-bold text-white text-[0.92rem] min-w-[5.2rem]">
+                        {ten(r.bac)}
+                      </span>
+                      <span
+                        className="rounded px-1.5 py-0.5 text-[0.66rem] font-bold tracking-wide"
+                        style={{ color: phan.mau, background: "rgba(0,0,0,0.28)" }}
                       >
-                        <td className="px-2 py-2 numeric text-white font-bold">
-                          {r.bac === TRAN_BAC ? `${TRAN_BAC}+ ngày` : r.bac === 0 ? "vừa về" : `${r.bac} ngày`}
-                          {caBon && <span className="text-[#7ff0c0] text-[0.6rem]"> ✓ cả 4</span>}
-                        </td>
-                        <td
-                          className={`px-2 py-2 text-right numeric ${
-                            r.mau < 300 ? "text-[#ffd24a]" : "text-[var(--text-secondary)]"
-                          }`}
-                          title={r.mau < 300 ? "Ít mẫu — con số ở đây rất dễ là may rủi" : ""}
+                        {phan.chu}
+                      </span>
+                      {itMau && (
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[0.66rem] font-bold text-[#ffd24a]"
+                          style={{ background: "rgba(0,0,0,0.28)" }}
+                          title="Ít lô rơi vào ngày này — con số ở đây rất dễ là may rủi"
                         >
-                          {r.mau.toLocaleString("vi-VN")}
-                          {r.mau < 300 && " ⚠"}
-                        </td>
-                        <td className="px-2 py-2 text-right numeric text-[var(--text-secondary)]">
-                          {(r.tyLeVe * 100).toFixed(2)}%
-                        </td>
-                        <td className="px-2 py-2 text-right numeric text-[var(--text-muted)]">
-                          {r.kyLo}/{r.kyCo}
-                        </td>
-                        {CUA_SO.map((n) => {
-                          const v = r.theoCuaSo[n];
-                          return (
-                            <td
-                              key={n}
-                              className={`px-2 py-2 text-right numeric font-bold ${
-                                v == null ? "text-[var(--text-muted)]"
-                                  : v > 0 ? "text-[#7ff0c0]" : "text-[#ff9d9d]"
-                              }`}
-                            >
-                              {v == null ? "—" : pc(v)}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          ⚠ ÍT MẪU
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {CUA_SO.map((n) => {
+                        const v = r.theoCuaSo[n];
+                        return (
+                          <span
+                            key={n}
+                            className={`numeric text-[0.68rem] rounded px-1.5 py-0.5 border ${
+                              v == null
+                                ? "border-[var(--hairline)] text-[var(--text-muted)]"
+                                : v > 0
+                                ? "border-[rgba(16,185,129,0.4)] text-[#7ff0c0] bg-[rgba(16,185,129,0.1)]"
+                                : "border-[rgba(248,113,113,0.4)] text-[#ff9d9d] bg-[rgba(220,38,38,0.1)]"
+                            }`}
+                          >
+                            {n} kỳ {v == null ? "—" : pc(v)}
+                          </span>
+                        );
+                      })}
+                    </div>
+
+                    <div className="text-[0.66rem] text-[var(--text-muted)] mt-1 numeric">
+                      {r.mau.toLocaleString("vi-VN")} lượt lô · về {(r.tyLeVe * 100).toFixed(2)}%
+                      (chung {tk.chuan}%) · {r.kyLo}/{r.kyCo} kỳ lỗ
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="rounded-lg border border-[rgba(251,191,36,0.45)] bg-[rgba(245,158,11,0.09)] px-3 py-2.5 space-y-2">
@@ -224,7 +243,7 @@ export default function SlotPanel({ region }: { region: Region }) {
               <div className="text-[0.76rem] text-[var(--text-secondary)] mb-2">
                 Khách muốn <b>ngày lời cài 100n, ngày lỗ về 0n</b>. Lời ở cả 4 chu kỳ hiện có{" "}
                 <b className="text-[#7ff0c0]">
-                  {bacLoiCaBon.length ? bacLoiCaBon.map((b) => (b === TRAN_BAC ? `${b}+ ngày` : b === 0 ? "vừa về" : `${b} ngày`)).join(" · ") : "không ngày nào"}
+                  {bacLoiCaBon.length ? bacLoiCaBon.map(ten).join(" · ") : "không ngày nào"}
                 </b>
                 . Bấm là ghi thẳng vào bảng hạn mức và tính lại toàn bộ lịch sử.
               </div>
