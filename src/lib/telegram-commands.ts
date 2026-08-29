@@ -343,9 +343,12 @@ export async function copyAll(withDe: boolean): Promise<string> {
 /**
  * Số không nhận cược — hạn mức đang là 0.
  *
- * Ba miền một lượt, một dòng mỗi miền, vì đây là thứ được đọc to cho người
- * khác chép lại chứ không phải thứ để ngồi soi. Mỗi miền một khối <code>
- * riêng để Telegram chạm một cái là chép được đúng miền đó.
+ * Ba dòng, không có gì khác. Khách chuyển tiếp thẳng tin này cho người ghi
+ * cược, nên tiêu đề, số đếm và câu dặn dò đều là thứ họ phải ngồi xoá tay —
+ * đúng nghĩa là mình bắt người dùng dọn rác của mình.
+ *
+ * Mỗi miền một khối <code> riêng: Telegram chạm một cái là chép được đúng
+ * miền đó, không dính hai miền kia.
  */
 export async function chanSoAll(): Promise<string> {
   const parts = await Promise.all(
@@ -355,30 +358,23 @@ export async function chanSoAll(): Promise<string> {
         .filter((l) => (l.current_limit ?? 0) <= 0)
         .map((l) => l.lo_number)
         .sort();
-      return { region: r, chan, tong: summary.length };
+      return { region: r, chan };
     })
   );
 
-  const dong = parts.map((p) => {
-    const ten = TEN_NGAN[p.region];
-    if (p.chan.length === 0) return `<b>${ten}:</b> không chặn số nào`;
-    return `<b>${ten}:</b> <code>${esc(p.chan.join(" "))}</code>\n<i>${p.chan.length} số</i>`;
-  });
+  // Cả ba miền trống thì tin nhắn sẽ rỗng không. Đó là lúc duy nhất cần chữ:
+  // im lặng ở đây thì người đọc tưởng bot hỏng.
+  if (parts.every((p) => p.chan.length === 0)) {
+    return "Chưa miền nào có số bị chặn — bảng hạn mức đang không để ngày nào về 0n.";
+  }
 
-  // Ba miền cùng trống thì câu "không chặn số nào" là ngõ cụt — người đọc
-  // không biết máy hỏng hay đúng là vậy. Nói luôn vì sao và làm gì để có.
-  const trong = parts.every((p) => p.chan.length === 0);
-  const duoi = trong
-    ? "<i>Chưa miền nào có số bị chặn, vì bảng hạn mức đang không để bậc nào về 0n. Muốn có số chặn thì lên web đặt vài bậc về 0n — hoặc bấm nút trong khối 🎯 Ngày Nào Đẹp Nhất.</i>"
-    : "<i>Số nào hạn mức về 0n thì nằm đây. Đổi bảng hạn mức trên web là danh sách này đổi theo.</i>";
-
-  return [
-    "<b>🚫 Số chặn — không nhận cược</b>",
-    "",
-    ...dong,
-    "",
-    duoi,
-  ].join("\n");
+  return parts
+    .map((p) => {
+      const ten = TEN_NGAN[p.region];
+      if (p.chan.length === 0) return `<b>${ten}:</b> —`;
+      return `<b>${ten}:</b> <code>${esc(p.chan.join(" "))}</code>`;
+    })
+    .join("\n");
 }
 
 /** Cách khách viết tắt miền khi đọc cho nhau. */
