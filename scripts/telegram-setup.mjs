@@ -63,6 +63,7 @@ if (hook.ok) {
 const cmds = await api("setMyCommands", {
   commands: [
     { command: "copy", description: "Chuỗi cược CẢ 3 MIỀN — /copy hoặc /copy de" },
+    { command: "chanso", description: "Số chặn — không nhận cược, cả 3 miền" },
     { command: "mn", description: "Tóm tắt Miền Nam" },
     { command: "mb", description: "Tóm tắt Miền Bắc" },
     { command: "mt", description: "Tóm tắt Miền Trung" },

@@ -104,6 +104,9 @@ export function helpText(isAdmin = false): string {
     "<code>/copy de</code> — cả 3 miền, kèm đề",
     "<code>/copy mn</code> — riêng một miền",
     "",
+    "<b>Số chặn</b>",
+    "<code>/chanso</code> — số không nhận cược, cả 3 miền",
+    "",
     "<b>Xem thêm</b>",
     "<code>/mn</code> <code>/mb</code> <code>/mt</code> — tóm tắt miền",
     "<code>/top mn</code> — các lô đang bị chia đôi",
@@ -337,6 +340,50 @@ export async function copyAll(withDe: boolean): Promise<string> {
   return `${head}\n\n${body}`;
 }
 
+/**
+ * Số không nhận cược — hạn mức đang là 0.
+ *
+ * Ba miền một lượt, một dòng mỗi miền, vì đây là thứ được đọc to cho người
+ * khác chép lại chứ không phải thứ để ngồi soi. Mỗi miền một khối <code>
+ * riêng để Telegram chạm một cái là chép được đúng miền đó.
+ */
+export async function chanSoAll(): Promise<string> {
+  const parts = await Promise.all(
+    REGIONS.map(async (r) => {
+      const summary = await getLimitSummary(r);
+      const chan = summary
+        .filter((l) => (l.current_limit ?? 0) <= 0)
+        .map((l) => l.lo_number)
+        .sort();
+      return { region: r, chan, tong: summary.length };
+    })
+  );
+
+  const dong = parts.map((p) => {
+    const ten = TEN_NGAN[p.region];
+    if (p.chan.length === 0) return `<b>${ten}:</b> không chặn số nào`;
+    return `<b>${ten}:</b> <code>${esc(p.chan.join(" "))}</code>\n<i>${p.chan.length} số</i>`;
+  });
+
+  // Ba miền cùng trống thì câu "không chặn số nào" là ngõ cụt — người đọc
+  // không biết máy hỏng hay đúng là vậy. Nói luôn vì sao và làm gì để có.
+  const trong = parts.every((p) => p.chan.length === 0);
+  const duoi = trong
+    ? "<i>Chưa miền nào có số bị chặn, vì bảng hạn mức đang không để bậc nào về 0n. Muốn có số chặn thì lên web đặt vài bậc về 0n — hoặc bấm nút trong khối 🎯 Ngày Nào Đẹp Nhất.</i>"
+    : "<i>Số nào hạn mức về 0n thì nằm đây. Đổi bảng hạn mức trên web là danh sách này đổi theo.</i>";
+
+  return [
+    "<b>🚫 Số chặn — không nhận cược</b>",
+    "",
+    ...dong,
+    "",
+    duoi,
+  ].join("\n");
+}
+
+/** Cách khách viết tắt miền khi đọc cho nhau. */
+const TEN_NGAN: Record<Region, string> = { xsmn: "Mn", xsmt: "Mt", xsmb: "Mb" };
+
 /** Headroom under Telegram's 4096, leaving room for the header and warning. */
 const SAFE_BLOCK = 3400;
 
@@ -484,6 +531,10 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
       if (!region) return (await staleWarningAll()) + (await copyAll(withDe));
       return withWarning(region, (r) => copyString(r, withDe));
     }
+
+    case "/chanso":
+    case "/chan":
+      return (await staleWarningAll()) + (await chanSoAll());
 
     case "/top": {
       const region = parseRegion(args);
