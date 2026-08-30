@@ -58,7 +58,7 @@ export default function SlotPanel({ region }: { region: Region }) {
   const bacLoiCaBon = useMemo<BacKey[]>(() => {
     if (!tk) return [];
     return tk.bang
-      .filter((r) => CUA_SO.every((n) => (r.theoCuaSo[n] ?? -1) > 0))
+      .filter((r) => r.bien > 0 && CUA_SO.every((n) => (r.theoCuaSo[n] ?? -1) > 0))
       .map((r) => r.key);
   }, [tk]);
 
@@ -150,21 +150,28 @@ export default function SlotPanel({ region }: { region: Region }) {
               <br />
               {bacLoiCaBon.length > 0 ? (
                 <>
-                  Đang có <b className="text-[#7ff0c0]">{bacLoiCaBon.length} nhóm NÊN ÔM</b> (lời cả
-                  4 chu kỳ):{" "}
+                  Đang có <b className="text-[#7ff0c0]">{bacLoiCaBon.length} nhóm NÊN ÔM</b> (lời ở cả 4 chu kỳ
+                  lẫn cả quãng đo):{" "}
                   <b className="text-[#7ff0c0]">{bacLoiCaBon.map((x) => ten(x)).join(" · ")}</b>
                 </>
               ) : (
-                <b className="text-[#ffd24a]">Không nhóm nào lời được cả 4 chu kỳ.</b>
+                <b className="text-[#ffd24a]">Không nhóm nào lời được ở mọi khung.</b>
               )}
             </div>
 
             <div className="space-y-1.5">
               {tk.bang.filter((r) => r.mau >= 60).map((r, i, ds) => {
                 const dauKhoiKho = i > 0 && ds[i - 1].laChuoi && !r.laChuoi;
-                const co = CUA_SO.map((n) => r.theoCuaSo[n]).filter((v) => v != null) as number[];
-                const hetLoi = co.length === 4 && co.every((v) => v > 0);
-                const hetLo = co.length === 4 && co.every((v) => v < 0);
+                // Nhãn phải xét CẢ khung toàn bộ, không chỉ bốn cửa sổ. Trước
+                // đây nhãn lấy 4 cửa sổ còn dòng tiền lấy toàn bộ lịch sử, nên
+                // "vừa về" ở Miền Nam gắn NÊN ÔM mà ngay dưới lại ghi lỗ —
+                // hai con số chửi nhau trên cùng một thẻ.
+                const co = [...CUA_SO.map((n) => r.theoCuaSo[n]), r.bien].filter(
+                  (v) => v != null
+                ) as number[];
+                const du = co.length === CUA_SO.length + 1;
+                const hetLoi = du && co.every((v) => v > 0);
+                const hetLo = du && co.every((v) => v < 0);
                 const itMau = r.mau < 300;
                 const phan = hetLoi
                   ? { chu: "NÊN ÔM", mau: "#7ff0c0", nen: "rgba(16,185,129,0.16)", vien: "rgba(16,185,129,0.5)" }
@@ -221,13 +228,23 @@ export default function SlotPanel({ region }: { region: Region }) {
                           </span>
                         );
                       })}
+                      <span
+                        className={`numeric text-[0.68rem] rounded px-1.5 py-0.5 border font-bold ${
+                          r.bien > 0
+                            ? "border-[rgba(16,185,129,0.6)] text-[#7ff0c0] bg-[rgba(16,185,129,0.18)]"
+                            : "border-[rgba(248,113,113,0.6)] text-[#ff9d9d] bg-[rgba(220,38,38,0.18)]"
+                        }`}
+                        title="Cả quãng đo — đây là con số mà dòng tiền bên dưới tính theo"
+                      >
+                        cả {tk.soKy} kỳ {pc(r.bien)}
+                      </span>
                     </div>
 
                     {/* Câu này mới là câu người ôm số cần: bao nhiêu vào, bao
                         nhiêu ra. Riêng nhóm về liên tiếp thì bản năng bảo né mà
                         con số bảo ôm — bày tiền ra chứ đừng bắt người ta tin. */}
                     <div className="text-[0.72rem] mt-1.5 leading-relaxed text-[var(--text-secondary)]">
-                      Ôm <b>100 điểm</b> con này: thu{" "}
+                      Ôm <b>100 điểm</b> con này (tính trên cả {tk.soKy} kỳ): thu{" "}
                       <b className="text-[#7ff0c0]">{tien(r.thu100)}</b>, trả trung bình{" "}
                       <b className="text-[#ff9d9d]">{tien(r.tra100)}</b> →{" "}
                       <b className={r.thu100 - r.tra100 >= 0 ? "text-[#7ff0c0]" : "text-[#ff9d9d]"}>
@@ -308,7 +325,7 @@ export default function SlotPanel({ region }: { region: Region }) {
 
             <div className="rounded-lg border border-[var(--hairline)] bg-white/[0.04] px-3 py-2.5">
               <div className="text-[0.76rem] text-[var(--text-secondary)] mb-2">
-                Khách muốn <b>nhóm lời cài 100n, nhóm lỗ về 0n</b>. Lời ở cả 4 chu kỳ hiện có{" "}
+                Khách muốn <b>nhóm lời cài 100n, nhóm lỗ về 0n</b>. Lời ở mọi khung hiện có{" "}
                 <b className="text-[#7ff0c0]">
                   {bacLoiCaBon.length ? bacLoiCaBon.map(ten).join(" · ") : "không nhóm nào"}
                 </b>
