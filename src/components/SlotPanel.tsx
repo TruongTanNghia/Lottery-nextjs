@@ -8,12 +8,12 @@ import {
   TRAN_BAC,
   TRAN_CHUOI,
   type BacKey,
+  type LoTrongNhom,
   type SlotStats,
 } from "@/lib/slot-stats";
 import { useToast } from "./Toast";
 import type { Region } from "@/lib/types";
 
-const CUA_SO = [30, 60, 90, 120];
 const pc = (n: number) => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(2) + "%";
 const tien = (n: number) => {
   const a = Math.abs(n), s = n < 0 ? "−" : "";
@@ -37,6 +37,7 @@ export default function SlotPanel({ region }: { region: Region }) {
   const [draws, setDraws] = useState<DrawHits[] | null>(null);
   const [dangLuu, setDangLuu] = useState(false);
   const [chacChua, setChacChua] = useState(false);
+  const [moNhom, setMoNhom] = useState<BacKey | null>(null);
 
   useEffect(() => {
     let huy = false;
@@ -58,7 +59,13 @@ export default function SlotPanel({ region }: { region: Region }) {
   const bacLoiCaBon = useMemo<BacKey[]>(() => {
     if (!tk) return [];
     return tk.bang
-      .filter((r) => r.bien > 0 && CUA_SO.every((n) => (r.theoCuaSo[n] ?? -1) > 0))
+      .filter((r) => {
+        const co = r.theoThang.filter((t) => t.bien != null);
+        // Ít nhất ba tháng đứng riêng cùng nói một chuyện, cộng cả quãng đo.
+        // Một tháng xanh thì chưa là gì — biên độ tự nhiên của một tháng ở
+        // Miền Nam là ±4%, đủ để bịa ra một nhóm "đẹp" từ hư không.
+        return r.bien > 0 && co.length >= 3 && co.every((t) => (t.bien as number) > 0);
+      })
       .map((r) => r.key);
   }, [tk]);
 
@@ -166,10 +173,9 @@ export default function SlotPanel({ region }: { region: Region }) {
                 // đây nhãn lấy 4 cửa sổ còn dòng tiền lấy toàn bộ lịch sử, nên
                 // "vừa về" ở Miền Nam gắn NÊN ÔM mà ngay dưới lại ghi lỗ —
                 // hai con số chửi nhau trên cùng một thẻ.
-                const co = [...CUA_SO.map((n) => r.theoCuaSo[n]), r.bien].filter(
-                  (v) => v != null
-                ) as number[];
-                const du = co.length === CUA_SO.length + 1;
+                const thangCo = r.theoThang.filter((t) => t.bien != null);
+                const co = [...thangCo.map((t) => t.bien as number), r.bien];
+                const du = thangCo.length >= 3;
                 const hetLoi = du && co.every((v) => v > 0);
                 const hetLo = du && co.every((v) => v < 0);
                 const itMau = r.mau < 300;
@@ -211,23 +217,21 @@ export default function SlotPanel({ region }: { region: Region }) {
                     </div>
 
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
-                      {CUA_SO.map((n) => {
-                        const v = r.theoCuaSo[n];
-                        return (
-                          <span
-                            key={n}
-                            className={`numeric text-[0.68rem] rounded px-1.5 py-0.5 border ${
-                              v == null
-                                ? "border-[var(--hairline)] text-[var(--text-muted)]"
-                                : v > 0
-                                ? "border-[rgba(16,185,129,0.4)] text-[#7ff0c0] bg-[rgba(16,185,129,0.1)]"
-                                : "border-[rgba(248,113,113,0.4)] text-[#ff9d9d] bg-[rgba(220,38,38,0.1)]"
-                            }`}
-                          >
-                            {n} kỳ {v == null ? "—" : pc(v)}
-                          </span>
-                        );
-                      })}
+                      {r.theoThang.map((t) => (
+                        <span
+                          key={t.thang}
+                          title={`${t.mau.toLocaleString("vi-VN")} lượt lô trong tháng này`}
+                          className={`numeric text-[0.68rem] rounded px-1.5 py-0.5 border ${
+                            t.bien == null
+                              ? "border-[var(--hairline)] text-[var(--text-muted)]"
+                              : t.bien > 0
+                              ? "border-[rgba(16,185,129,0.4)] text-[#7ff0c0] bg-[rgba(16,185,129,0.1)]"
+                              : "border-[rgba(248,113,113,0.4)] text-[#ff9d9d] bg-[rgba(220,38,38,0.1)]"
+                          }`}
+                        >
+                          T{Number(t.thang.slice(5))} {t.bien == null ? "ít mẫu" : pc(t.bien)}
+                        </span>
+                      ))}
                       <span
                         className={`numeric text-[0.68rem] rounded px-1.5 py-0.5 border font-bold ${
                           r.bien > 0
@@ -252,6 +256,18 @@ export default function SlotPanel({ region }: { region: Region }) {
                         {tien(Math.abs(r.thu100 - r.tra100))}
                       </b>
                     </div>
+                    {/* Nhóm lời không có nghĩa là con nào trong nhóm cũng lời.
+                        Khách hỏi thẳng: "trong 2 kỳ này số nào lỗ nhất". Nếu cả
+                        cái +8% đến từ vài con may thì đem đi ôm là gãy. */}
+                    <button
+                      onClick={() => setMoNhom(moNhom === r.key ? null : r.key)}
+                      className="mt-1.5 text-[0.7rem] font-bold text-[#a9c9ff] hover:text-white"
+                    >
+                      {moNhom === r.key ? "▾" : "▸"} Xem từng con trong nhóm ({r.cacLo.length} lô)
+                    </button>
+
+                    {moNhom === r.key && <BangLo cacLo={r.cacLo} />}
+
                     <div className="text-[0.66rem] text-[var(--text-muted)] mt-1 numeric">
                       {r.mau.toLocaleString("vi-VN")} lượt lô · kỳ tới về{" "}
                       {(r.tyLeVe * 100).toFixed(2)} nháy trên 100 lô (mức chung {tk.chuan}) ·{" "}
@@ -377,5 +393,60 @@ export default function SlotPanel({ region }: { region: Region }) {
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Từng con trong một nhóm, lỗ nặng nhất đứng trước.
+ *
+ * Một nhóm +8% vẫn có thể là vài con gánh cho cả chục con lỗ. Cột "dịp" cho
+ * biết con đó rơi vào nhóm bao nhiêu lần — con chỉ vào nhóm dăm lần thì con số
+ * lãi/lỗ của nó chưa nói được gì, y như bậc ít mẫu.
+ */
+function BangLo({ cacLo }: { cacLo: LoTrongNhom[] }) {
+  if (cacLo.length === 0) return null;
+  const thua = cacLo.filter((x) => x.lai < 0);
+  const an = [...cacLo].reverse().filter((x) => x.lai > 0);
+  const tongThua = thua.reduce((s, x) => s + x.lai, 0);
+  const tongAn = an.reduce((s, x) => s + x.lai, 0);
+
+  const O = ({ x, do_ }: { x: LoTrongNhom; do_: boolean }) => (
+    <span
+      title={`Lô ${x.lo}: vào nhóm ${x.dip} lần, về ${x.nhay} nháy`}
+      className={`inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 numeric text-[0.66rem] border ${
+        do_
+          ? "bg-[rgba(220,38,38,0.2)] border-[rgba(248,113,113,0.45)] text-[#ffd9d9]"
+          : "bg-[rgba(16,185,129,0.14)] border-[rgba(16,185,129,0.4)] text-[#c9f4e0]"
+      }`}
+    >
+      <b className="text-white">{x.lo}</b>
+      <span className="opacity-70">{x.dip} dịp</span>
+      <b>{(x.lai >= 0 ? "+" : "") + tien(x.lai)}</b>
+    </span>
+  );
+
+  return (
+    <div className="mt-1.5 space-y-1.5 rounded-lg border border-[var(--hairline)] bg-black/25 px-2.5 py-2">
+      <div className="text-[0.68rem] text-[var(--text-muted)]">
+        Nếu ôm 100 điểm mỗi lô mỗi kỳ:{" "}
+        <b className="text-[#ff9d9d]">{thua.length} con lỗ ({tien(tongThua)})</b> ·{" "}
+        <b className="text-[#7ff0c0]">{an.length} con ăn (+{tien(tongAn)})</b>
+      </div>
+      {thua.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="eyebrow text-[#ff9d9d]">Lỗ nặng nhất</span>
+          {thua.slice(0, 8).map((x) => <O key={x.lo} x={x} do_ />)}
+        </div>
+      )}
+      {an.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="eyebrow text-[#7ff0c0]">Ăn nhiều nhất</span>
+          {an.slice(0, 8).map((x) => <O key={x.lo} x={x} do_={false} />)}
+        </div>
+      )}
+      <div className="text-[0.64rem] text-[var(--text-muted)]">
+        Số "dịp" là số lần con đó rơi vào nhóm. Con nào ít dịp thì lãi/lỗ của nó cũng chỉ là may rủi.
+      </div>
+    </div>
   );
 }

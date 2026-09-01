@@ -146,6 +146,7 @@ export default function BacktestPanel({ region }: { region: Region }) {
             </div>
 
             <Duong days={kq.days} />
+            <DinhDay days={kq.days} />
 
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[640px]">
@@ -372,6 +373,54 @@ function ChiTiet({ d, price }: { d: DayRow; price: number }) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Năm kỳ ăn đậm nhất và năm kỳ gãy nặng nhất, đứng cạnh nhau.
+ *
+ * Con số "sụt sâu nhất" ở trên là tổng của một quãng dài, nên nó không chỉ ra
+ * được đêm nào là đêm mất tiền. Khách hỏi thẳng năm cái đỉnh và năm cái đáy —
+ * đó mới là thứ bấm vào xem được con nào gây ra.
+ */
+function DinhDay({ days }: { days: DayRow[] }) {
+  if (days.length < 5) return null;
+  const sap = [...days].sort((a, b) => b.lai - a.lai);
+  const dinh = sap.slice(0, 5);
+  const day = sap.slice(-5).reverse();
+
+  const Cot = ({
+    nhan, ds, mau,
+  }: { nhan: string; ds: DayRow[]; mau: string }) => (
+    <div>
+      <div className="eyebrow mb-1" style={{ color: mau }}>{nhan}</div>
+      <div className="space-y-1">
+        {ds.map((d) => (
+          <div
+            key={d.date}
+            className="flex items-baseline justify-between gap-2 rounded px-2 py-1 bg-white/[0.04] text-[0.72rem]"
+          >
+            <span className="numeric text-white">{ngay(d.date)}</span>
+            <span className="numeric text-[var(--text-muted)] text-[0.66rem]">
+              {d.soLoVe} lô về
+            </span>
+            <span className="numeric font-bold" style={{ color: mau }}>
+              {(d.lai >= 0 ? "+" : "") + tr(d.lai)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-lg border border-[var(--hairline)] bg-white/[0.03] p-3">
+      <Cot nhan="5 kỳ ăn đậm nhất" ds={dinh} mau="#34e6a8" />
+      <Cot nhan="5 kỳ gãy nặng nhất" ds={day} mau="#ff6b78" />
+      <div className="md:col-span-2 text-[0.66rem] text-[var(--text-muted)]">
+        Bấm vào đúng ngày đó trong bảng dưới để xem con nào gây ra.
       </div>
     </div>
   );

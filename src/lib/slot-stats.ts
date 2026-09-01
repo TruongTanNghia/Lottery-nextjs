@@ -1,20 +1,20 @@
 /**
- * "Ngày nào đẹp nhất?" — nhưng "vừa về" không phải một nhóm.
+ * "Nhóm nào đẹp nhất?" — đo theo THÁNG, mỗi tháng đứng riêng.
  *
- * The operator drew the line themself: a lô that just landed once is not the
- * same animal as a lô that has landed two, three or four kỳ running, and they
- * want to be able to refuse the first while still taking the second. All four
- * used to sit in one bucket called "vừa về", so the table could never show that
- * they behave differently — or that they don't.
+ * Hai chuyện người vận hành tự chỉ ra, và cả hai đều đúng.
  *
- * So gap 0 is split by streak length, and everything from 1 kỳ dry upward keeps
- * counting by dryness. Each group is then priced the only way that means
- * anything: what a flat 100 điểm on it would have returned.
+ * Một: "vừa về" không phải một nhóm. Lô mới về lần đầu khác hẳn lô đã về hai,
+ * ba, bốn kỳ liền, và họ muốn từ chối cái trước mà vẫn ăn cái sau. Nên gap 0
+ * tách theo độ dài chuỗi, từ 1 kỳ khô trở lên mới đếm theo độ khô.
  *
- * `kiemThu` is the half that keeps the table honest. Picking the winning groups
- * out of it is choosing after seeing the answers, so the same routine also
- * chooses on the first half of the record, plays the second half blind, and
- * reports that against simply accepting every group.
+ * Hai: bốn cửa sổ 30/60/90/120 kỳ lồng vào nhau nên không phải bốn phép kiểm.
+ * Đo trên sổ thật, 30 kỳ gần nhất của Miền Trung đóng góp +504,9tr vào cả bốn
+ * con số — một quãng tốt kéo xanh hết phần còn lại. Tháng thì không lồng nhau:
+ * tháng 3 và tháng 7 là hai mẫu hoàn toàn riêng, nên "lời ở mọi tháng" mới là
+ * một câu có sức nặng.
+ *
+ * `kiemThu` vẫn là phần giữ cho bảng thật thà: chọn nhóm trên nửa đầu, chơi
+ * nửa sau, rồi so với việc cứ nhận đều tất cả.
  */
 import { LOS, type DrawHits } from "./backtest";
 import { STAKE_PRICE, WIN_PER_POINT } from "./exposure";
@@ -26,6 +26,10 @@ export const TRAN_BAC = 19;
 export const TRAN_CHUOI = 4;
 /** Early kỳ have no dry history yet, so every lô would sit in bậc 0 and skew it. */
 const WARMUP = 30;
+/** Dưới mức này thì con số của tháng đó là may rủi, không phải kết quả. */
+const MAU_TOI_THIEU = 30;
+/** Tháng nào ít kỳ quá thì không phải một tháng — bỏ khỏi mọi phán xét. */
+const KY_TOI_THIEU_THANG = 15;
 
 /** `chuoi:2` = về liên tiếp 2 kỳ · `kho:5` = 5 kỳ chưa về. */
 export type BacKey = string;
@@ -51,28 +55,37 @@ export function moiBac(): BacKey[] {
   return out;
 }
 
+export interface ThangRow {
+  /** "2026-07" */
+  thang: string;
+  /** null khi tháng đó nhóm này không đủ mẫu để nói gì. */
+  bien: number | null;
+  mau: number;
+}
+
+/** Một lô cụ thể, trong một nhóm cụ thể, trên cả quãng đo. */
+export interface LoTrongNhom {
+  lo: string;
+  /** Số lần lô này rơi vào nhóm. */
+  dip: number;
+  nhay: number;
+  lai: number;
+}
+
 export interface BacRow {
   key: BacKey;
   ten: string;
-  /** True cho nhóm chuỗi — để màn hình gom chúng lại một chỗ. */
   laChuoi: boolean;
-  /** (lô, kỳ) pairs that sat in this group — the sample size behind the number. */
   mau: number;
   tyLeVe: number;
   bien: number;
   kyLo: number;
   kyCo: number;
-  /**
-   * Tiền thật cho 100 điểm ôm vào một lô trong một kỳ.
-   *
-   * Tỉ lệ phần trăm không trả lời được câu người ôm số hỏi. Họ hỏi "ôm con này
-   * thì thu bao nhiêu, trả bao nhiêu" — nhất là ở nhóm lô vừa về liên tiếp,
-   * chỗ mà bản năng bảo phải né mà con số lại bảo nên ôm.
-   */
   thu100: number;
   tra100: number;
-  /** Margin in each of the 30/60/90/120 windows, for "lời cả 4 chu kỳ". */
-  theoCuaSo: Record<number, number | null>;
+  theoThang: ThangRow[];
+  /** Từng lô trong nhóm, lỗ nặng nhất đứng trước. */
+  cacLo: LoTrongNhom[];
 }
 
 export interface KiemThu {
@@ -87,6 +100,8 @@ export interface KiemThu {
 export interface SlotStats {
   soKy: number;
   chuan: number;
+  /** Các tháng có đủ kỳ, cũ → mới. */
+  cacThang: string[];
   bang: BacRow[];
   kiemThu: KiemThu | null;
 }
@@ -120,7 +135,10 @@ function dungKy(draws: DrawHits[]): Ky[] {
     const ve: Record<string, number> = {};
     for (const l of LOS) {
       const s = st.get(l)!;
-      bac[l] = s.chuoi > 0 ? keyChuoi(Math.min(TRAN_CHUOI, s.chuoi)) : keyKho(Math.min(TRAN_BAC, Math.max(1, s.kho)));
+      bac[l] =
+        s.chuoi > 0
+          ? keyChuoi(Math.min(TRAN_CHUOI, s.chuoi))
+          : keyKho(Math.min(TRAN_BAC, Math.max(1, s.kho)));
       ve[l] = d.hits[l] ?? 0;
     }
     out.push({ date: d.date, bac, ve });
@@ -188,15 +206,54 @@ function bienCua(ky: Ky[], gia: number, nhan: (b: BacKey) => boolean): number {
   return thu > 0 ? ((thu - bu) / thu) * 100 : 0;
 }
 
+/** Từng lô một, trong từng nhóm — để thấy cái +8% của nhóm đến từ đâu. */
+function tachLo(ky: Ky[], gia: number): Record<BacKey, LoTrongNhom[]> {
+  const acc: Record<BacKey, Record<string, { dip: number; nhay: number }>> = {};
+  for (const k of ky) {
+    for (const l of LOS) {
+      const b = k.bac[l];
+      const m = (acc[b] ??= {});
+      const x = (m[l] ??= { dip: 0, nhay: 0 });
+      x.dip++;
+      x.nhay += k.ve[l];
+    }
+  }
+  const out: Record<BacKey, LoTrongNhom[]> = {};
+  for (const [b, m] of Object.entries(acc)) {
+    out[b] = Object.entries(m)
+      .map(([lo, x]) => ({
+        lo,
+        dip: x.dip,
+        nhay: x.nhay,
+        lai: x.dip * 100 * gia - x.nhay * 100 * WIN_PER_POINT,
+      }))
+      .sort((a, b2) => a.lai - b2.lai);
+  }
+  return out;
+}
+
 export function thongKeBac(draws: DrawHits[], region: Region): SlotStats | null {
   if (draws.length < WARMUP + 20) return null;
   const gia = STAKE_PRICE[region];
   const ky = dungKy(draws);
   const tong = gop(ky, gia);
+  const cacLo = tachLo(ky, gia);
 
-  const cuaSo = [30, 60, 90, 120];
-  const theo: Record<number, Gop> = {};
-  for (const n of cuaSo) theo[n] = gop(ky.slice(-n), gia);
+  // Tháng nào đủ kỳ mới được coi là một tháng.
+  const theoThangKy = new Map<string, Ky[]>();
+  for (const k of ky) {
+    const t = k.date.slice(0, 7);
+    let ds = theoThangKy.get(t);
+    if (!ds) theoThangKy.set(t, (ds = []));
+    ds.push(k);
+  }
+  const cacThang = [...theoThangKy.entries()]
+    .filter(([, v]) => v.length >= KY_TOI_THIEU_THANG)
+    .map(([t]) => t)
+    .sort();
+
+  const gopThang: Record<string, Gop> = {};
+  for (const t of cacThang) gopThang[t] = gop(theoThangKy.get(t)!, gia);
 
   const bang: BacRow[] = moiBac().map((key) => {
     const r = tong[key];
@@ -211,9 +268,12 @@ export function thongKeBac(draws: DrawHits[], region: Region): SlotStats | null 
       kyCo: r.kyCo,
       thu100: 100 * gia,
       tra100: 100 * WIN_PER_POINT * r.tyLeVe,
-      theoCuaSo: Object.fromEntries(
-        cuaSo.map((n) => [n, (theo[n][key]?.mau ?? 0) >= 30 ? theo[n][key].bien : null])
-      ),
+      theoThang: cacThang.map((t) => {
+        const g = gopThang[t][key];
+        const mau = g?.mau ?? 0;
+        return { thang: t, mau, bien: mau >= MAU_TOI_THIEU ? g.bien : null };
+      }),
+      cacLo: cacLo[key] ?? [],
     };
   });
 
@@ -234,5 +294,11 @@ export function thongKeBac(draws: DrawHits[], region: Region): SlotStats | null 
     };
   }
 
-  return { soKy: ky.length, chuan: region === "xsmb" ? 27 : 36, bang, kiemThu };
+  return {
+    soKy: ky.length,
+    chuan: region === "xsmb" ? 27 : 36,
+    cacThang,
+    bang,
+    kiemThu,
+  };
 }

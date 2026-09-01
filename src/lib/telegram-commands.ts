@@ -18,6 +18,7 @@ import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
 import { provincePrefix } from "@/lib/provinces";
 import { freshness, freshnessText } from "@/lib/freshness";
 import { esc } from "@/lib/telegram";
+import { baoCaoTheoThang } from "@/lib/profit-calculator";
 import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
 
 // Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
@@ -103,6 +104,10 @@ export function helpText(isAdmin = false): string {
     "<code>/copy</code> — cả 3 miền một lượt",
     "<code>/copy de</code> — cả 3 miền, kèm đề",
     "<code>/copy mn</code> — riêng một miền",
+    "",
+    "<b>Báo cáo</b>",
+    "<code>/baocao</code> — tháng này, cả 3 miền",
+    "<code>/baocao 3</code> — ba tháng gần nhất",
     "",
     "<b>Số chặn</b>",
     "<code>/chanso</code> — số không nhận cược, cả 3 miền",
@@ -377,6 +382,64 @@ export async function chanSoAll(): Promise<string> {
     .join("\n");
 }
 
+/**
+ * Báo cáo theo tháng dương lịch, ba miền, mỗi tháng đứng riêng.
+ *
+ * Khách yêu cầu đúng khuôn: nhận − bù − lời lỗ (%) và một câu nhận định. Câu
+ * nhận định là chỗ dễ nói dối nhất, nên nó không dựa vào dấu của con số mà dựa
+ * vào việc con số đó có vượt ra ngoài biên độ tự nhiên của một tháng hay không.
+ * Đo trên sổ thật, một tháng Miền Nam dao động ±4,03% quanh mức 0 — nên +3%
+ * không phải "tốt lên", nó là một tháng bình thường.
+ */
+export async function baoCaoAll(soThang = 1): Promise<string> {
+  const bc = await Promise.all(REGIONS.map((r) => baoCaoTheoThang(r)));
+  const co = bc.filter((b) => b.cacThang.length > 0);
+  if (co.length === 0) return "Chưa đủ dữ liệu để làm báo cáo tháng.";
+
+  // Lấy các tháng mới nhất mà mọi miền đều có, để ba dòng nói về cùng một tháng.
+  const chung = co
+    .map((b) => b.cacThang.map((t) => t.thang))
+    .reduce((a, b) => a.filter((x) => b.includes(x)));
+  const lay = chung.slice(-Math.max(1, soThang));
+  if (lay.length === 0) return "Ba miền chưa có tháng nào trùng nhau đủ dữ liệu.";
+
+  const khoi = lay.map((thang) => {
+    const [nam, thg] = thang.split("-");
+    const dong = bc.map((b) => {
+      const t = b.cacThang.find((x) => x.thang === thang);
+      if (!t) return `<b>${TEN_NGAN[b.region]}:</b> chưa có dữ liệu`;
+      const nhanDinh =
+        Math.abs(t.phanTram) <= b.bienDo
+          ? "trong khoảng bình thường"
+          : t.phanTram > 0
+          ? "<b>vượt lên trên</b> khoảng bình thường"
+          : "<b>tụt xuống dưới</b> khoảng bình thường";
+      return (
+        `<b>${TEN_NGAN[b.region]}:</b> nhận ${trTien(t.thu)} − bù ${trTien(t.bu)} = ` +
+        `<b>${t.lai >= 0 ? "+" : "−"}${trTien(Math.abs(t.lai))}</b> ` +
+        `(${t.phanTram >= 0 ? "+" : "−"}${Math.abs(t.phanTram).toFixed(2)}%) · ${t.soKy} kỳ\n` +
+        `   ${nhanDinh} — biên độ tự nhiên một tháng là ±${b.bienDo.toFixed(2)}%`
+      );
+    });
+    return `<b>📅 Tháng ${Number(thg)}/${nam}</b>\n${dong.join("\n")}`;
+  });
+
+  return [
+    ...khoi,
+    "",
+    "<i>Mỗi tháng đứng riêng, không cộng dồn. Một tháng nằm trong biên độ tự nhiên thì " +
+      "chưa nói được là tốt lên hay đi xuống — cần vài tháng cùng chiều mới tính.</i>",
+  ].join("\n\n");
+}
+
+/** 7.634.500.000 → "7.634,5tr" — cách người ta đọc sổ. */
+function trTien(n: number): string {
+  const a = Math.abs(n);
+  if (a >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}tỷ`;
+  if (a >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}tr`;
+  return Math.round(n).toLocaleString("vi-VN") + "đ";
+}
+
 /** Cách khách viết tắt miền khi đọc cho nhau. */
 const TEN_NGAN: Record<Region, string> = { xsmn: "Mn", xsmt: "Mt", xsmb: "Mb" };
 
@@ -526,6 +589,12 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
       // that needs no argument at all.
       if (!region) return (await staleWarningAll()) + (await copyAll(withDe));
       return withWarning(region, (r) => copyString(r, withDe));
+    }
+
+    case "/baocao":
+    case "/bc": {
+      const n = Number(args[0]);
+      return (await staleWarningAll()) + (await baoCaoAll(Number.isFinite(n) && n > 0 ? n : 1));
     }
 
     case "/chanso":

@@ -228,3 +228,70 @@ export async function getProfitChartData(
     },
   };
 }
+
+export interface ThangProfit {
+  thang: string;
+  soKy: number;
+  thu: number;
+  bu: number;
+  lai: number;
+  phanTram: number;
+}
+
+export interface BaoCaoThang {
+  region: Region;
+  cacThang: ThangProfit[];
+  /** Độ dao động tự nhiên của một tháng, tính từ chính các tháng đã qua. */
+  bienDo: number;
+  trungBinh: number;
+}
+
+/** Tháng nào ít kỳ quá thì không phải một tháng. */
+const KY_TOI_THIEU = 15;
+
+/**
+ * Lãi lỗ theo tháng dương lịch, mỗi tháng đứng riêng — và độ dao động của nó.
+ *
+ * Người vận hành tự chỉ ra chỗ sai của cửa sổ cuốn chiếu: 30/60/90/120 kỳ lồng
+ * vào nhau nên một quãng tốt kéo xanh cả bốn. Tháng thì không lồng nhau.
+ *
+ * Nhưng tháng có cái bẫy riêng, nên `bienDo` đi kèm chứ không phải phụ lục:
+ * đo trên sổ thật, một tháng Miền Nam dao động ±4,03% (±299tr) mà trung bình
+ * chỉ +0,80%. Một tháng xanh nằm gọn trong khoảng đó không nói lên điều gì cả.
+ * Báo cáo mà chỉ đưa con số rồi phán "tốt" là dạy người đọc tin vào nhiễu.
+ */
+export async function baoCaoTheoThang(region: Region): Promise<BaoCaoThang> {
+  const draws = await layDraws(region);
+  const kq = chayLai(draws, await loadSchedule(region), region);
+
+  const gom = new Map<string, { thu: number; bu: number; lai: number; soKy: number }>();
+  for (const d of kq?.days ?? []) {
+    const t = d.date.slice(0, 7);
+    let a = gom.get(t);
+    if (!a) gom.set(t, (a = { thu: 0, bu: 0, lai: 0, soKy: 0 }));
+    a.thu += d.thu;
+    a.bu += d.bu;
+    a.lai += d.lai;
+    a.soKy++;
+  }
+
+  const cacThang: ThangProfit[] = [...gom.entries()]
+    .filter(([, a]) => a.soKy >= KY_TOI_THIEU)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([thang, a]) => ({
+      thang,
+      soKy: a.soKy,
+      thu: a.thu,
+      bu: a.bu,
+      lai: a.lai,
+      phanTram: a.thu > 0 ? (a.lai / a.thu) * 100 : 0,
+    }));
+
+  const pcts = cacThang.map((t) => t.phanTram);
+  const tb = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : 0;
+  const bienDo = pcts.length
+    ? Math.sqrt(pcts.reduce((a, b) => a + (b - tb) ** 2, 0) / pcts.length)
+    : 0;
+
+  return { region, cacThang, bienDo, trungBinh: tb };
+}
