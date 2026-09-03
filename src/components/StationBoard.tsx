@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "./Toast";
 import Switch from "./Switch";
+import ThuGon from "./ThuGon";
 import type { Region } from "@/lib/types";
 
 const WEEK = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"] as const;
@@ -108,17 +109,15 @@ export default function StationBoard({
   const totalDropped = days.reduce((s, d) => s + (cfg.exclude[d] ?? []).length, 0);
 
   return (
-    <section className="plate rise rise-2 mb-4 md:mb-6">
-      <div className="plate-hd">
-        <div>
-          <h2 className="plate-title">📻 Đài Tính Kết Quả</h2>
-          <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-            {cfg.enabled
-              ? `Đang bỏ ${totalDropped} lượt đài mỗi tuần — chỉ đài giữ lại mới tính là lô về`
-              : "Đang tính TẤT CẢ đài — bật để chỉ tính 2 đài mỗi ngày"}
-          </p>
-        </div>
-      </div>
+    <ThuGon
+      khoa={`dai-${region}`}
+      tieuDe="📻 Đài Tính Kết Quả"
+      phu={
+        cfg.enabled
+          ? `Đang bỏ ${totalDropped} lượt đài mỗi tuần — chỉ đài giữ lại mới tính là lô về`
+          : "Đang tính TẤT CẢ đài — bật để chỉ tính 2 đài mỗi ngày"
+      }
+    >
 
       <div className="p-3 md:p-4 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -249,6 +248,6 @@ export default function StationBoard({
           nguyên, chỉ đổi cách đếm lô về. Mất vài giây.
         </p>
       </div>
-    </section>
+    </ThuGon>
   );
 }

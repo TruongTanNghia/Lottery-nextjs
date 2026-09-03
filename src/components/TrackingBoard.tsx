@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "./Toast";
+import ThuGon from "./ThuGon";
 import Switch from "./Switch";
 import type { LimitItem, Region } from "@/lib/types";
 
@@ -144,19 +145,22 @@ export default function TrackingBoard({ limits, recent, region, onChanged }: Pro
   return (
     <div className="mb-4 md:mb-6">
       {/* ── Đang theo dõi ─────────────────────────────────────── */}
-      <section className="plate rise rise-2">
-        <div className="plate-hd">
-          <div>
-            <h2 className="plate-title">👁️ Đang Theo Dõi</h2>
-            <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-              Nhịp {minGap}–{maxGap} kỳ · chưa về ≤ {MAX_QUIET} kỳ
-              {enabled ? (halve ? " — hạn mức đã giảm 50%" : " — không giảm hạn mức") : " — đang tắt"}
-            </p>
-          </div>
+      <ThuGon
+        khoa={`theodoi-${region}`}
+        className="plate rise rise-2"
+        tieuDe="👁️ Đang Theo Dõi"
+        phu={
+          <>
+            Nhịp {minGap}–{maxGap} kỳ · chưa về ≤ {MAX_QUIET} kỳ
+            {enabled ? (halve ? " — hạn mức đã giảm 50%" : " — không giảm hạn mức") : " — đang tắt"}
+          </>
+        }
+        phai={
           <span className="numeric inline-flex items-center justify-center min-w-7 h-7 px-2 rounded-full text-sm font-bold bg-[rgba(249,115,22,0.18)] border border-[rgba(249,115,22,0.45)] text-[#ffab6b]">
             {tracking.length}
           </span>
-        </div>
+        }
+      >
 
         {/* Two independent switches: watch the beat, and cut the money. */}
         <div className="flex flex-wrap items-center gap-2 px-3 md:px-4 pt-3">
@@ -208,7 +212,7 @@ export default function TrackingBoard({ limits, recent, region, onChanged }: Pro
             Đang tắt theo dõi — hạn mức giữ nguyên theo bảng cài tiền
           </div>
         )}
-      </section>
+      </ThuGon>
 
     </div>
   );
