@@ -11,6 +11,7 @@ import RegionTabs from "@/components/RegionTabs";
 import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import BacktestPanel from "@/components/BacktestPanel";
+import MonthlyReport from "@/components/MonthlyReport";
 import SlotPanel from "@/components/SlotPanel";
 import StreakCopyCard from "@/components/StreakCopyCard";
 import StaleBanner from "@/components/StaleBanner";
@@ -414,6 +415,9 @@ function Dashboard() {
                 nhưng đứng yên ở 30 trong khi khối dưới đổi theo 60/90/120 — hai
                 con số khác nhau dưới cùng một cái tên là cách chắc chắn nhất để
                 người đọc tin nhầm con số. Khối dò lại đã có đủ bốn ô đó. */}
+            {/* Báo cáo tháng gộp cả ba miền nên đứng trên, không phụ thuộc tab
+                miền đang chọn — đây là chỗ đầu tiên người ta nhìn mỗi sáng. */}
+            <MonthlyReport key={`bc-${lanTinhLai}`} />
             <BacktestPanel region={region} key={`bt-${region}-${lanTinhLai}`} />
             <SlotPanel region={region} key={`slot-${region}-${lanTinhLai}`} />
 

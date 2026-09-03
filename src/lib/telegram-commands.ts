@@ -421,7 +421,33 @@ export async function baoCaoAll(soThang = 1): Promise<string> {
         `   ${nhanDinh} — biên độ tự nhiên một tháng là ±${b.bienDo.toFixed(2)}%`
       );
     });
-    return `<b>📅 Tháng ${Number(thg)}/${nam}</b>\n${dong.join("\n")}`;
+    // Dòng gộp là dòng đáng tin nhất: ba miền xổ độc lập nên nhiễu bù nhau,
+    // dao động của sổ gộp chỉ còn quanh nửa so với nhìn riêng Miền Nam. Nhìn
+    // riêng thì tháng nào cũng có một miền đỏ, dễ hoảng vì chuyện không có thật.
+    const co = bc
+      .map((b) => ({ b, t: b.cacThang.find((x) => x.thang === thang) }))
+      .filter((x) => x.t);
+    const gThu = co.reduce((s2, x) => s2 + x.t!.thu, 0);
+    const gBu = co.reduce((s2, x) => s2 + x.t!.bu, 0);
+    const gLai = gThu - gBu;
+    const gPct = gThu > 0 ? (gLai / gThu) * 100 : 0;
+    const gBien =
+      gThu > 0
+        ? (Math.sqrt(co.reduce((s2, x) => s2 + ((x.b.bienDo / 100) * x.t!.thu) ** 2, 0)) / gThu) * 100
+        : 0;
+    const gNhan =
+      Math.abs(gPct) <= gBien
+        ? "trong khoảng bình thường"
+        : gPct > 0
+        ? "<b>vượt lên trên</b> khoảng bình thường"
+        : "<b>tụt xuống dưới</b> khoảng bình thường";
+    const gopDong =
+      `<b>GỘP 3 MIỀN:</b> nhận ${trTien(gThu)} − bù ${trTien(gBu)} = ` +
+      `<b>${gLai >= 0 ? "+" : "−"}${trTien(Math.abs(gLai))}</b> ` +
+      `(${gPct >= 0 ? "+" : "−"}${Math.abs(gPct).toFixed(2)}%)\n` +
+      `   ${gNhan} — biên độ gộp ±${gBien.toFixed(2)}%`;
+
+    return `<b>📅 Tháng ${Number(thg)}/${nam}</b>\n${dong.join("\n")}\n${gopDong}`;
   });
 
   return [
