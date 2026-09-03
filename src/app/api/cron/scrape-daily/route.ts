@@ -30,8 +30,27 @@ export async function GET(req: Request) {
     const startedAt = new Date().toISOString();
     console.log(`[Cron] Daily scrape started at ${startedAt}`);
 
+    // Cào từ chỗ đang thiếu, không phải cố định 2 ngày.
+    //
+    // Bản cũ luôn chỉ nhìn lại 2 ngày. Nghĩa là hễ có một đêm nào cron không
+    // chạy được — hết hạn mức, nguồn lỗi, deploy hỏng — thì lỗ hổng đó nằm lại
+    // VĨNH VIỄN, vì đêm sau nó lại chỉ nhìn 2 ngày gần nhất. Thực tế đã xảy ra:
+    // dữ liệu đứng ở 13/08 suốt 21 ngày mà không đêm nào tự lấp được.
+    //
+    // Nay đọc kỳ mới nhất đang có rồi cào từ đó tới hôm nay. Chặn trên 25 ngày
+    // một đêm để không vượt 60 giây; hổng sâu hơn thì vài đêm là kín.
+    const moiNhat = await query<{ d: string | null }>(
+      "SELECT MAX(date) AS d FROM lo_daily"
+    );
+    const cuoi = moiNhat[0]?.d ?? null;
+    const thieu = cuoi
+      ? Math.floor((Date.now() - new Date(cuoi + "T00:00:00Z").getTime()) / 86_400_000)
+      : 2;
+    const soNgay = Math.min(25, Math.max(2, thieu + 1));
+    console.log(`[Cron] Kỳ mới nhất ${cuoi ?? "chưa có"} — cào ${soNgay} ngày gần nhất`);
+
     const t0 = Date.now();
-    const counts = await scrapeAllRegionsRange(2, 600);
+    const counts = await scrapeAllRegionsRange(soNgay, 600);
     const scrapeMs = Date.now() - t0;
     console.log(`[Cron] Scrape done in ${scrapeMs}ms — counts:`, counts);
 
