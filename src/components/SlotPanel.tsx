@@ -38,6 +38,8 @@ export default function SlotPanel({ region }: { region: Region }) {
   const [dangLuu, setDangLuu] = useState(false);
   const [chacChua, setChacChua] = useState(false);
   const [moNhom, setMoNhom] = useState<BacKey | null>(null);
+  /** Chọn nhóm theo tháng đang chạy, hay phải lời ở mọi tháng. */
+  const [coSo, setCoSo] = useState<"thangNay" | "moiThang">("thangNay");
 
   useEffect(() => {
     let huy = false;
@@ -56,18 +58,34 @@ export default function SlotPanel({ region }: { region: Region }) {
   );
 
   /** Bậc lời ở CẢ bốn chu kỳ — đúng tiêu chí khách đưa. */
-  const bacLoiCaBon = useMemo<BacKey[]>(() => {
+  const thangNay = tk?.cacThang.at(-1) ?? "";
+
+  /**
+   * Nhóm nào được cài 100n — theo cơ sở người vận hành chọn.
+   *
+   * Họ yêu cầu hai lần là lấy THÁNG HIỆN TẠI, không phải cả quãng. Tiêu chí cũ
+   * đòi lời ở mọi tháng nên chẳng nhóm nào đạt và cái nút thành vô dụng, đó là
+   * lý do họ đòi đổi. Nhưng một tháng dao động ±4% nên chọn theo một tháng là
+   * dễ vớ phải may rủi — nên giữ cả hai cơ sở cạnh nhau, kèm số nhóm mỗi bên,
+   * để thấy được cái giá của việc nới tiêu chí.
+   */
+  const loc = (cs: "thangNay" | "moiThang"): BacKey[] => {
     if (!tk) return [];
     return tk.bang
       .filter((r) => {
+        if (cs === "thangNay") {
+          const t = r.theoThang.find((x) => x.thang === thangNay);
+          return t?.bien != null && t.bien > 0;
+        }
         const co = r.theoThang.filter((t) => t.bien != null);
-        // Ít nhất ba tháng đứng riêng cùng nói một chuyện, cộng cả quãng đo.
-        // Một tháng xanh thì chưa là gì — biên độ tự nhiên của một tháng ở
-        // Miền Nam là ±4%, đủ để bịa ra một nhóm "đẹp" từ hư không.
         return r.bien > 0 && co.length >= 3 && co.every((t) => (t.bien as number) > 0);
       })
       .map((r) => r.key);
-  }, [tk]);
+  };
+
+  const bacLoiCaBon = useMemo<BacKey[]>(() => loc(coSo), [tk, coSo, thangNay]);
+  const soThangNay = useMemo(() => loc("thangNay").length, [tk, thangNay]);
+  const soMoiThang = useMemo(() => loc("moiThang").length, [tk, thangNay]);
 
   /**
    * Nếu cài bảng 100/0 này thì kỳ gần nhất còn nhận bao nhiêu lô.
@@ -340,13 +358,44 @@ export default function SlotPanel({ region }: { region: Region }) {
             </div>
 
             <div className="rounded-lg border border-[var(--hairline)] bg-white/[0.04] px-3 py-2.5">
+              <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                <span className="eyebrow">Chọn nhóm theo</span>
+                {([
+                  { k: "thangNay" as const, ten: `Tháng ${Number(thangNay.slice(5))} (tháng này)`, n: soThangNay },
+                  { k: "moiThang" as const, ten: "Mọi tháng", n: soMoiThang },
+                ]).map((x) => (
+                  <button
+                    key={x.k}
+                    onClick={() => setCoSo(x.k)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
+                      coSo === x.k
+                        ? "bg-[#2563eb] text-white"
+                        : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16]"
+                    }`}
+                  >
+                    {x.ten} · {x.n} nhóm
+                  </button>
+                ))}
+              </div>
+
               <div className="text-[0.76rem] text-[var(--text-secondary)] mb-2">
-                Khách muốn <b>nhóm lời cài 100n, nhóm lỗ về 0n</b>. Lời ở mọi khung hiện có{" "}
+                <b>Nhóm lời cài 100n, nhóm lỗ về 0n.</b>{" "}
+                {coSo === "thangNay"
+                  ? `Lời trong tháng ${Number(thangNay.slice(5))} hiện có `
+                  : "Lời ở mọi tháng hiện có "}
                 <b className="text-[#7ff0c0]">
                   {bacLoiCaBon.length ? bacLoiCaBon.map(ten).join(" · ") : "không nhóm nào"}
                 </b>
                 . Bấm là ghi thẳng vào bảng hạn mức và tính lại toàn bộ lịch sử.
               </div>
+              {coSo === "thangNay" && (
+                <div className="rounded-lg border border-[rgba(251,191,36,0.45)] bg-[rgba(245,158,11,0.09)] px-2.5 py-2 mb-2 text-[0.72rem] leading-relaxed text-[#ffe9c4]">
+                  Đang chọn theo <b>một tháng</b>. Một tháng dao động ±4% chỉ do may rủi, nên nhóm
+                  chọn ra tháng này có thể sang tháng sau lại lỗ. Muốn chắc tay hơn thì bấm{" "}
+                  <b>Mọi tháng</b> — ít nhóm hơn nhưng nhóm nào cũng đã đứng vững qua nhiều tháng.
+                </div>
+              )}
+
               {conLai != null && (
                 <div
                   className={`rounded-lg border px-2.5 py-2 mb-2 text-[0.74rem] leading-relaxed ${
