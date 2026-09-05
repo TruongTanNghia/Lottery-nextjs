@@ -83,6 +83,15 @@ export interface BacRow {
   kyCo: number;
   thu100: number;
   tra100: number;
+  /**
+   * Con số của THÁNG ĐANG CHẠY — cái người vận hành muốn nhìn.
+   *
+   * Họ nói thẳng: "thay đổi 151 kỳ thành tháng 9". Cả quãng đo là chuyện của
+   * nửa năm trước, còn tiền thì tiêu theo tháng. null khi tháng này nhóm đó
+   * chưa đủ mẫu — tháng mới chạy vài kỳ thì nhóm nhỏ chưa nói được gì.
+   */
+  bienThangNay: number | null;
+  tra100ThangNay: number | null;
   theoThang: ThangRow[];
   /** Từng lô trong nhóm, lỗ nặng nhất đứng trước. */
   cacLo: LoTrongNhom[];
@@ -247,13 +256,18 @@ export function thongKeBac(draws: DrawHits[], region: Region): SlotStats | null 
     if (!ds) theoThangKy.set(t, (ds = []));
     ds.push(k);
   }
-  const cacThang = [...theoThangKy.entries()]
-    .filter(([, v]) => v.length >= KY_TOI_THIEU_THANG)
-    .map(([t]) => t)
-    .sort();
+  // Tháng ĐANG CHẠY luôn được tính dù mới vài kỳ — đó là tháng người ta đang
+  // sống trong nó và là thứ họ hỏi mỗi ngày. Chỉ tháng CŨ mới bị loại khi quá
+  // ngắn, vì một tháng cũ 4 kỳ là mẩu dữ liệu vụn chứ không phải một tháng.
+  const tatCaThang = [...theoThangKy.keys()].sort();
+  const thangDangChay = tatCaThang.at(-1) ?? "";
+  const cacThang = tatCaThang.filter(
+    (t) => t === thangDangChay || (theoThangKy.get(t)?.length ?? 0) >= KY_TOI_THIEU_THANG
+  );
 
   const gopThang: Record<string, Gop> = {};
   for (const t of cacThang) gopThang[t] = gop(theoThangKy.get(t)!, gia);
+  const thangCuoi = thangDangChay;
 
   const bang: BacRow[] = moiBac().map((key) => {
     const r = tong[key];
@@ -268,6 +282,14 @@ export function thongKeBac(draws: DrawHits[], region: Region): SlotStats | null 
       kyCo: r.kyCo,
       thu100: 100 * gia,
       tra100: 100 * WIN_PER_POINT * r.tyLeVe,
+      bienThangNay: (() => {
+        const g = thangCuoi ? gopThang[thangCuoi]?.[key] : undefined;
+        return g && g.mau >= MAU_TOI_THIEU ? g.bien : null;
+      })(),
+      tra100ThangNay: (() => {
+        const g = thangCuoi ? gopThang[thangCuoi]?.[key] : undefined;
+        return g && g.mau >= MAU_TOI_THIEU ? 100 * WIN_PER_POINT * g.tyLeVe : null;
+      })(),
       theoThang: cacThang.map((t) => {
         const g = gopThang[t][key];
         const mau = g?.mau ?? 0;

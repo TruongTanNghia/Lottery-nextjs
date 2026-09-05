@@ -191,9 +191,15 @@ export default function SlotPanel({ region }: { region: Region }) {
                 // đây nhãn lấy 4 cửa sổ còn dòng tiền lấy toàn bộ lịch sử, nên
                 // "vừa về" ở Miền Nam gắn NÊN ÔM mà ngay dưới lại ghi lỗ —
                 // hai con số chửi nhau trên cùng một thẻ.
+                // Nhãn phải nói cùng một chuyện với cơ sở đang chọn và với dòng
+                // tiền bên dưới. Chọn "tháng này" mà nhãn lại chấm theo cả nửa
+                // năm thì lại quay về đúng cái lỗi thẻ tự mâu thuẫn hôm trước.
                 const thangCo = r.theoThang.filter((t) => t.bien != null);
-                const co = [...thangCo.map((t) => t.bien as number), r.bien];
-                const du = thangCo.length >= 3;
+                const co =
+                  coSo === "thangNay"
+                    ? (r.bienThangNay != null ? [r.bienThangNay] : [])
+                    : [...thangCo.map((t) => t.bien as number), r.bien];
+                const du = coSo === "thangNay" ? co.length === 1 : thangCo.length >= 3;
                 const hetLoi = du && co.every((v) => v > 0);
                 const hetLo = du && co.every((v) => v < 0);
                 const itMau = r.mau < 300;
@@ -250,29 +256,60 @@ export default function SlotPanel({ region }: { region: Region }) {
                           T{Number(t.thang.slice(5))} {t.bien == null ? "ít mẫu" : pc(t.bien)}
                         </span>
                       ))}
-                      <span
-                        className={`numeric text-[0.68rem] rounded px-1.5 py-0.5 border font-bold ${
-                          r.bien > 0
-                            ? "border-[rgba(16,185,129,0.6)] text-[#7ff0c0] bg-[rgba(16,185,129,0.18)]"
-                            : "border-[rgba(248,113,113,0.6)] text-[#ff9d9d] bg-[rgba(220,38,38,0.18)]"
-                        }`}
-                        title="Cả quãng đo — đây là con số mà dòng tiền bên dưới tính theo"
-                      >
-                        cả {tk.soKy} kỳ {pc(r.bien)}
-                      </span>
+                      {(() => {
+                        const v = coSo === "thangNay" ? r.bienThangNay : r.bien;
+                        const nhan =
+                          coSo === "thangNay"
+                            ? `THÁNG ${Number(thangNay.slice(5))}`
+                            : `cả ${tk.soKy} kỳ`;
+                        if (v == null)
+                          return (
+                            <span className="numeric text-[0.68rem] rounded px-1.5 py-0.5 border border-[rgba(251,191,36,0.5)] text-[#ffd24a] bg-[rgba(245,158,11,0.12)] font-bold">
+                              {nhan} — chưa đủ mẫu
+                            </span>
+                          );
+                        return (
+                          <span
+                            className={`numeric text-[0.68rem] rounded px-1.5 py-0.5 border font-bold ${
+                              v > 0
+                                ? "border-[rgba(16,185,129,0.6)] text-[#7ff0c0] bg-[rgba(16,185,129,0.18)]"
+                                : "border-[rgba(248,113,113,0.6)] text-[#ff9d9d] bg-[rgba(220,38,38,0.18)]"
+                            }`}
+                            title="Đây là con số mà dòng tiền bên dưới tính theo"
+                          >
+                            {nhan} {pc(v)}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Câu này mới là câu người ôm số cần: bao nhiêu vào, bao
                         nhiêu ra. Riêng nhóm về liên tiếp thì bản năng bảo né mà
                         con số bảo ôm — bày tiền ra chứ đừng bắt người ta tin. */}
                     <div className="text-[0.72rem] mt-1.5 leading-relaxed text-[var(--text-secondary)]">
-                      Ôm <b>100 điểm</b> con này (tính trên cả {tk.soKy} kỳ): thu{" "}
-                      <b className="text-[#7ff0c0]">{tien(r.thu100)}</b>, trả trung bình{" "}
-                      <b className="text-[#ff9d9d]">{tien(r.tra100)}</b> →{" "}
-                      <b className={r.thu100 - r.tra100 >= 0 ? "text-[#7ff0c0]" : "text-[#ff9d9d]"}>
-                        {r.thu100 - r.tra100 >= 0 ? "lời" : "lỗ"}{" "}
-                        {tien(Math.abs(r.thu100 - r.tra100))}
-                      </b>
+                      {(() => {
+                        const dungThang = coSo === "thangNay";
+                        const tra = dungThang ? r.tra100ThangNay : r.tra100;
+                        if (tra == null)
+                          return (
+                            <>
+                              Tháng {Number(thangNay.slice(5))} chưa đủ lượt lô để tính tiền cho
+                              nhóm này — tháng mới chạy được ít kỳ.
+                            </>
+                          );
+                        const lai = r.thu100 - tra;
+                        return (
+                          <>
+                            Ôm <b>100 điểm</b> con này{" "}
+                            {dungThang ? `(trong tháng ${Number(thangNay.slice(5))})` : `(cả ${tk.soKy} kỳ)`}: thu{" "}
+                            <b className="text-[#7ff0c0]">{tien(r.thu100)}</b>, trả trung bình{" "}
+                            <b className="text-[#ff9d9d]">{tien(tra)}</b> →{" "}
+                            <b className={lai >= 0 ? "text-[#7ff0c0]" : "text-[#ff9d9d]"}>
+                              {lai >= 0 ? "lời" : "lỗ"} {tien(Math.abs(lai))}
+                            </b>
+                          </>
+                        );
+                      })()}
                     </div>
                     {/* Nhóm lời không có nghĩa là con nào trong nhóm cũng lời.
                         Khách hỏi thẳng: "trong 2 kỳ này số nào lỗ nhất". Nếu cả
