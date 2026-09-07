@@ -11,6 +11,7 @@ import RegionTabs from "@/components/RegionTabs";
 import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import BacktestPanel from "@/components/BacktestPanel";
+import NgayMai from "@/components/NgayMai";
 import MonthlyReport from "@/components/MonthlyReport";
 import SlotPanel from "@/components/SlotPanel";
 import StreakCopyCard from "@/components/StreakCopyCard";
@@ -410,6 +411,11 @@ function Dashboard() {
               />
             </section>
             <StreakCopyCard limits={limits} region={region} />
+
+            {/* Mọi khối dưới đây đều nhìn về phía sau. Câu người ta phải trả
+                lời mỗi tối là "kỳ tới ôm con nào, bao nhiêu" — nên nó đứng
+                trên cùng, ngay dưới bảng hạn mức sinh ra nó. */}
+            <NgayMai limits={limits} region={region} latestDate={latestScraped} />
 
             {/* Một câu hỏi, một chỗ trả lời. StatsBar cũng đề "Lãi / Lỗ 30 kỳ"
                 nhưng đứng yên ở 30 trong khi khối dưới đổi theo 60/90/120 — hai
