@@ -115,7 +115,7 @@ export interface SlotStats {
   kiemThu: KiemThu | null;
 }
 
-interface Ky {
+export interface Ky {
   date: string;
   bac: Record<string, BacKey>;
   ve: Record<string, number>;
@@ -134,7 +134,7 @@ const cach = (a: string, b: string) => {
 };
 
 /** Every kỳ tagged with each lô's group that morning. */
-function dungKy(draws: DrawHits[]): Ky[] {
+export function dungKy(draws: DrawHits[]): Ky[] {
   const sap = [...draws].sort((a, b) => a.date.localeCompare(b.date));
   const st = new Map(LOS.map((l) => [l, { last: null as string | null, kho: 0, chuoi: 0 }]));
   const out: Ky[] = [];

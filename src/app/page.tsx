@@ -12,6 +12,7 @@ import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import BacktestPanel from "@/components/BacktestPanel";
 import NgayMai from "@/components/NgayMai";
+import ChanOPanel from "@/components/ChanOPanel";
 import MonthlyReport from "@/components/MonthlyReport";
 import SlotPanel from "@/components/SlotPanel";
 import StreakCopyCard from "@/components/StreakCopyCard";
@@ -426,6 +427,11 @@ function Dashboard() {
             <MonthlyReport key={`bc-${lanTinhLai}`} />
             <BacktestPanel region={region} key={`bt-${region}-${lanTinhLai}`} />
             <SlotPanel region={region} key={`slot-${region}-${lanTinhLai}`} />
+
+            {/* Khách đề nghị chặn nhỏ hơn một bậc — theo từng ô, không theo cả
+                nhóm — và hỏi thẳng "có hiệu quả hơn bây giờ không". Khối này
+                trả lời đúng câu đó, nên đứng ngay sau bảng chọn nhóm. */}
+            <ChanOPanel region={region} key={`chano-${region}-${lanTinhLai}`} />
 
             {/* Bảng đài là chỗ cài đặt, mở ra vài tháng một lần. Nó dài, và nằm
                 trên hai khối trả lời "lời hay lỗ" thì trên điện thoại phải cuộn
