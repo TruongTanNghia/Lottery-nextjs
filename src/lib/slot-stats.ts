@@ -58,8 +58,24 @@ export function moiBac(): BacKey[] {
 export interface ThangRow {
   /** "2026-07" */
   thang: string;
-  /** null khi tháng đó nhóm này không đủ mẫu để nói gì. */
+  /**
+   * null khi tháng đó nhóm này không đủ mẫu để nói gì.
+   *
+   * Mọi phép CHỌN nhóm đều đọc trường này, nên nó phải giữ nguyên cái ngưỡng.
+   * Muốn hiện số thì đọc `bienTho`.
+   */
   bien: number | null;
+  /**
+   * Biên thật của tháng đó, tính ngay cả khi mẫu mỏng — chỉ null khi không có
+   * lượt lô nào.
+   *
+   * Người vận hành xin thẳng: "các cái ít mẫu này hiện % lên giùm em hết nha".
+   * Yêu cầu đó đúng — che số đi thì họ không tự thẩm định được, mà lại tưởng
+   * máy đang giấu. Nhưng con số ấy chỉ được dùng để NHÌN, không được dùng để
+   * chọn nhóm cài tiền: một tháng có 15 lượt lô thì biên của nó xê dịch vài
+   * chục phần trăm chỉ vì một nháy về sớm hay muộn.
+   */
+  bienTho: number | null;
   mau: number;
 }
 
@@ -92,6 +108,18 @@ export interface BacRow {
    */
   bienThangNay: number | null;
   tra100ThangNay: number | null;
+  /** Như trên nhưng tính cả khi mẫu mỏng — chỉ để hiện, không để chọn. */
+  bienThangNayTho: number | null;
+  tra100ThangNayTho: number | null;
+  /**
+   * Số lượt lô và số nháy về của tháng đang chạy.
+   *
+   * Mẫu mỏng đẻ ra những con số trông kinh dị — "+100%" chỉ có nghĩa là chưa
+   * nháy nào về, "−455%" chỉ có nghĩa là ba lượt mà về năm nháy. Hai con số
+   * thô này dịch cái phần trăm đó ra tiếng người, nên phải đi kèm nó.
+   */
+  mauThangNay: number;
+  nhayThangNay: number;
   theoThang: ThangRow[];
   /** Từng lô trong nhóm, lỗ nặng nhất đứng trước. */
   cacLo: LoTrongNhom[];
@@ -290,10 +318,28 @@ export function thongKeBac(draws: DrawHits[], region: Region): SlotStats | null 
         const g = thangCuoi ? gopThang[thangCuoi]?.[key] : undefined;
         return g && g.mau >= MAU_TOI_THIEU ? 100 * WIN_PER_POINT * g.tyLeVe : null;
       })(),
+      bienThangNayTho: (() => {
+        const g = thangCuoi ? gopThang[thangCuoi]?.[key] : undefined;
+        return g && g.mau > 0 ? g.bien : null;
+      })(),
+      tra100ThangNayTho: (() => {
+        const g = thangCuoi ? gopThang[thangCuoi]?.[key] : undefined;
+        return g && g.mau > 0 ? 100 * WIN_PER_POINT * g.tyLeVe : null;
+      })(),
+      mauThangNay: (thangCuoi ? gopThang[thangCuoi]?.[key]?.mau : 0) ?? 0,
+      nhayThangNay: (() => {
+        const g = thangCuoi ? gopThang[thangCuoi]?.[key] : undefined;
+        return g ? Math.round(g.mau * g.tyLeVe) : 0;
+      })(),
       theoThang: cacThang.map((t) => {
         const g = gopThang[t][key];
         const mau = g?.mau ?? 0;
-        return { thang: t, mau, bien: mau >= MAU_TOI_THIEU ? g.bien : null };
+        return {
+          thang: t,
+          mau,
+          bien: mau >= MAU_TOI_THIEU ? g.bien : null,
+          bienTho: mau > 0 ? g.bien : null,
+        };
       }),
       cacLo: cacLo[key] ?? [],
     };

@@ -241,33 +241,64 @@ export default function SlotPanel({ region }: { region: Region }) {
                     </div>
 
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
-                      {r.theoThang.map((t) => (
-                        <span
-                          key={t.thang}
-                          title={`${t.mau.toLocaleString("vi-VN")} lượt lô trong tháng này`}
-                          className={`numeric text-[0.68rem] rounded px-1.5 py-0.5 border ${
-                            t.bien == null
-                              ? "border-[var(--hairline)] text-[var(--text-muted)]"
-                              : t.bien > 0
-                              ? "border-[rgba(16,185,129,0.4)] text-[#7ff0c0] bg-[rgba(16,185,129,0.1)]"
-                              : "border-[rgba(248,113,113,0.4)] text-[#ff9d9d] bg-[rgba(220,38,38,0.1)]"
-                          }`}
-                        >
-                          T{Number(t.thang.slice(5))} {t.bien == null ? "ít mẫu" : pc(t.bien)}
-                        </span>
-                      ))}
+                      {/* Hiện % cho MỌI tháng, kể cả tháng mẫu mỏng — người
+                          vận hành xin đúng chỗ này. Nhưng tháng mỏng phải nhìn
+                          ra ngay là mỏng: viền vàng, thêm dấu ~, và số lượt lô
+                          ghi kèm ngay trên thẻ chứ không giấu trong tooltip. */}
+                      {r.theoThang.map((t) => {
+                        const mong = t.bien == null;
+                        const v = t.bienTho;
+                        return (
+                          <span
+                            key={t.thang}
+                            title={
+                              v == null
+                                ? "Tháng này không có lô nào rơi vào nhóm"
+                                : `${t.mau.toLocaleString("vi-VN")} lượt lô trong tháng này${
+                                    mong ? " — dưới 30 lượt nên con số rất dễ là may rủi" : ""
+                                  }`
+                            }
+                            className={`numeric text-[0.68rem] rounded px-1.5 py-0.5 border ${
+                              v == null
+                                ? "border-[var(--hairline)] text-[var(--text-muted)]"
+                                : mong
+                                ? "border-[rgba(251,191,36,0.45)] text-[#ffd24a] bg-[rgba(245,158,11,0.1)]"
+                                : v > 0
+                                ? "border-[rgba(16,185,129,0.4)] text-[#7ff0c0] bg-[rgba(16,185,129,0.1)]"
+                                : "border-[rgba(248,113,113,0.4)] text-[#ff9d9d] bg-[rgba(220,38,38,0.1)]"
+                            }`}
+                          >
+                            T{Number(t.thang.slice(5))}{" "}
+                            {v == null ? "0 lượt" : `${mong ? "~" : ""}${pc(v)}`}
+                            {mong && v != null && (
+                              <span className="text-[0.6rem] opacity-75"> ({t.mau} lượt)</span>
+                            )}
+                          </span>
+                        );
+                      })}
                       {(() => {
                         const v = coSo === "thangNay" ? r.bienThangNay : r.bien;
                         const nhan =
                           coSo === "thangNay"
                             ? `THÁNG ${Number(thangNay.slice(5))}`
                             : `cả ${tk.soKy} kỳ`;
-                        if (v == null)
+                        // Mỏng mẫu thì vẫn hiện số, chỉ đổi cách hiện: dấu ~,
+                        // viền vàng, kèm số lượt. Bỏ trống ô này là bắt người
+                        // ta đoán, mà đoán thì bao giờ cũng đoán về phía đẹp.
+                        if (v == null) {
+                          const tho = coSo === "thangNay" ? r.bienThangNayTho : r.bien;
                           return (
-                            <span className="numeric text-[0.68rem] rounded px-1.5 py-0.5 border border-[rgba(251,191,36,0.5)] text-[#ffd24a] bg-[rgba(245,158,11,0.12)] font-bold">
-                              {nhan} — chưa đủ mẫu
+                            <span
+                              className="numeric text-[0.68rem] rounded px-1.5 py-0.5 border border-[rgba(251,191,36,0.5)] text-[#ffd24a] bg-[rgba(245,158,11,0.12)] font-bold"
+                              title={`Tháng này mới ${r.mauThangNay} lượt lô, về ${r.nhayThangNay} nháy — dưới 30 lượt thì con số chưa đứng được`}
+                            >
+                              {nhan} {tho == null ? "chưa có lượt nào" : `~${pc(tho)}`}
+                              {tho != null && (
+                                <span className="font-normal opacity-80"> · mới {r.mauThangNay} lượt</span>
+                              )}
                             </span>
                           );
+                        }
                         return (
                           <span
                             className={`numeric text-[0.68rem] rounded px-1.5 py-0.5 border font-bold ${
@@ -290,13 +321,45 @@ export default function SlotPanel({ region }: { region: Region }) {
                       {(() => {
                         const dungThang = coSo === "thangNay";
                         const tra = dungThang ? r.tra100ThangNay : r.tra100;
-                        if (tra == null)
+                        if (tra == null) {
+                          // Mỏng mẫu vẫn ra tiền, nhưng phải nói ngay bên cạnh
+                          // là nó dựng trên mấy lượt — con số đứng một mình thì
+                          // trông y hệt con số đã chắc.
+                          const traTho = dungThang ? r.tra100ThangNayTho : r.tra100;
+                          if (traTho == null)
+                            return (
+                              <>
+                                Tháng {Number(thangNay.slice(5))} chưa có lô nào rơi vào nhóm này.
+                              </>
+                            );
+                          const l = r.thu100 - traTho;
                           return (
                             <>
-                              Tháng {Number(thangNay.slice(5))} chưa đủ lượt lô để tính tiền cho
-                              nhóm này — tháng mới chạy được ít kỳ.
+                              Ôm <b>100 điểm</b> con này (trong tháng {Number(thangNay.slice(5))}):
+                              thu <b className="text-[#7ff0c0]">{tien(r.thu100)}</b>, trả trung bình{" "}
+                              <b className="text-[#ff9d9d]">{tien(traTho)}</b> →{" "}
+                              <b className={l >= 0 ? "text-[#7ff0c0]" : "text-[#ff9d9d]"}>
+                                {l >= 0 ? "lời" : "lỗ"} {tien(Math.abs(l))}
+                              </b>
+                              <br />
+                              <span className="text-[#ffd24a]">
+                                ⚠ Cả tháng nhóm này mới có <b>{r.mauThangNay} lượt lô</b>,{" "}
+                                {r.nhayThangNay === 0 ? (
+                                  <>
+                                    <b>chưa nháy nào về</b> — nên nó đang hiện +100%, không phải vì
+                                    nhóm này giỏi mà vì chưa kịp về.
+                                  </>
+                                ) : (
+                                  <>
+                                    về <b>{r.nhayThangNay} nháy</b>.
+                                  </>
+                                )}{" "}
+                                Dưới 30 lượt thì thêm bớt một nháy đã đủ lật dấu con số — xem cho
+                                biết, đừng cài tiền theo.
+                              </span>
                             </>
                           );
+                        }
                         const lai = r.thu100 - tra;
                         return (
                           <>
