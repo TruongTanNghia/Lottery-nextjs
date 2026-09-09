@@ -77,7 +77,7 @@ export default function ChanOPanel({ region }: { region: Region }) {
     );
   }
 
-  const [tA, tB, tC, tD] = kq.that;
+  const [tA, tB, tC, tD, tE] = kq.that;
   const hon = tB.bien - tA.bien;
   // Ba trạng thái, không phải hai. Rơi xuống DƯỚI khoảng bốc bừa cũng là "nằm
   // ngoài khoảng", nhưng ngoài về phía tệ hơn — gộp nó chung với "vượt lên
@@ -104,7 +104,7 @@ export default function ChanOPanel({ region }: { region: Region }) {
           Bây giờ máy chặn theo <b>cả nhóm</b>{" "}
           — cả bậc &ldquo;1 kỳ chưa về&rdquo; là 100 con như nhau. Khách muốn nhỏ hơn một bậc: mỗi <b>ô</b> là một cặp <b>con số × bậc ngày</b>. Con 09
           ở ngày 1 từng thua thì bỏ, nhưng chính con 09 ở ngày 2 không thua thì vẫn ôm. Dưới đây là
-          bốn cách chơi trên <b>đúng cùng {kq.soKy} kỳ</b>,{" "}
+          năm cách chơi trên <b>đúng cùng {kq.soKy} kỳ</b>,{" "}
           {kq.theoBang ? (
             <>
               ôm theo <b>đúng bảng hạn mức đang cài</b> — tức đúng đồng tiền sổ này sẽ ăn hay mất
@@ -218,7 +218,7 @@ export default function ChanOPanel({ region }: { region: Region }) {
           {/* Chú giải nằm ngay dưới bảng và luôn hiện. Giấu lời giải thích sau
               một cái nút là lặp lại đúng cái lỗi đang phải sửa. */}
           <div className="mt-2 rounded-lg border border-[var(--hairline)] bg-white/[0.03] px-3 py-2.5 text-[0.7rem] leading-relaxed">
-            <div className="eyebrow mb-1.5">Bốn hàng là bốn cách chơi</div>
+            <div className="eyebrow mb-1.5">Năm hàng là năm cách chơi</div>
             <ul className="space-y-1 text-[var(--text-secondary)]">
               <li>
                 <b className="text-white">Bây giờ</b> — nhận hết 100 con, không chặn con nào.{" "}
@@ -234,6 +234,11 @@ export default function ChanOPanel({ region }: { region: Region }) {
               <li>
                 <b className="text-white">Đảo ngược</b> — chặn ô đã từng <b>lời</b>, tức làm ngược
                 lại. Nếu máy đọc được ô xấu thật thì bỏ ô tốt phải tệ hẳn đi.
+              </li>
+              <li>
+                <b className="text-white">Lần trước lỗ thì bỏ</b> — đúng câu khách nói: con nào lỗ
+                ở ô &ldquo;vừa về&rdquo; thì lần sau nó vừa về nữa là không nhận. Chỉ nhìn{" "}
+                <b>lần gần nhất</b>, không cộng dồn cả lịch sử.
               </li>
             </ul>
             <div className="eyebrow mt-2.5 mb-1.5">Sáu cột là gì</div>
@@ -263,6 +268,23 @@ export default function ChanOPanel({ region }: { region: Region }) {
             <b style={{ color: mau(kq.khoangBoc.cao) }}>{pc(kq.khoangBoc.cao)}</b> (trung bình{" "}
             <b>{pc(kq.khoangBoc.tb)}</b>). Muốn nói cách chọn ô có giá trị thì nó phải vượt hẳn ra
             ngoài khoảng đó.
+          </div>
+
+          {/* Luật "lần trước" chặn số ô khác hẳn, nên phải có khoảng bốc bừa
+              khớp đúng số ô CỦA NÓ — mượn khoảng của nhánh kia là so lệch. */}
+          <div className="mt-2 rounded-lg border border-[var(--hairline)] bg-white/[0.04] px-3 py-2.5 text-[0.74rem] leading-relaxed text-[var(--text-secondary)]">
+            <b className="text-white">Riêng luật &ldquo;lần trước lỗ thì bỏ&rdquo;</b> — đúng câu
+            khách nói: nó ra <b style={{ color: mau(tE.bien) }}>{pc(tE.bien)}</b>, tức{" "}
+            <b style={{ color: mau(tE.lai) }}>{tien(tE.lai)}</b>, chặn{" "}
+            <b>{tE.chanTB.toFixed(0)} con mỗi kỳ</b>. Bốc bừa chặn đúng ngần ấy con ra từ{" "}
+            <b style={{ color: mau(kq.khoangBocLanTruoc.thap) }}>{pc(kq.khoangBocLanTruoc.thap)}</b>{" "}
+            tới{" "}
+            <b style={{ color: mau(kq.khoangBocLanTruoc.cao) }}>{pc(kq.khoangBocLanTruoc.cao)}</b>.{" "}
+            {tE.bien > kq.khoangBocLanTruoc.cao
+              ? "Cao hơn cả 25 lượt bốc bừa — chỗ này đáng theo dõi thêm."
+              : tE.bien < kq.khoangBocLanTruoc.thap
+                ? "Thấp hơn cả 25 lượt bốc bừa, tức chặn có chọn còn kém chặn nhắm mắt."
+                : "Vẫn nằm trong khoảng bốc bừa, nên chưa tách được khỏi may rủi."}
           </div>
         </div>
 

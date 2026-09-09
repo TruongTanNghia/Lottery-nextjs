@@ -94,6 +94,8 @@ export interface DemoChanO {
   that: ONhanh[];
   /** Khoảng của nhánh bốc bừa khi chạy thật, để biết chênh lệch bao nhiêu mới đáng kể. */
   khoangBoc: KhoangBoc;
+  /** Khoảng bốc bừa khớp đúng số ô mà luật "lần trước" chặn — đối chứng riêng cho nó. */
+  khoangBocLanTruoc: KhoangBoc;
   /** Những ô lỗ nặng nhất trên cả quãng — để thấy cái máy đang nhìn vào là gì. */
   oLoNhat: OLo[];
   /** Bao nhiêu ô đổi phe giữa nửa đầu và nửa sau: lỗ thành lời, lời thành lỗ. */
@@ -307,12 +309,21 @@ export function demoChanO(
   const acc = new Map<string, Dem>();
   const chanXau: Set<string>[] = [];
   const chanTot: Set<string>[] = [];
+  // Luật "lần trước": nhớ đúng một chuyện — lần gần nhất con này ở ô này, nó
+  // có về không. Khách nói thẳng bằng ví dụ: "các số nào lỗ ở ô vừa về thì lần
+  // sau nó vừa về nữa không nhận." Đó không phải cộng dồn cả lịch sử của ô mà
+  // là nhìn đúng lần liền trước, nên phải đo riêng.
+  const lanTruocVe = new Map<string, boolean>();
+  const chanLanTruoc: Set<string>[] = [];
 
   for (const k of ky) {
     const cx = new Set<string>();
     const ct = new Set<string>();
+    const cl = new Set<string>();
     for (const l of LOS) {
-      const d = acc.get(khoaO(l, k.bac[l]));
+      const key = khoaO(l, k.bac[l]);
+      if (lanTruocVe.get(key) === true) cl.add(l);
+      const d = acc.get(key);
       if (!d || d.dip < toiThieu) continue;
       const lai = laiO(d, gia);
       if (lai < 0) cx.add(l);
@@ -320,6 +331,7 @@ export function demoChanO(
     }
     chanXau.push(cx);
     chanTot.push(ct);
+    chanLanTruoc.push(cl);
 
     // Chỉ sau khi đã quyết xong, kỳ này mới trở thành quá khứ.
     for (const l of LOS) {
@@ -331,6 +343,8 @@ export function demoChanO(
       } else {
         acc.set(key, { dip: 1, nhay: k.ve[l] });
       }
+      // Về một nháy trở lên là kỳ đó mình mất tiền ở con này.
+      lanTruocVe.set(key, k.ve[l] > 0);
     }
   }
 
@@ -339,7 +353,14 @@ export function demoChanO(
     (_k, lo, i) => !chanXau[i].has(lo), diem);
   const tD = chotSo(ky, gia, "Đảo ngược", "chặn ô đã lời ở những kỳ trước — phép thử",
     (_k, lo, i) => !chanTot[i].has(lo), diem);
+  const tE = chotSo(ky, gia, "Lần trước lỗ thì bỏ",
+    "lần gần nhất con này ở ô này mà về thì lần này không nhận",
+    (_k, lo, i) => !chanLanTruoc[i].has(lo), diem);
   const soChanThat = chanXau.map((s) => s.size);
+  const soChanE = chanLanTruoc.map((s) => s.size);
+  const luotE: ONhanh[] = [];
+  for (let i = 0; i < SO_LUOT_BOC; i++) luotE.push(bocBua(ky, gia, soChanE, 4241 + i * 15_485_863, diem));
+  const bienE = luotE.map((x) => x.bien).sort((a, b) => a - b);
 
   const luot: ONhanh[] = [];
   for (let i = 0; i < SO_LUOT_BOC; i++) luot.push(bocBua(ky, gia, soChanThat, 7919 + i * 104_729, diem));
@@ -448,7 +469,12 @@ export function demoChanO(
     dipTB,
     saiSoO,
     nhinLai: [nlA, nlB, nlC, nlD],
-    that: [tA, tB, tC, tD],
+    that: [tA, tB, tC, tD, tE],
+    khoangBocLanTruoc: {
+      tb: bienE.reduce((s2, x) => s2 + x, 0) / bienE.length,
+      thap: bienE[0],
+      cao: bienE[bienE.length - 1],
+    },
     khoangBoc,
     oLoNhat,
     doiPhe: { xet, doi },
