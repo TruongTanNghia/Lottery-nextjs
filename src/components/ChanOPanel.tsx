@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
+import type { Schedule } from "@/lib/limit-engine";
 import { demoChanO, type DemoChanO, type ONhanh } from "@/lib/chan-o";
 import { tenBac } from "@/lib/slot-stats";
 import type { Region } from "@/lib/types";
@@ -29,23 +30,31 @@ const NGUONG = [1, 2, 3, 5] as const;
  */
 export default function ChanOPanel({ region }: { region: Region }) {
   const [draws, setDraws] = useState<DrawHits[] | null>(null);
+  const [sched, setSched] = useState<Schedule | null>(null);
   const [nguong, setNguong] = useState<number>(1);
+  /** Chấm bằng bảng hạn mức thật, hay bằng 100 điểm đều cho dễ so. */
+  const [cachDo, setCachDo] = useState<"bang" | "deu">("bang");
   const [moNhinLai, setMoNhinLai] = useState(false);
   const [moO, setMoO] = useState(false);
 
   useEffect(() => {
     let huy = false;
     setDraws(null);
-    fetch(`/api/history/hits?region=${region}`)
-      .then((r) => r.json())
-      .then((d) => !huy && setDraws(d.draws ?? []))
-      .catch(() => !huy && setDraws([]));
+    setSched(null);
+    Promise.allSettled([
+      fetch(`/api/history/hits?region=${region}`).then((r) => r.json()),
+      fetch(`/api/config/schedule?region=${region}`).then((r) => r.json()),
+    ]).then(([h, c]) => {
+      if (huy) return;
+      setDraws(h.status === "fulfilled" ? (h.value.draws ?? []) : []);
+      if (c.status === "fulfilled") setSched((c.value.data ?? c.value.schedule ?? c.value) as Schedule);
+    });
     return () => { huy = true; };
   }, [region]);
 
   const kq: DemoChanO | null = useMemo(
-    () => (draws ? demoChanO(draws, region, nguong) : null),
-    [draws, region, nguong]
+    () => (draws ? demoChanO(draws, region, nguong, cachDo === "bang" ? sched : null) : null),
+    [draws, region, nguong, cachDo, sched]
   );
 
   if (!draws) {
@@ -95,8 +104,41 @@ export default function ChanOPanel({ region }: { region: Region }) {
           Bây giờ máy chặn theo <b>cả nhóm</b>{" "}
           — cả bậc &ldquo;1 kỳ chưa về&rdquo; là 100 con như nhau. Khách muốn nhỏ hơn một bậc: mỗi <b>ô</b> là một cặp <b>con số × bậc ngày</b>. Con 09
           ở ngày 1 từng thua thì bỏ, nhưng chính con 09 ở ngày 2 không thua thì vẫn ôm. Dưới đây là
-          bốn cách chơi trên <b>đúng cùng {kq.soKy} kỳ</b>, cùng ôm 100 điểm mỗi lô — nên chênh lệch
-          giữa chúng chỉ có thể do cách chọn ô mà ra.
+          bốn cách chơi trên <b>đúng cùng {kq.soKy} kỳ</b>,{" "}
+          {kq.theoBang ? (
+            <>
+              ôm theo <b>đúng bảng hạn mức đang cài</b> — tức đúng đồng tiền sổ này sẽ ăn hay mất
+            </>
+          ) : (
+            <>cùng ôm 100 điểm mỗi lô</>
+          )}{" "}
+          — nên chênh lệch giữa chúng chỉ có thể do cách chọn ô mà ra.
+        </div>
+
+        {/* Hai cách chấm, vì hai câu hỏi khác nhau.
+            Bảng thật trả lời "lợi nhuận MÌNH như nào" — sổ của họ không phẳng,
+            tiền dồn hết vào mấy bậc nặng. 100 đều trả lời "cách chọn ô có giỏi
+            không" — cùng một mức thì chênh lệch không lẫn với chuyện chia tiền. */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="eyebrow">Chấm bằng</span>
+          {[
+            { k: "bang" as const, ten: "Bảng hạn mức thật", tat: !sched },
+            { k: "deu" as const, ten: "100 điểm đều", tat: false },
+          ].map((x) => (
+            <button
+              key={x.k}
+              disabled={x.tat}
+              onClick={() => setCachDo(x.k)}
+              title={x.tat ? "Chưa tải được bảng hạn mức" : undefined}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors disabled:opacity-40 ${
+                cachDo === x.k
+                  ? "bg-[#2563eb] text-white"
+                  : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16]"
+              }`}
+            >
+              {x.ten}
+            </button>
+          ))}
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
@@ -143,6 +185,21 @@ export default function ChanOPanel({ region }: { region: Region }) {
             {tC.lai - tA.lai >= 0 ? "ăn thêm" : "mất thêm"} {tien(Math.abs(tC.lai - tA.lai))}
           </b>
           . Hai con số này phải đọc cùng nhau.
+        </div>
+
+        {/* "Ở kỳ thứ 10 bắt đầu bỏ thì nó NHƯ NÀO" — câu đó hỏi về cả quãng
+            đường, không hỏi một con số cuối. Một con số cuối giấu mất chuyện
+            ba đường bám nhau suốt rồi tách ra đúng mấy kỳ chót. */}
+        <div>
+          <div className="eyebrow mb-1.5">Tiền dồn qua từng kỳ — {kq.soKy} kỳ</div>
+          <DuongSo
+            ngay={kq.ngay}
+            duong={[
+              { ten: "Không chặn gì", don: tA.don, mau: "#8fd0ff" },
+              { ten: "Chặn theo ô", don: tB.don, mau: "#ffd24a" },
+              { ten: "Chặn nhắm mắt", don: tC.don, mau: "#c98bff" },
+            ]}
+          />
         </div>
 
         <div>
@@ -378,6 +435,68 @@ function Bang({ nhanh, goc }: { nhanh: ONhanh[]; goc: number }) {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * Ba đường tiền dồn chồng lên nhau, cùng một trục.
+ *
+ * Vẽ chung một trục là chủ ý: ba đường riêng ba khung thì mắt tự co giãn từng
+ * cái rồi thấy đường nào cũng "có xu hướng". Chồng lên nhau thì thấy ngay
+ * chúng quấn lấy nhau, và khoảng cách cuối cùng nhỏ đến mức nào so với chính
+ * cái biên độ mà một đường tự dao động trên đường đi.
+ */
+function DuongSo({
+  ngay,
+  duong,
+}: {
+  ngay: string[];
+  duong: { ten: string; don: number[]; mau: string }[];
+}) {
+  const n = ngay.length;
+  if (n < 2) return null;
+  const tatCa = duong.flatMap((d) => d.don);
+  const lo = Math.min(0, ...tatCa);
+  const hi = Math.max(0, ...tatCa);
+  const span = hi - lo || 1;
+  const W = 100, H = 34;
+  const x = (i: number) => (i / (n - 1)) * W;
+  const y = (v: number) => H - ((v - lo) / span) * H;
+  const zero = y(0);
+  const dd = (v: string) => `${v.slice(8, 10)}/${v.slice(5, 7)}`;
+
+  return (
+    <div className="rounded-lg border border-[var(--hairline)] bg-white/[0.03] p-2">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-28 md:h-36">
+        <line x1="0" y1={zero} x2={W} y2={zero} stroke="rgba(255,255,255,0.3)" strokeWidth="0.25" />
+        {duong.map((d) => (
+          <path
+            key={d.ten}
+            d={d.don.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(2)},${y(v).toFixed(2)}`).join(" ")}
+            fill="none"
+            stroke={d.mau}
+            strokeWidth="0.7"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </svg>
+      <div className="flex justify-between text-[0.62rem] text-[var(--text-muted)] numeric px-0.5 mt-0.5">
+        <span>{dd(ngay[0])}</span>
+        <span>đường ngang = hoà vốn</span>
+        <span>{dd(ngay[n - 1])}</span>
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[0.66rem]">
+        {duong.map((d) => (
+          <span key={d.ten} className="flex items-center gap-1">
+            <span className="inline-block w-3 h-0.5 rounded" style={{ background: d.mau }} />
+            <span className="text-[var(--text-secondary)]">{d.ten}</span>
+            <b className="numeric" style={{ color: mau(d.don[n - 1]) }}>
+              {tien(d.don[n - 1])}
+            </b>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

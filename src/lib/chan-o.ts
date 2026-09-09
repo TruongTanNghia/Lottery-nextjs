@@ -26,6 +26,8 @@ import { LOS } from "./backtest";
 import type { DrawHits } from "./backtest";
 import { STAKE_PRICE, WIN_PER_POINT } from "./exposure";
 import { dungKy, type BacKey, type Ky } from "./slot-stats";
+import { mucCho } from "./backtest";
+import type { Schedule } from "./limit-engine";
 import type { Region } from "./db";
 
 /** Mỗi lô ôm ngần này điểm ở mọi nhánh, để bốn nhánh so được với nhau. */
@@ -43,6 +45,14 @@ export interface ONhanh {
   kyLo: number;
   /** Số ô bị chặn trung bình mỗi kỳ, trên 100. */
   chanTB: number;
+  /**
+   * Tiền dồn sau mỗi kỳ, từ kỳ đầu tới kỳ đó.
+   *
+   * Người vận hành hỏi "151 kỳ, ở kỳ thứ 10 bắt đầu bỏ thì nó NHƯ NÀO" — họ
+   * muốn thấy nó chạy, không phải một con số cuối. Một con số cuối giấu mất
+   * chuyện hai cách chơi bám nhau suốt rồi tách ra đúng vài kỳ cuối.
+   */
+  don: number[];
 }
 
 export interface OLo {
@@ -63,6 +73,10 @@ export interface KhoangBoc {
 export interface DemoChanO {
   region: Region;
   soKy: number;
+  /** Ngày của từng kỳ, cùng thứ tự với `don` trong mỗi nhánh. */
+  ngay: string[];
+  /** Đang chấm bằng bảng hạn mức thật hay bằng 100 điểm đều. */
+  theoBang: boolean;
   /** Tổng số ô có ít nhất một dịp. */
   soO: number;
   /** Trung bình mỗi ô gom được bao nhiêu dịp — cái quyết định tin được hay không. */
@@ -114,18 +128,26 @@ function demO(ky: Ky[]): Map<string, Dem> {
   return m;
 }
 
-/** Chốt sổ một nhánh: mỗi kỳ nhận những lô mà `nhan` cho qua. */
+/**
+ * Chốt sổ một nhánh: mỗi kỳ nhận những lô mà `nhan` cho qua.
+ *
+ * `diem` quyết định mỗi lô ôm bao nhiêu điểm. Để 100 đều thì bốn nhánh so
+ * được với nhau sòng phẳng; đưa bảng hạn mức thật vào thì ra đúng đồng tiền
+ * người ta sẽ ăn hay mất.
+ */
 function chotSo(
   ky: Ky[],
   gia: number,
   ten: string,
   giaiThich: string,
-  nhan: (k: Ky, lo: string, i: number) => boolean
+  nhan: (k: Ky, lo: string, i: number) => boolean,
+  diem: (k: Ky, lo: string) => number
 ): ONhanh {
   let thu = 0;
   let bu = 0;
   let kyLo = 0;
   let chanTong = 0;
+  const don: number[] = [];
 
   for (let i = 0; i < ky.length; i++) {
     const k = ky[i];
@@ -137,13 +159,15 @@ function chotSo(
         chan++;
         continue;
       }
-      t += DIEM * gia;
-      b += DIEM * WIN_PER_POINT * k.ve[l];
+      const d = diem(k, l);
+      t += d * gia;
+      b += d * WIN_PER_POINT * k.ve[l];
     }
     thu += t;
     bu += b;
     chanTong += chan;
     if (t - b < 0) kyLo++;
+    don.push(thu - bu);
   }
 
   return {
@@ -155,6 +179,7 @@ function chotSo(
     bien: thu > 0 ? ((thu - bu) / thu) * 100 : 0,
     kyLo,
     chanTB: ky.length ? chanTong / ky.length : 0,
+    don,
   };
 }
 
@@ -172,7 +197,13 @@ function rng(hat: number) {
  * ngẫu nhiên. Bằng số thì phần "thu nhỏ lại vì ôm ít hơn" giống hệt nhau, chênh
  * lệch còn lại mới thật sự là công của việc chọn đúng ô.
  */
-function bocBua(ky: Ky[], gia: number, soChan: number[], hat: number): ONhanh {
+function bocBua(
+  ky: Ky[],
+  gia: number,
+  soChan: number[],
+  hat: number,
+  diem: (k: Ky, lo: string) => number
+): ONhanh {
   const r = rng(hat);
   const chanTheoKy: Set<string>[] = ky.map((_, i) => {
     const con = [...LOS];
@@ -185,7 +216,7 @@ function bocBua(ky: Ky[], gia: number, soChan: number[], hat: number): ONhanh {
     return new Set(con.slice(0, n));
   });
   return chotSo(ky, gia, "Bốc bừa", "chặn ngẫu nhiên, đúng bằng số ô cách khách chặn",
-    (_k, lo, i) => !chanTheoKy[i].has(lo));
+    (_k, lo, i) => !chanTheoKy[i].has(lo), diem);
 }
 
 /**
@@ -198,12 +229,25 @@ function bocBua(ky: Ky[], gia: number, soChan: number[], hat: number): ONhanh {
 export function demoChanO(
   draws: DrawHits[],
   region: Region,
-  toiThieu = 1
+  toiThieu = 1,
+  /**
+   * Bảng hạn mức thật. Bỏ trống thì mọi lô ôm 100 điểm đều.
+   *
+   * Người vận hành hỏi "lợi nhuận MÌNH như nào" — sổ của họ không phẳng, tiền
+   * dồn hết vào mấy bậc nặng. Nên phải chấm được cả hai kiểu: 100 đều để so
+   * bốn cách chơi sòng phẳng, và bảng thật để ra đúng đồng tiền.
+   */
+  schedule?: Schedule | null
 ): DemoChanO | null {
   const ky = dungKy(draws);
   if (ky.length < 40) return null;
 
   const gia = STAKE_PRICE[region];
+  // Đọc kho/chuoi thô chứ không đọc bậc: bậc đã gộp 19 kỳ khô trở lên vào một
+  // rọ, còn bảng thật vẫn phân biệt 19 với 25.
+  const diem: (k: Ky, lo: string) => number = schedule
+    ? (k, lo) => mucCho(schedule, k.kho[lo], k.chuoi[lo])
+    : () => DIEM;
 
   // ── Nhìn lại: học trên chính quãng đem ra chấm ───────────────────────────
   const toanBo = demO(ky);
@@ -216,13 +260,13 @@ export function demoChanO(
     else if (l > 0) tot.add(key);
   }
 
-  const nlA = chotSo(ky, gia, "Bây giờ", "nhận hết, không chặn ô nào", () => true);
+  const nlA = chotSo(ky, gia, "Bây giờ", "nhận hết, không chặn ô nào", () => true, diem);
   const nlB = chotSo(ky, gia, "Cách khách", "chặn ô đang lỗ",
-    (k, lo) => !xau.has(khoaO(lo, k.bac[lo])));
+    (k, lo) => !xau.has(khoaO(lo, k.bac[lo])), diem);
   const nlD = chotSo(ky, gia, "Đảo ngược", "chặn ô đang lời — phép thử",
-    (k, lo) => !tot.has(khoaO(lo, k.bac[lo])));
+    (k, lo) => !tot.has(khoaO(lo, k.bac[lo])), diem);
   const soChanNL = ky.map((k) => LOS.filter((lo) => xau.has(khoaO(lo, k.bac[lo]))).length);
-  const nlC = bocBua(ky, gia, soChanNL, 20260909);
+  const nlC = bocBua(ky, gia, soChanNL, 20260909, diem);
 
   // ── Chạy thật: mỗi kỳ chỉ được nhìn những kỳ trước nó ────────────────────
   // Đây đúng cái khách mô tả — "máy tự bỏ số đó đi" — và cũng chính là cách
@@ -257,15 +301,15 @@ export function demoChanO(
     }
   }
 
-  const tA = chotSo(ky, gia, "Bây giờ", "nhận hết, không chặn ô nào", () => true);
+  const tA = chotSo(ky, gia, "Bây giờ", "nhận hết, không chặn ô nào", () => true, diem);
   const tB = chotSo(ky, gia, "Cách khách", "chặn ô đã lỗ ở những kỳ trước",
-    (_k, lo, i) => !chanXau[i].has(lo));
+    (_k, lo, i) => !chanXau[i].has(lo), diem);
   const tD = chotSo(ky, gia, "Đảo ngược", "chặn ô đã lời ở những kỳ trước — phép thử",
-    (_k, lo, i) => !chanTot[i].has(lo));
+    (_k, lo, i) => !chanTot[i].has(lo), diem);
   const soChanThat = chanXau.map((s) => s.size);
 
   const luot: ONhanh[] = [];
-  for (let i = 0; i < SO_LUOT_BOC; i++) luot.push(bocBua(ky, gia, soChanThat, 7919 + i * 104_729));
+  for (let i = 0; i < SO_LUOT_BOC; i++) luot.push(bocBua(ky, gia, soChanThat, 7919 + i * 104_729, diem));
   const biens = luot.map((x) => x.bien).sort((a, b) => a - b);
   const khoangBoc: KhoangBoc = {
     tb: biens.reduce((s, x) => s + x, 0) / biens.length,
@@ -321,6 +365,8 @@ export function demoChanO(
   return {
     region,
     soKy: ky.length,
+    ngay: ky.map((k) => k.date),
+    theoBang: !!schedule,
     soO,
     dipTB,
     saiSoO,

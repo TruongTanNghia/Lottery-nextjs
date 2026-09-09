@@ -147,6 +147,15 @@ export interface Ky {
   date: string;
   bac: Record<string, BacKey>;
   ve: Record<string, number>;
+  /**
+   * Số kỳ khô và độ dài chuỗi THÔ của từng lô sáng hôm đó — chưa gộp bậc.
+   *
+   * `bac` đã gộp mọi thứ từ 19 kỳ khô trở lên vào một rọ, đủ để thống kê nhóm
+   * nhưng không đủ để tra ra hạn mức: bảng thật vẫn phân biệt 19 với 25. Ai
+   * muốn chấm sổ bằng đúng bảng đang cài thì phải đọc hai trường này.
+   */
+  kho: Record<string, number>;
+  chuoi: Record<string, number>;
 }
 
 const truoc = (d: string) => {
@@ -170,6 +179,8 @@ export function dungKy(draws: DrawHits[]): Ky[] {
   for (const d of sap) {
     const bac: Record<string, BacKey> = {};
     const ve: Record<string, number> = {};
+    const kho: Record<string, number> = {};
+    const chuoi: Record<string, number> = {};
     for (const l of LOS) {
       const s = st.get(l)!;
       bac[l] =
@@ -177,8 +188,10 @@ export function dungKy(draws: DrawHits[]): Ky[] {
           ? keyChuoi(Math.min(TRAN_CHUOI, s.chuoi))
           : keyKho(Math.min(TRAN_BAC, Math.max(1, s.kho)));
       ve[l] = d.hits[l] ?? 0;
+      kho[l] = s.kho;
+      chuoi[l] = s.chuoi;
     }
-    out.push({ date: d.date, bac, ve });
+    out.push({ date: d.date, bac, ve, kho, chuoi });
 
     for (const [l, s] of st) {
       if ((d.hits[l] ?? 0) > 0) {
