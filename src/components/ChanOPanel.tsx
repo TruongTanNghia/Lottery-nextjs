@@ -115,11 +115,85 @@ export default function ChanOPanel({ region }: { region: Region }) {
           <span className="text-[0.68rem] text-[var(--text-muted)]">mới dám chặn</span>
         </div>
 
+        {/* Câu trả lời bằng TIỀN, đặt trên bảng.
+            Người vận hành phản hồi thẳng là không đọc nổi bảng: cột nào hàng
+            nào là gì, rồi rốt cuộc lời hay lỗ. Bảng sáu cột bốn hàng là để soi
+            kỹ, nhưng thứ phải thấy trước khi soi là một câu bằng tiền. */}
+        <div className="grid grid-cols-3 gap-2">
+          <TraLoi nhan="Không chặn gì" gt={tien(tA.lai)} phu="cứ nhận hết như bây giờ" mau={mau(tA.lai)} />
+          <TraLoi nhan="Chặn theo ô" gt={tien(tB.lai)} phu="cách khách đề xuất" mau={mau(tB.lai)} dam />
+          <TraLoi
+            nhan="Chặn nhắm mắt"
+            gt={tien(tC.lai)}
+            phu={`bốc bừa, cũng ${tC.chanTB.toFixed(0)} con mỗi kỳ`}
+            mau={mau(tC.lai)}
+          />
+        </div>
+
+        {/* Ô giữa để một mình thì người ta chỉ đọc mỗi nó. Cột "chặn nhắm mắt"
+            đứng ngay cạnh và câu này ở ngay dưới là để con số đó không bao giờ
+            được đọc tách khỏi thứ dùng để so nó. */}
+        <div className="text-[0.74rem] leading-relaxed text-[var(--text-secondary)] -mt-1">
+          Chặn theo ô{" "}
+          <b style={{ color: mau(tB.lai - tA.lai) }}>
+            {tB.lai - tA.lai >= 0 ? "ăn thêm" : "mất thêm"} {tien(Math.abs(tB.lai - tA.lai))}
+          </b>{" "}
+          so với không chặn gì — nhưng chặn <b>nhắm mắt</b> cũng{" "}
+          <b style={{ color: mau(tC.lai - tA.lai) }}>
+            {tC.lai - tA.lai >= 0 ? "ăn thêm" : "mất thêm"} {tien(Math.abs(tC.lai - tA.lai))}
+          </b>
+          . Hai con số này phải đọc cùng nhau.
+        </div>
+
         <div>
           <div className="eyebrow mb-1.5">
             Chạy thật — mỗi kỳ máy chỉ được nhìn những kỳ trước nó
           </div>
           <Bang nhanh={kq.that} goc={tA.bien} />
+
+          {/* Chú giải nằm ngay dưới bảng và luôn hiện. Giấu lời giải thích sau
+              một cái nút là lặp lại đúng cái lỗi đang phải sửa. */}
+          <div className="mt-2 rounded-lg border border-[var(--hairline)] bg-white/[0.03] px-3 py-2.5 text-[0.7rem] leading-relaxed">
+            <div className="eyebrow mb-1.5">Bốn hàng là bốn cách chơi</div>
+            <ul className="space-y-1 text-[var(--text-secondary)]">
+              <li>
+                <b className="text-white">Bây giờ</b> — nhận hết 100 con, không chặn con nào.{" "}
+                <i>Đây là mốc để so.</i>
+              </li>
+              <li>
+                <b className="text-white">Cách khách</b> — chặn những ô đã từng lỗ.
+              </li>
+              <li>
+                <b className="text-white">Bốc bừa</b> — chặn <b>ngẫu nhiên</b>, đúng bằng số ô cách
+                khách chặn. Để biết &ldquo;biết chọn&rdquo; có hơn &ldquo;nhắm mắt&rdquo; không.
+              </li>
+              <li>
+                <b className="text-white">Đảo ngược</b> — chặn ô đã từng <b>lời</b>, tức làm ngược
+                lại. Nếu máy đọc được ô xấu thật thì bỏ ô tốt phải tệ hẳn đi.
+              </li>
+            </ul>
+            <div className="eyebrow mt-2.5 mb-1.5">Sáu cột là gì</div>
+            <ul className="space-y-1 text-[var(--text-secondary)]">
+              <li>
+                <b className="text-white">Biên</b> — nhận vào 100đ thì giữ lại được mấy đồng. 0% là
+                huề vốn, âm là lỗ.
+              </li>
+              <li>
+                <b className="text-white">Hơn/kém</b> — so với hàng &ldquo;Bây giờ&rdquo;.{" "}
+                <i>Đây là cột trả lời thẳng.</i>
+              </li>
+              <li>
+                <b className="text-white">Lời/lỗ</b> — quy ra tiền thật của cả {kq.soKy} kỳ.
+              </li>
+              <li>
+                <b className="text-white">Chặn</b> — mỗi kỳ bỏ mấy con trong 100 con.
+              </li>
+              <li>
+                <b className="text-white">Kỳ lỗ</b> — trong {kq.soKy} kỳ, bao nhiêu kỳ bị âm.
+              </li>
+            </ul>
+          </div>
+
           <div className="mt-1.5 text-[0.68rem] text-[var(--text-muted)] leading-relaxed">
             Bốc bừa chạy 25 lượt, ra từ <b style={{ color: mau(kq.khoangBoc.thap) }}>{pc(kq.khoangBoc.thap)}</b> tới{" "}
             <b style={{ color: mau(kq.khoangBoc.cao) }}>{pc(kq.khoangBoc.cao)}</b> (trung bình{" "}
@@ -304,6 +378,37 @@ function Bang({ nhanh, goc }: { nhanh: ONhanh[]; goc: number }) {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** Ba ô tiền đứng trên bảng — đọc xong ba ô này là biết kết quả, khỏi soi bảng. */
+function TraLoi({
+  nhan,
+  gt,
+  phu,
+  mau: m,
+  dam,
+}: {
+  nhan: string;
+  gt: string;
+  phu: string;
+  mau: string;
+  dam?: boolean;
+}) {
+  return (
+    <div
+      className="rounded-lg border px-2.5 py-2"
+      style={{
+        borderColor: dam ? m + "88" : "var(--hairline)",
+        background: dam ? m + "14" : "rgba(255,255,255,0.04)",
+      }}
+    >
+      <div className="eyebrow mb-1">{nhan}</div>
+      <div className="numeric font-extrabold text-base leading-none" style={{ color: m }}>
+        {gt}
+      </div>
+      <div className="text-[0.62rem] text-[var(--text-muted)] mt-1 leading-snug">{phu}</div>
     </div>
   );
 }

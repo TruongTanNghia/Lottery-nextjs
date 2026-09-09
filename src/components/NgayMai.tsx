@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { POSITIONS, STAKE_PRICE, WIN_PER_POINT } from "@/lib/exposure";
 import { useToast } from "./Toast";
 import { REGION_LABELS, type LimitItem, type Region } from "@/lib/types";
@@ -42,6 +42,40 @@ export default function NgayMai({
 }) {
   const toast = useToast();
   const [xepTheo, setXepTheo] = useState<"so" | "tien">("so");
+
+  /**
+   * Lưới 100 con gập lại được, mặc định đóng.
+   *
+   * Người vận hành xin ẩn nó đi. Đúng: bốn ô tiền và dòng chênh lệch mới là
+   * thứ đọc mỗi tối, còn cái lưới là bảng tra — cần một con cụ thể mới mở. Để
+   * mở sẵn thì trên điện thoại nó chiếm gần trọn màn hình và đẩy mọi khối sau
+   * nó xuống dưới tầm mắt.
+   *
+   * Đọc localStorage trong effect chứ không phải lúc dựng state: máy chủ không
+   * có localStorage, lệch nhau là React kêu hydration mismatch.
+   */
+  const [moLuoi, setMoLuoi] = useState(false);
+  const [daDoc, setDaDoc] = useState(false);
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("thugon:ngaymai-luoi");
+      if (v !== null) setMoLuoi(v === "1");
+    } catch {
+      /* trình duyệt chặn lưu — cứ dùng mặc định */
+    }
+    setDaDoc(true);
+  }, []);
+
+  const batLuoi = () => {
+    const v = !moLuoi;
+    setMoLuoi(v);
+    try {
+      localStorage.setItem("thugon:ngaymai-luoi", v ? "1" : "0");
+    } catch {
+      /* không lưu được thì thôi, vẫn gập được trong phiên này */
+    }
+  };
 
   const gia = STAKE_PRICE[region];
 
@@ -218,6 +252,19 @@ export default function NgayMai({
           </div>
         </div>
 
+        <button
+          onClick={batLuoi}
+          aria-expanded={moLuoi}
+          className="flex items-center gap-1.5 text-[0.74rem] font-bold text-[#8fd0ff] hover:text-white"
+        >
+          <span className={`transition-transform ${moLuoi ? "rotate-90" : ""}`}>▶</span>
+          {moLuoi ? "Thu gọn lưới 100 con" : "Xem lưới 100 con — mức nhận từng con"}
+        </button>
+
+        {/* Chờ đọc xong localStorage rồi mới vẽ, tránh nháy một cái khi lưới
+            đang đóng lại bung ra rồi đóng lại. */}
+        {daDoc && moLuoi && (
+        <>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="eyebrow">Xếp theo</span>
           {[
@@ -271,6 +318,8 @@ export default function NgayMai({
           Ô đậm hơn = nhận nhiều tiền hơn. Rê chuột vào ô để xem con đó đang ở tình trạng nào và
           nếu về một nháy thì phải trả bao nhiêu. Đổi bảng hạn mức ở trên là bảng này đổi theo ngay.
         </div>
+        </>
+        )}
       </div>
     </section>
   );
