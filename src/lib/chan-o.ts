@@ -98,6 +98,39 @@ export interface DemoChanO {
   oLoNhat: OLo[];
   /** Bao nhiêu ô đổi phe giữa nửa đầu và nửa sau: lỗ thành lời, lời thành lỗ. */
   doiPhe: { xet: number; doi: number };
+  /** Làm đúng thao tác thật: chốt danh sách một lần rồi chạy tiếp. */
+  chot: ChotMotLan;
+}
+
+/**
+ * "Chặn hết các số lỗ ở các ô hiện tại" — đúng thao tác người ta sẽ làm.
+ *
+ * Khác hẳn nhánh chạy thật ở trên. Trên kia máy tính lại mỗi kỳ, một con vừa
+ * hết lỗ là được nhận lại ngay. Còn ngoài đời thì người ta mở thẻ ra hôm nay,
+ * chép lấy danh sách con lỗ, chặn, rồi để đó mà chạy — danh sách đứng yên.
+ *
+ * Nên phải đo riêng: học danh sách trên nửa đầu, khoá lại, chơi nửa sau. Nửa
+ * sau là quãng mà danh sách chưa từng nhìn thấy, nên nó là bài thi thật.
+ */
+export interface ChotMotLan {
+  kyHoc: number;
+  kyThi: number;
+  /** Số ô vào danh sách chặn. */
+  soO: number;
+  /** Chấm chính nửa đầu bằng danh sách học từ nửa đầu — đẹp giả, để đối chiếu. */
+  nhinLai: ONhanh;
+  khongChan: ONhanh;
+  chanTheoDS: ONhanh;
+  bocBua: ONhanh;
+  khoangBoc: KhoangBoc;
+  /**
+   * Trong những ô đã bị đưa vào danh sách vì lỗ, sang nửa sau bao nhiêu ô còn lỗ.
+   *
+   * Đây là con số quyết định. Danh sách chỉ đáng chặn nếu ô lỗ hôm nay còn lỗ
+   * ngày mai; nếu tỷ lệ này quanh một nửa thì cái danh sách đang chép lại quá
+   * khứ chứ không đọc được tính nết con số.
+   */
+  giuPhe: { xet: number; vanLo: number };
 }
 
 const khoaO = (lo: string, bac: BacKey) => `${lo}|${bac}`;
@@ -362,9 +395,53 @@ export function demoChanO(
     if (a < 0 !== b < 0) doi++;
   }
 
+  // ── Chốt danh sách một lần rồi chạy tiếp ────────────────────────────────
+  const giuaC = Math.floor(ky.length / 2);
+  const kyHoc = ky.slice(0, giuaC);
+  const kyThi = ky.slice(giuaC);
+  const hoc = demO(kyHoc);
+  const dsChan = new Set<string>();
+  for (const [key, d] of hoc) {
+    if (d.dip >= toiThieu && laiO(d, gia) < 0) dsChan.add(key);
+  }
+  const khongChan = chotSo(kyThi, gia, "Không chặn gì", "nhận hết ở nửa sau", () => true, diem);
+  const chanTheoDS = chotSo(kyThi, gia, "Chặn theo danh sách", "danh sách chốt từ nửa đầu, không đổi",
+    (k, lo) => !dsChan.has(khoaO(lo, k.bac[lo])), diem);
+  const nhinLaiChot = chotSo(kyHoc, gia, "Nửa đầu", "chấm lại chính quãng đã học",
+    (k, lo) => !dsChan.has(khoaO(lo, k.bac[lo])), diem);
+  const soChanThi = kyThi.map((k) => LOS.filter((lo) => dsChan.has(khoaO(lo, k.bac[lo]))).length);
+  const luotC: ONhanh[] = [];
+  for (let i = 0; i < SO_LUOT_BOC; i++) luotC.push(bocBua(kyThi, gia, soChanThi, 31337 + i * 65_537, diem));
+  const bienC = luotC.map((x) => x.bien).sort((a, b) => a - b);
+
+  const thi = demO(kyThi);
+  let xetC = 0;
+  let vanLo = 0;
+  for (const key of dsChan) {
+    const d = thi.get(key);
+    if (!d || d.dip < toiThieu) continue;
+    xetC++;
+    if (laiO(d, gia) < 0) vanLo++;
+  }
+
   return {
     region,
     soKy: ky.length,
+    chot: {
+      kyHoc: kyHoc.length,
+      kyThi: kyThi.length,
+      soO: dsChan.size,
+      nhinLai: nhinLaiChot,
+      khongChan,
+      chanTheoDS,
+      bocBua: [...luotC].sort((a, b) => a.bien - b.bien)[Math.floor(luotC.length / 2)],
+      khoangBoc: {
+        tb: bienC.reduce((s2, x) => s2 + x, 0) / bienC.length,
+        thap: bienC[0],
+        cao: bienC[bienC.length - 1],
+      },
+      giuPhe: { xet: xetC, vanLo },
+    },
     ngay: ky.map((k) => k.date),
     theoBang: !!schedule,
     soO,

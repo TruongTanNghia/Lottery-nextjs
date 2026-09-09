@@ -187,6 +187,13 @@ export default function ChanOPanel({ region }: { region: Region }) {
           . Hai con số này phải đọc cùng nhau.
         </div>
 
+        {/* Đúng thao tác ngoài đời, nên đứng trước mọi thứ khác.
+            Khách chốt lại ý: "chặn HẾT các số lỗ ở các ô hiện tại". Đó là mở
+            thẻ ra hôm nay, chép danh sách con lỗ, chặn, rồi để đó mà chạy —
+            danh sách đứng yên. Khác hẳn nhánh chạy thật bên dưới, nơi máy tính
+            lại mỗi kỳ và nhận lại ngay khi một con hết lỗ. */}
+        <ChotDanhSach chot={kq.chot} />
+
         {/* "Ở kỳ thứ 10 bắt đầu bỏ thì nó NHƯ NÀO" — câu đó hỏi về cả quãng
             đường, không hỏi một con số cuối. Một con số cuối giấu mất chuyện
             ba đường bám nhau suốt rồi tách ra đúng mấy kỳ chót. */}
@@ -435,6 +442,92 @@ function Bang({ nhanh, goc }: { nhanh: ONhanh[]; goc: number }) {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * Chốt danh sách một lần rồi chạy tiếp — đúng thao tác ngoài đời.
+ *
+ * Thứ tự trình bày là cố ý và ngược với bản năng: nửa đầu (chỗ danh sách được
+ * học ra) đứng trước để thấy nó đẹp cỡ nào, rồi mới tới nửa sau. Đặt ngược lại
+ * thì người đọc chỉ thấy một con số nhạt nhẽo mà không hiểu vì sao ý tưởng này
+ * lại hấp dẫn đến thế ngay từ đầu.
+ */
+function ChotDanhSach({ chot }: { chot: DemoChanO["chot"] }) {
+  const { nhinLai, khongChan, chanTheoDS, bocBua, khoangBoc, giuPhe } = chot;
+  const hon = chanTheoDS.lai - khongChan.lai;
+  const honBoc = chanTheoDS.lai - bocBua.lai;
+  const tyLeGiu = giuPhe.xet ? (giuPhe.vanLo / giuPhe.xet) * 100 : 0;
+  const vuot = chanTheoDS.bien > khoangBoc.cao;
+
+  return (
+    <div className="rounded-lg border border-[rgba(59,130,246,0.4)] bg-[rgba(37,99,235,0.08)] px-3 py-3 space-y-2.5">
+      <div>
+        <div className="font-extrabold text-white text-[0.86rem]">
+          📋 Chốt danh sách một lần rồi chạy tiếp
+        </div>
+        <div className="text-[0.7rem] text-[var(--text-muted)] mt-0.5 leading-relaxed">
+          Đúng thao tác ngoài đời: mở thẻ ra, chép hết các con đang lỗ, chặn, rồi để đó mà chạy —
+          danh sách không đổi nữa. Học trên <b>{chot.kyHoc} kỳ đầu</b> ra{" "}
+          <b>{chot.soO.toLocaleString("vi-VN")} ô</b> phải chặn, rồi đem chạy{" "}
+          <b>{chot.kyThi} kỳ sau</b> — quãng mà danh sách chưa từng nhìn thấy.
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-[rgba(251,191,36,0.4)] bg-[rgba(245,158,11,0.1)] px-2.5 py-2 text-[0.74rem] leading-relaxed text-[#ffe9b8]">
+        Trên <b>{chot.kyHoc} kỳ đầu</b> — tức chính chỗ danh sách được rút ra — nó ăn{" "}
+        <b style={{ color: mau(nhinLai.lai) }}>{tien(nhinLai.lai)}</b> ({pc(nhinLai.bien)}). Đây là
+        lý do ý tưởng này nhìn rất được. Nhưng đó là chấm bài khi đã biết đáp án.
+      </div>
+
+      <div className="eyebrow">Rồi chạy {chot.kyThi} kỳ sau — bài thi thật</div>
+      <div className="grid grid-cols-3 gap-2">
+        <TraLoi nhan="Không chặn gì" gt={tien(khongChan.lai)} phu="cứ nhận hết" mau={mau(khongChan.lai)} />
+        <TraLoi
+          nhan="Chặn theo danh sách"
+          gt={tien(chanTheoDS.lai)}
+          phu="danh sách chốt, không đổi"
+          mau={mau(chanTheoDS.lai)}
+          dam
+        />
+        <TraLoi
+          nhan="Chặn nhắm mắt"
+          gt={tien(bocBua.lai)}
+          phu={`bốc bừa, cũng ${bocBua.chanTB.toFixed(0)} con mỗi kỳ`}
+          mau={mau(bocBua.lai)}
+        />
+      </div>
+
+      <div className="text-[0.74rem] leading-relaxed text-[var(--text-secondary)]">
+        Chặn theo danh sách{" "}
+        <b style={{ color: mau(hon) }}>
+          {hon >= 0 ? "ăn thêm" : "mất thêm"} {tien(Math.abs(hon))}
+        </b>{" "}
+        so với không chặn, và{" "}
+        <b style={{ color: mau(honBoc) }}>
+          {honBoc >= 0 ? "hơn" : "kém"} chặn nhắm mắt {tien(Math.abs(honBoc))}
+        </b>
+        . Bốc bừa 25 lượt rải từ <b>{pc(khoangBoc.thap)}</b> tới <b>{pc(khoangBoc.cao)}</b>, mà
+        danh sách ra <b style={{ color: mau(chanTheoDS.bien) }}>{pc(chanTheoDS.bien)}</b> —{" "}
+        {vuot ? "nằm cao hơn cả 25 lượt, chỗ này đáng theo dõi." : "vẫn nằm trong khoảng đó."}
+      </div>
+
+      {/* Con số quyết định: danh sách chỉ đáng chặn nếu ô lỗ hôm nay còn lỗ ngày mai. */}
+      <div className="rounded-lg border border-[var(--hairline)] bg-black/20 px-2.5 py-2 text-[0.74rem] leading-relaxed">
+        <div className="eyebrow mb-1">Danh sách đó có bền không</div>
+        <span className="text-[var(--text-secondary)]">
+          Trong <b className="text-white">{giuPhe.xet.toLocaleString("vi-VN")} ô</b> bị chặn vì lỗ ở
+          nửa đầu, sang nửa sau chỉ còn{" "}
+          <b className="numeric" style={{ color: tyLeGiu > 60 ? "#7ff0c0" : "#ffd24a" }}>
+            {giuPhe.vanLo.toLocaleString("vi-VN")} ô ({tyLeGiu.toFixed(0)}%)
+          </b>{" "}
+          là vẫn lỗ.{" "}
+          {tyLeGiu < 60
+            ? "Gần một nửa lật phe — tức danh sách đang chép lại quá khứ chứ chưa đọc được tính nết con số."
+            : "Tỷ lệ này cao hơn tung đồng xu, đáng xem tiếp."}
+        </span>
+      </div>
     </div>
   );
 }
