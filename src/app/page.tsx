@@ -13,6 +13,7 @@ import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import BacktestPanel from "@/components/BacktestPanel";
 import NgayMai from "@/components/NgayMai";
 import ChanOPanel from "@/components/ChanOPanel";
+import NhapSoCuoc from "@/components/NhapSoCuoc";
 import MonthlyReport from "@/components/MonthlyReport";
 import SlotPanel from "@/components/SlotPanel";
 import StreakCopyCard from "@/components/StreakCopyCard";
@@ -432,6 +433,10 @@ function Dashboard() {
                 nhóm — và hỏi thẳng "có hiệu quả hơn bây giờ không". Khối này
                 trả lời đúng câu đó, nên đứng ngay sau bảng chọn nhóm. */}
             <ChanOPanel region={region} key={`chano-${region}-${lanTinhLai}`} />
+
+            {/* Cho tới khi bảng bets có dòng nào, mọi con số lời/lỗ ở trên đều
+                là mô phỏng sổ đầy 100 lô. Đây là cửa để đưa sổ thật vào. */}
+            <NhapSoCuoc region={region} onSaved={loadAll} />
 
             {/* Bảng đài là chỗ cài đặt, mở ra vài tháng một lần. Nó dài, và nằm
                 trên hai khối trả lời "lời hay lỗ" thì trên điện thoại phải cuộn
