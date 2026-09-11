@@ -480,3 +480,210 @@ export function demoChanO(
     doiPhe: { xet, doi },
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Xếp hạng phương án
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * "Xem phương án nào về lâu dài có lợi nhuận nhất, rồi anh em chốt phương án."
+ *
+ * Đây là câu hỏi cuối của cả chuỗi, và nó có một cái bẫy nằm sẵn trong chính
+ * cách hỏi. Xếp mười phương án rồi lấy cái đứng đầu thì bao giờ cũng có một
+ * cái đứng đầu — kể cả khi cả mười đều là tiếng ồn. Càng nhiều phương án đem
+ * ra so, cái đứng đầu càng dễ chỉ là cái gặp may nhất.
+ *
+ * Nên bảng này trộn thẳng mấy phương án BỐC BỪA vào cùng danh sách, xếp chung
+ * một hạng. Nếu bốc bừa leo lên được top thì bảng xếp hạng tự nó nói rằng
+ * không có gì để chốt — không cần ai phải giải thích.
+ *
+ * Và xếp theo TIỀN chứ không theo biên. Người vận hành vừa hỏi đúng chỗ này:
+ * "biên cao là nhận ít hơn, lời nhiều hơn đúng không?" — không đúng. Biên là
+ * phần trăm, chặn bớt số thì mẫu số nhỏ lại nên biên dễ đẹp trong khi tiền
+ * teo đi. 10% của 100tr thua 1% của 2 tỷ.
+ */
+export interface PhuongAn {
+  ten: string;
+  moTa: string;
+  /** Phương án đối chứng — trộn chung để xem nó xếp hạng mấy. */
+  laBocBua: boolean;
+  lai: number;
+  bien: number;
+  thu: number;
+  chanTB: number;
+  kyLo: number;
+  don: number[];
+}
+
+export interface XepHangPA {
+  /** Số kỳ thật sự đem ra chấm — nửa sau. */
+  soKy: number;
+  /** Số kỳ nửa đầu, chỉ dùng để mấy phương án ấm bộ nhớ và học danh sách. */
+  kyAm: number;
+  ngay: string[];
+  theoBang: boolean;
+  /** Đã xếp theo tiền, nhiều nhất đứng đầu. */
+  bang: PhuongAn[];
+  /** Hạng của mấy phương án bốc bừa, đếm từ 1. */
+  hangBoc: number[];
+  /** Hạng tốt nhất mà bốc bừa với tới được. */
+  bocCaoNhat: number;
+}
+
+/** Số phương án bốc bừa trộn vào cho biết mặt bằng may rủi. */
+const SO_PA_BOC = 5;
+/** Một bậc phải gom đủ ngần này lượt lô thì mới dám tin biên của nó. */
+const MAU_BAC = 60;
+
+/**
+ * Chạy mọi phương án trên cùng một quãng, rồi xếp hạng theo tiền.
+ *
+ * Mọi phương án đều chỉ được nhìn quá khứ. Không cái nào được chấm trên chính
+ * quãng nó học ra, vì như thế thì cái nào cũng thắng.
+ */
+export function xepHangPhuongAn(
+  draws: DrawHits[],
+  region: Region,
+  schedule?: Schedule | null,
+  toiThieu = 1
+): XepHangPA | null {
+  const ky = dungKy(draws);
+  if (ky.length < 40) return null;
+
+  const gia = STAKE_PRICE[region];
+  const diem: (k: Ky, lo: string) => number = schedule
+    ? (k, lo) => mucCho(schedule, k.kho[lo], k.chuoi[lo])
+    : () => DIEM;
+
+  // Ba bộ nhớ chạy song song, tất cả chỉ cập nhật SAU khi kỳ đó đã quyết xong.
+  const acc = new Map<string, Dem>();
+  const lanTruocVe = new Map<string, boolean>();
+  const accBac = new Map<string, { lo: number; nhay: number }>();
+
+  const chanO: Set<string>[] = [];
+  const chanLan: Set<string>[] = [];
+  const chanBac: Set<string>[] = [];
+
+  for (const k of ky) {
+    const cO = new Set<string>();
+    const cL = new Set<string>();
+    const cB = new Set<string>();
+    for (const l of LOS) {
+      const key = khoaO(l, k.bac[l]);
+
+      if (lanTruocVe.get(key) === true) cL.add(l);
+
+      const d = acc.get(key);
+      if (d && d.dip >= toiThieu && laiO(d, gia) < 0) cO.add(l);
+
+      // Chọn nhóm biên cao: chỉ ôm bậc mà quá khứ cho thấy đang ăn. Bậc chưa
+      // đủ mẫu thì cứ ôm — không đủ cơ sở để từ chối cũng là một kết luận.
+      const b = accBac.get(k.bac[l]);
+      if (b && b.lo >= MAU_BAC) {
+        const bien = (gia - (b.nhay / b.lo) * WIN_PER_POINT) / gia;
+        if (bien <= 0) cB.add(l);
+      }
+    }
+    chanO.push(cO);
+    chanLan.push(cL);
+    chanBac.push(cB);
+
+    for (const l of LOS) {
+      const key = khoaO(l, k.bac[l]);
+      const d = acc.get(key);
+      if (d) {
+        d.dip++;
+        d.nhay += k.ve[l];
+      } else {
+        acc.set(key, { dip: 1, nhay: k.ve[l] });
+      }
+      lanTruocVe.set(key, k.ve[l] > 0);
+
+      const b = accBac.get(k.bac[l]);
+      if (b) {
+        b.lo++;
+        b.nhay += k.ve[l];
+      } else {
+        accBac.set(k.bac[l], { lo: 1, nhay: k.ve[l] });
+      }
+    }
+  }
+
+  // Chốt danh sách một lần: học nửa đầu, khoá lại, dùng cho cả quãng sau.
+  const giua = Math.floor(ky.length / 2);
+  const hoc = demO(ky.slice(0, giua));
+  const dsChot = new Set<string>();
+  for (const [key, d] of hoc) if (d.dip >= toiThieu && laiO(d, gia) < 0) dsChot.add(key);
+
+  const pa = (n: ONhanh, moTa: string, laBocBua = false): PhuongAn => ({
+    ten: n.ten,
+    moTa,
+    laBocBua,
+    lai: n.lai,
+    bien: n.bien,
+    thu: n.thu,
+    chanTB: n.chanTB,
+    kyLo: n.kyLo,
+    don: n.don,
+  });
+
+  // MỌI phương án đều chỉ được chấm trên NỬA SAU.
+  //
+  // Phải như vậy vì "chốt danh sách một lần" học danh sách từ nửa đầu — chấm
+  // nó trên cả quãng là chấm luôn cái nửa nó đã biết đáp án, và nó sẽ leo lên
+  // đầu bảng với mấy tỷ ảo. Đúng cái bẫy mà cả khối này sinh ra để cảnh báo.
+  // Mấy phương án còn lại vốn đã chỉ nhìn quá khứ, nên cắt nửa sau không thiệt
+  // gì cho chúng: nửa đầu vẫn chạy đủ để bộ nhớ của chúng ấm lên.
+  const cham = ky.slice(giua);
+  const oset = (a: Set<string>[]) => (_k: Ky, lo: string, i: number) => !a[i + giua].has(lo);
+  const soO = chanO.map((s) => s.size).slice(giua);
+  const soLan = chanLan.map((s) => s.size).slice(giua);
+  const soBac = chanBac.map((s) => s.size).slice(giua);
+
+  const ds: PhuongAn[] = [
+    pa(
+      chotSo(cham, gia, "Giữ nguyên", "", () => true, diem),
+      "nhận hết như bây giờ, không chặn con nào"
+    ),
+    pa(
+      chotSo(cham, gia, "Chặn ô đang lỗ", "", oset(chanO), diem),
+      "cộng dồn cả lịch sử của ô, đang lỗ thì bỏ"
+    ),
+    pa(
+      chotSo(cham, gia, "Lần trước lỗ thì bỏ", "", oset(chanLan), diem),
+      "chỉ nhìn lần gần nhất con đó ở ô đó"
+    ),
+    pa(
+      chotSo(cham, gia, "Chốt danh sách một lần", "",
+        (k, lo) => !dsChot.has(khoaO(lo, k.bac[lo])), diem),
+      "chép danh sách từ nửa đầu rồi khoá, không đổi nữa"
+    ),
+    pa(
+      chotSo(cham, gia, "Chọn nhóm biên cao", "", oset(chanBac), diem),
+      "chỉ ôm những bậc ngày mà quá khứ cho thấy đang ăn"
+    ),
+  ];
+
+  // Bốc bừa bám theo mức chặn của mấy phương án kia, để nó không bị thiệt hay
+  // lợi chỉ vì ôm nhiều hay ít hơn.
+  const mau = [soO, soLan, soBac, soO, soLan];
+  for (let i = 0; i < SO_PA_BOC; i++) {
+    const n = bocBua(cham, gia, mau[i % mau.length], 90210 + i * 2_654_435_761, diem);
+    ds.push({ ...pa(n, "chặn ngẫu nhiên, không nhìn gì cả", true), ten: `Bốc bừa #${i + 1}` });
+  }
+
+  const bang = [...ds].sort((a, b) => b.lai - a.lai);
+  const hangBoc = bang
+    .map((x, i) => (x.laBocBua ? i + 1 : 0))
+    .filter((x) => x > 0);
+
+  return {
+    soKy: cham.length,
+    kyAm: giua,
+    ngay: cham.map((k) => k.date),
+    theoBang: !!schedule,
+    bang,
+    hangBoc,
+    bocCaoNhat: Math.min(...hangBoc),
+  };
+}

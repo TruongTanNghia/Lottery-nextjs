@@ -12,6 +12,7 @@ import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import BacktestPanel from "@/components/BacktestPanel";
 import NgayMai from "@/components/NgayMai";
+import ChotPhuongAn from "@/components/ChotPhuongAn";
 import ChanOPanel from "@/components/ChanOPanel";
 import NhapSoCuoc from "@/components/NhapSoCuoc";
 import MonthlyReport from "@/components/MonthlyReport";
@@ -432,6 +433,9 @@ function Dashboard() {
             {/* Khách đề nghị chặn nhỏ hơn một bậc — theo từng ô, không theo cả
                 nhóm — và hỏi thẳng "có hiệu quả hơn bây giờ không". Khối này
                 trả lời đúng câu đó, nên đứng ngay sau bảng chọn nhóm. */}
+            {/* Câu hỏi cuối của cả chuỗi — "phương án nào lời nhất, rồi
+                chốt" — nên bảng xếp hạng đứng trước phần mổ xẻ từng cách. */}
+            <ChotPhuongAn region={region} key={`pa-${region}-${lanTinhLai}`} />
             <ChanOPanel region={region} key={`chano-${region}-${lanTinhLai}`} />
 
             {/* Cho tới khi bảng bets có dòng nào, mọi con số lời/lỗ ở trên đều
