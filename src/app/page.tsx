@@ -16,6 +16,7 @@ import ChotPhuongAn from "@/components/ChotPhuongAn";
 import ChanOPanel from "@/components/ChanOPanel";
 import NhapSoCuoc from "@/components/NhapSoCuoc";
 import MonthlyReport from "@/components/MonthlyReport";
+import ChotLoiSom from "@/components/ChotLoiSom";
 import SlotPanel from "@/components/SlotPanel";
 import StreakCopyCard from "@/components/StreakCopyCard";
 import StaleBanner from "@/components/StaleBanner";
@@ -427,6 +428,10 @@ function Dashboard() {
             {/* Báo cáo tháng gộp cả ba miền nên đứng trên, không phụ thuộc tab
                 miền đang chọn — đây là chỗ đầu tiên người ta nhìn mỗi sáng. */}
             <MonthlyReport key={`bc-${lanTinhLai}`} />
+            {/* "Hiện giùm em mấy cái giống như T9 — để xem chốt lời sớm được
+                không." Báo cáo tháng chỉ cho xem từng kỳ của tháng đang chạy;
+                khối này mở đường đó cho mọi tháng, đứng ngay dưới cho liền mạch. */}
+            <ChotLoiSom key={`cl-${lanTinhLai}`} />
             <BacktestPanel region={region} key={`bt-${region}-${lanTinhLai}`} />
             <SlotPanel region={region} key={`slot-${region}-${lanTinhLai}`} />
 
