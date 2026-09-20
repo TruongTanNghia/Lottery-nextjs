@@ -8,6 +8,7 @@ import ManualWatchCard from "@/components/ManualWatchCard";
 import PairBoard from "@/components/PairBoard";
 import ResultsPage from "@/components/ResultsPage";
 import RegionTabs from "@/components/RegionTabs";
+import SoDaPage from "@/components/SoDaPage";
 import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import BacktestPanel from "@/components/BacktestPanel";
@@ -62,7 +63,7 @@ function Dashboard() {
   const toast = useToast();
 
   const [region, setRegion] = useState<Region>("xsmn");
-  const [view, setView] = useState<"dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling">("dashboard");
+  const [view, setView] = useState<"dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda">("dashboard");
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -572,6 +573,8 @@ function Dashboard() {
               </aside>
             </div>
           </>
+        ) : view === "soda" ? (
+          <SoDaPage region={region} />
         ) : view === "exposure" ? (
           <ExposurePage region={region} />
         ) : view === "lab" ? (
