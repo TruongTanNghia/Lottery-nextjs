@@ -56,10 +56,16 @@ export default function SoDaPage({ region }: { region: Region }) {
     <div className="space-y-4 md:space-y-6">
       {/* Đứng đầu tab, như "Ngày Mai Ôm Sao" đứng đầu Dashboard: câu người ta
           hỏi trước tiên là kỳ tới ôm con nào, thống kê để sau. */}
-      {draws && ky && <DaKyToi draws={draws} ky={ky} region={region} />}
+      <DieuHuong />
+
+      {draws && ky && (
+        <div id="da-kytoi" style={{ scrollMarginTop: 150 }}>
+          <DaKyToi draws={draws} ky={ky} region={region} />
+        </div>
+      )}
 
       {/* ── Giá và phần ăn ─────────────────────────────────────────── */}
-      <section className="plate rise rise-1">
+      <section id="da-gia" style={{ scrollMarginTop: 150 }} className="plate rise rise-1">
         <div className="plate-hd">
           <div>
             <h2 className="plate-title">🎲 Giá Đá &amp; Phần Ăn</h2>
@@ -123,7 +129,9 @@ export default function SoDaPage({ region }: { region: Region }) {
       </section>
 
       {/* ── Ba khối thống kê, cùng khuôn Dashboard ──────────────────── */}
-      <DaBaoCaoThang />
+      <div id="da-thang" style={{ scrollMarginTop: 150 }}>
+        <DaBaoCaoThang />
+      </div>
 
       {loi && <p className="text-sm text-[#ff9d9d]">{loi}</p>}
       {!ky && !loi && (
@@ -131,12 +139,53 @@ export default function SoDaPage({ region }: { region: Region }) {
           <div className="p-4 text-sm text-[var(--text-muted)]">Đang tính…</div>
         </section>
       )}
-      {ky && rows && <DaTungKy rows={rows} region={region} />}
-      {ky && <DaCapNgay ky={ky} region={region} />}
+      {ky && rows && (
+        <div id="da-tungky" style={{ scrollMarginTop: 150 }}>
+          <DaTungKy rows={rows} region={region} />
+        </div>
+      )}
+      {ky && (
+        <div id="da-capngay" style={{ scrollMarginTop: 150 }}>
+          <DaCapNgay ky={ky} region={region} />
+        </div>
+      )}
 
       {/* ── Máy tính vòng — công cụ tra, gập lại được ────────────────── */}
-      <TinhVong region={region} />
+      <div id="da-vong" style={{ scrollMarginTop: 150 }}>
+        <TinhVong region={region} />
+      </div>
     </div>
+  );
+}
+
+/**
+ * Hàng nút nhảy giữa các phần của tab.
+ *
+ * Tab giờ có sáu khối xếp dọc, trên điện thoại là cuộn rất dài; người vận hành
+ * than "khó dùng". Không cho dính trên đầu: trang đã có sẵn header và thanh tab
+ * dính rồi, thêm thanh thứ ba thì màn hình chẳng còn chỗ cho nội dung.
+ */
+function DieuHuong() {
+  const MUC: [string, string][] = [
+    ["da-kytoi", "🌅 Kỳ tới đá con nào"],
+    ["da-gia", "🎲 Giá"],
+    ["da-thang", "📅 Báo cáo tháng"],
+    ["da-tungky", "📒 Từng kỳ"],
+    ["da-capngay", "🎯 Cặp ngày"],
+    ["da-vong", "🧮 Tính vòng"],
+  ];
+  return (
+    <nav className="flex flex-wrap gap-1.5" data-da-dieu-huong>
+      {MUC.map(([id, ten]) => (
+        <button
+          key={id}
+          onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          className="px-2.5 py-1.5 rounded-full text-[0.72rem] font-bold bg-white/[0.07] border border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.15] hover:text-white transition-colors"
+        >
+          {ten}
+        </button>
+      ))}
+    </nav>
   );
 }
 
