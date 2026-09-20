@@ -269,3 +269,214 @@ export function thongKeDa(ky: KyDa[], region: Region, tran = 10): ThongKeDa | nu
     },
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sổ đá ôm đều — từng kỳ, từng tháng, từng cặp ngày theo tháng
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Người vận hành xem bản đầu của tab rồi nói thẳng: "chưa có thống kê rõ ràng,
+// bắt chước cái dash mà làm". Dashboard trả lời ba câu bằng tiền — tháng này
+// lời hay lỗ, từng kỳ ra sao, nhóm nào đẹp — nên bên đá cũng phải trả lời đúng
+// ba câu đó. Cuốn sổ đem ra đo là cuốn đơn giản nhất: ôm đều mỗi cặp ngần ấy
+// điểm, đủ mọi cặp ghép được từ 100 con.
+
+export interface KyDaRow {
+  date: string;
+  /** Bao nhiêu con (khác nhau) về trong kỳ. */
+  soLoVe: number;
+  /** Tổng số cặp đem ra ôm — 100 con thì 4.950 cặp. */
+  soCap: number;
+  /** Số cặp trúng: hai con bất kỳ trong số con đã về, tức C(soLoVe, 2). */
+  capTrung: number;
+  thu: number;
+  tra: number;
+  lai: number;
+  /** Cộng dồn từ kỳ đầu của danh sách. */
+  don: number;
+}
+
+/** Chốt sổ từng kỳ cho cuốn sổ ôm đều `diem` điểm mỗi cặp. */
+export function soTungKy(ky: KyDa[], region: Region, diem = 1): KyDaRow[] {
+  const gia = GIA_DA[region];
+  const trung = TRUNG_DA[region];
+  let don = 0;
+  return ky.map((k) => {
+    const los = Object.keys(k.kho);
+    let h = 0;
+    for (const lo of los) if ((k.ve[lo] ?? 0) > 0) h++;
+    const soCap = soVong(los.length);
+    const capTrung = soVong(h);
+    const thu = soCap * diem * gia;
+    const tra = capTrung * diem * trung;
+    don += thu - tra;
+    return { date: k.date, soLoVe: h, soCap, capTrung, thu, tra, lai: thu - tra, don };
+  });
+}
+
+export interface ThangDa {
+  /** "2026-07" */
+  thang: string;
+  soKy: number;
+  thu: number;
+  tra: number;
+  lai: number;
+  pct: number;
+  dangChay: boolean;
+}
+
+/** Gom các kỳ theo tháng dương lịch, mỗi tháng đứng riêng. */
+export function gomThang(rows: KyDaRow[]): ThangDa[] {
+  const m = new Map<string, ThangDa>();
+  for (const r of rows) {
+    const t = r.date.slice(0, 7);
+    let a = m.get(t);
+    if (!a) m.set(t, (a = { thang: t, soKy: 0, thu: 0, tra: 0, lai: 0, pct: 0, dangChay: false }));
+    a.soKy++;
+    a.thu += r.thu;
+    a.tra += r.tra;
+    a.lai += r.lai;
+  }
+  const ds = [...m.values()].sort((a, b) => a.thang.localeCompare(b.thang));
+  for (const t of ds) t.pct = t.thu > 0 ? (t.lai / t.thu) * 100 : 0;
+  if (ds.length) ds[ds.length - 1].dangChay = true;
+  return ds;
+}
+
+/**
+ * Độ lệch chuẩn của lời/lỗ MỘT kỳ.
+ *
+ * Dùng để biết một tháng lệch bao nhiêu thì vẫn là bình thường: các kỳ xổ độc
+ * lập nhau nên dao động của một tháng n kỳ là con số này nhân căn n. Tính từ
+ * mọi kỳ chứ không từ dăm ba con số tháng, nên đứng vững hơn nhiều.
+ */
+export function doLechKy(rows: KyDaRow[]): number {
+  if (rows.length < 2) return 0;
+  const tb = rows.reduce((s, r) => s + r.lai, 0) / rows.length;
+  return Math.sqrt(rows.reduce((s, r) => s + (r.lai - tb) ** 2, 0) / (rows.length - 1));
+}
+
+/** Một ô phải gom đủ ngần này cặp trong tháng thì con số của tháng đó mới được tính. */
+export const DIP_TOI_THIEU = 500;
+/** Tháng ít kỳ hơn ngần này thì không dùng để gắn nhãn. */
+const KY_TOI_THIEU_THANG = 15;
+
+export type NhanO = "om" | "ne" | "chua";
+
+export interface OCapThang {
+  thang: string;
+  dip: number;
+  caHai: number;
+  /** null khi tháng đó ô này quá ít cặp. */
+  bien: number | null;
+}
+
+export interface OCapDayDu extends OCapNgay {
+  theoThang: OCapThang[];
+  /**
+   * NÊN ÔM chỉ khi lời ở MỌI tháng đủ (ít nhất ba tháng) lẫn cả quãng; NÉ RA
+   * khi lỗ ở mọi tháng đủ. Tháng đang chạy dở không được tham gia gắn nhãn.
+   */
+  nhan: NhanO;
+}
+
+export interface ThongKeCapThang {
+  cacThang: string[];
+  thangDangChay: string;
+  bang: OCapDayDu[];
+  soOm: number;
+  soNe: number;
+}
+
+export function thongKeCapTheoThang(ky: KyDa[], region: Region, tran = 10): ThongKeCapThang | null {
+  const tong = thongKeDa(ky, region, tran);
+  if (!tong) return null;
+  const gia = GIA_DA[region];
+  const trung = TRUNG_DA[region];
+
+  const theoThang = new Map<string, KyDa[]>();
+  for (const k of ky) {
+    const t = k.date.slice(0, 7);
+    const a = theoThang.get(t);
+    if (a) a.push(k);
+    else theoThang.set(t, [k]);
+  }
+  const cacThang = [...theoThang.keys()].sort();
+  const thangDangChay = cacThang[cacThang.length - 1] ?? "";
+  const demThang = new Map(cacThang.map((t) => [t, demCapTheoNgay(theoThang.get(t)!, tran)]));
+  const thangDu = new Set(
+    cacThang.filter((t) => t !== thangDangChay && theoThang.get(t)!.length >= KY_TOI_THIEU_THANG)
+  );
+
+  let soOm = 0, soNe = 0;
+  const bang: OCapDayDu[] = tong.bang.map((o) => {
+    const key = `${o.i}-${o.j}`;
+    const ds: OCapThang[] = cacThang.map((t) => {
+      const v = demThang.get(t)!.get(key) ?? { dip: 0, caHai: 0 };
+      const thu = v.dip * gia;
+      return {
+        thang: t,
+        dip: v.dip,
+        caHai: v.caHai,
+        bien: v.dip >= DIP_TOI_THIEU ? ((thu - v.caHai * trung) / thu) * 100 : null,
+      };
+    });
+    const xet = ds.filter((x) => thangDu.has(x.thang) && x.bien != null).map((x) => x.bien as number);
+    let nhan: NhanO = "chua";
+    if (xet.length >= 3 && o.bien > 0 && xet.every((v) => v > 0)) nhan = "om";
+    else if (xet.length >= 3 && o.bien < 0 && xet.every((v) => v < 0)) nhan = "ne";
+    if (nhan === "om") soOm++;
+    if (nhan === "ne") soNe++;
+    return { ...o, theoThang: ds, nhan };
+  });
+
+  return { cacThang, thangDangChay, bang, soOm, soNe };
+}
+
+export interface KiemThuDa {
+  kyHoc: number;
+  kyThi: number;
+  soO: number;
+  soOChon: number;
+  bienChon: number;
+  bienTatCa: number;
+  laiChon: number;
+  laiTatCa: number;
+}
+
+/**
+ * Phần giữ cho bảng cặp ngày thật thà: chọn ô có lời trên NỬA ĐẦU, rồi chỉ ôm
+ * những ô đó ở NỬA SAU, so với cứ ôm đều mọi ô. Nếu biết chọn ô mà có giá trị
+ * thì nửa sau phải hơn hẳn; nếu ngang nhau thì bảng xếp hạng ô là may rủi.
+ */
+export function kiemThuDa(ky: KyDa[], region: Region, tran = 10): KiemThuDa | null {
+  const giua = Math.floor(ky.length / 2);
+  if (giua < 20) return null;
+  const gia = GIA_DA[region];
+  const trung = TRUNG_DA[region];
+  const hoc = demCapTheoNgay(ky.slice(0, giua), tran);
+  const thi = demCapTheoNgay(ky.slice(giua), tran);
+
+  const chon = new Set<string>();
+  for (const [key, v] of hoc) {
+    if (v.dip >= DIP_TOI_THIEU && v.dip * gia - v.caHai * trung > 0) chon.add(key);
+  }
+  let thuC = 0, traC = 0, thuA = 0, traA = 0;
+  for (const [key, v] of thi) {
+    thuA += v.dip * gia;
+    traA += v.caHai * trung;
+    if (chon.has(key)) {
+      thuC += v.dip * gia;
+      traC += v.caHai * trung;
+    }
+  }
+  return {
+    kyHoc: giua,
+    kyThi: ky.length - giua,
+    soO: hoc.size,
+    soOChon: chon.size,
+    bienChon: thuC > 0 ? ((thuC - traC) / thuC) * 100 : 0,
+    bienTatCa: thuA > 0 ? ((thuA - traA) / thuA) * 100 : 0,
+    laiChon: thuC - traC,
+    laiTatCa: thuA - traA,
+  };
+}
