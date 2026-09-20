@@ -6,6 +6,7 @@ import { dungKy } from "@/lib/slot-stats";
 import { GIA_DA, TRUNG_DA, bienDa, soTungKy, soVong, tinhVe } from "@/lib/da";
 import DaBaoCaoThang from "./DaBaoCaoThang";
 import DaCapNgay from "./DaCapNgay";
+import DaKyToi from "./DaKyToi";
 import DaTungKy from "./DaTungKy";
 import ThuGon from "./ThuGon";
 import { REGION_LABELS, type Region } from "@/lib/types";
@@ -53,6 +54,10 @@ export default function SoDaPage({ region }: { region: Region }) {
 
   return (
     <div className="space-y-4 md:space-y-6">
+      {/* Đứng đầu tab, như "Ngày Mai Ôm Sao" đứng đầu Dashboard: câu người ta
+          hỏi trước tiên là kỳ tới ôm con nào, thống kê để sau. */}
+      {draws && ky && <DaKyToi draws={draws} ky={ky} region={region} />}
+
       {/* ── Giá và phần ăn ─────────────────────────────────────────── */}
       <section className="plate rise rise-1">
         <div className="plate-hd">

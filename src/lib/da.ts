@@ -480,3 +480,45 @@ export function kiemThuDa(ky: KyDa[], region: Region, tran = 10): KiemThuDa | nu
     laiTatCa: thuA - traA,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Kỳ tới: con nào đang ở ngày nào
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface KetQuaKy {
+  date: string;
+  hits: Record<string, number>;
+}
+
+const cachNgay = (sau: string, truoc: string) => {
+  const [y1, m1, d1] = sau.split("-").map(Number);
+  const [y2, m2, d2] = truoc.split("-").map(Number);
+  return Math.max(0, Math.round((Date.UTC(y1, m1 - 1, d1) - Date.UTC(y2, m2 - 1, d2)) / 86_400_000));
+};
+
+/**
+ * Sáng kỳ tới, mỗi con đang khô mấy kỳ.
+ *
+ * Mọi thống kê của tab đều nhìn về phía sau; người vận hành thì hỏi câu ngược
+ * lại — "nhìn không biết ôm con nào". Muốn trả lời bằng con số cụ thể thì phải
+ * biết ngay lúc này từng con đang đứng ở ngày nào. Tính đúng theo luật của
+ * `dungKy` (đếm theo ngày lịch kể từ lần về cuối), để "ngày" ở đây và "ngày"
+ * trong bảng thống kê là cùng một thứ.
+ */
+export function khoKyToi(draws: KetQuaKy[]): { ngayCuoi: string; kho: Record<string, number> } | null {
+  if (draws.length === 0) return null;
+  const sap = [...draws].sort((a, b) => a.date.localeCompare(b.date));
+  const ngayCuoi = sap[sap.length - 1].date;
+  const veCuoi = new Map<string, string>();
+  for (const d of sap) {
+    for (const [lo, c] of Object.entries(d.hits)) if ((Number(c) || 0) > 0) veCuoi.set(lo, d.date);
+  }
+  const kho: Record<string, number> = {};
+  for (let i = 0; i < 100; i++) {
+    const lo = String(i).padStart(2, "0");
+    const last = veCuoi.get(lo);
+    // Chưa từng về trong kho thì coi như khô suốt từ kỳ đầu.
+    kho[lo] = last ? cachNgay(ngayCuoi, last) : cachNgay(ngayCuoi, sap[0].date) + 1;
+  }
+  return { ngayCuoi, kho };
+}
