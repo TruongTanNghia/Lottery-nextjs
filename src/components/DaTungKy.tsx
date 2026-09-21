@@ -23,7 +23,7 @@ const CUA_SO = [30, 60, 90, 0] as const;
  * trả thì do số con về quyết định, và quyết định theo bình phương. Nhìn cột đó
  * cạnh cột lời/lỗ là hiểu ngay vì sao đá có những kỳ lỗ rất sâu.
  */
-export default function DaTungKy({ rows, region }: { rows: KyDaRow[]; region: Region }) {
+export default function DaTungKy({ rows, region, daCai = false }: { rows: KyDaRow[]; region: Region; daCai?: boolean }) {
   const [soKy, setSoKy] = useState<number>(30);
   const [moBang, setMoBang] = useState(false);
 
@@ -57,7 +57,10 @@ export default function DaTungKy({ rows, region }: { rows: KyDaRow[]; region: Re
         <div>
           <h2 className="plate-title">📒 Đá Lời Hay Lỗ — Từng Kỳ</h2>
           <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-            {REGION_LABELS[region]} · ôm đều 1 điểm mỗi cặp · kỳ nào cũng thu {tien(rows[0].thu)}
+            {REGION_LABELS[region]} ·{" "}
+            {daCai
+              ? "tính theo Bảng Tiền Đá đã lưu — kỳ nào thu bao nhiêu tuỳ số cặp rơi vào từng ô"
+              : `ôm đều 1 điểm mỗi cặp · kỳ nào cũng thu ${tien(rows[0].thu)}`}
           </p>
         </div>
       </div>

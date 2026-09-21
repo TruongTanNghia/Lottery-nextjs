@@ -522,3 +522,80 @@ export function khoKyToi(draws: KetQuaKy[]): { ngayCuoi: string; kho: Record<str
   }
   return { ngayCuoi, kho };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bảng tiền đá — mỗi ô một mức riêng
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Khách duyệt khung rồi xin đúng một thứ: "tách riêng từng ô để em cài tiền vào
+// được — ngày 1 đá với nhau, ngày 2 đá với nhau… ngày này đá chéo ngày kia, cho
+// tất cả 10 ngày". Tức là bản đá của "Bảng Hạn Mức 100 Lô": mỗi ô (cặp ngày)
+// một số điểm, 0 là chặn. Mọi thống kê của tab sau đó tính theo đúng bảng này,
+// chứ không theo cuốn sổ ôm đều 1 điểm nữa.
+
+/** "i-j" với i ≤ j  →  số điểm nhận cho MỖI cặp rơi vào ô đó. 0 = chặn. */
+export type BangDa = Record<string, number>;
+
+export const DIEM_DA_MAC_DINH = 1;
+export const DIEM_DA_TOI_DA = 100_000;
+
+export const khoaCap = (i: number, j: number) => `${Math.min(i, j)}-${Math.max(i, j)}`;
+
+/** Mọi ô, cùng-ngày đứng trước rồi tới đá chéo — đúng thứ tự khách liệt kê. */
+export function moiOCap(tran = 10): { i: number; j: number; cungNgay: boolean }[] {
+  const out: { i: number; j: number; cungNgay: boolean }[] = [];
+  for (let i = 0; i <= tran; i++) out.push({ i, j: i, cungNgay: true });
+  for (let i = 0; i <= tran; i++) for (let j = i + 1; j <= tran; j++) out.push({ i, j, cungNgay: false });
+  return out;
+}
+
+export function bangMacDinh(tran = 10): BangDa {
+  const b: BangDa = {};
+  for (const o of moiOCap(tran)) b[khoaCap(o.i, o.j)] = DIEM_DA_MAC_DINH;
+  return b;
+}
+
+/**
+ * Dọn một bảng đọc từ ngoài vào: đủ mọi ô, số nguyên, không âm, có trần.
+ *
+ * Thứ gì lạ thì bỏ chứ không đoán — đây là bảng tiền. Ô thiếu thì về mức mặc
+ * định, để một bảng lưu từ bản cũ ít ô hơn vẫn mở ra dùng được.
+ */
+export function chuanHoaBang(raw: unknown, tran = 10): BangDa {
+  const b = bangMacDinh(tran);
+  if (!raw || typeof raw !== "object") return b;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!(k in b)) continue;
+    const n = Number(v);
+    if (!Number.isFinite(n)) continue;
+    b[k] = Math.max(0, Math.min(DIEM_DA_TOI_DA, Math.round(n)));
+  }
+  return b;
+}
+
+/**
+ * Chốt sổ từng kỳ theo bảng tiền: mỗi cặp ôm đúng số điểm của ô nó rơi vào.
+ *
+ * Bảng toàn 1 điểm thì ra y hệt `soTungKy` — bài kiểm giữ chặt điều đó, để hai
+ * đường tính không bao giờ lệch nhau.
+ */
+export function soTungKyTheoBang(ky: KyDa[], region: Region, bang: BangDa, tran = 10): KyDaRow[] {
+  const gia = GIA_DA[region];
+  const trung = TRUNG_DA[region];
+  let don = 0;
+  return ky.map((k) => {
+    let h = 0;
+    for (const lo of Object.keys(k.kho)) if ((k.ve[lo] ?? 0) > 0) h++;
+    let soCap = 0, capTrung = 0, thu = 0, tra = 0;
+    for (const [key, v] of demCapTheoNgay([k], tran)) {
+      const diem = bang[key] ?? 0;
+      if (diem <= 0) continue;
+      soCap += v.dip;
+      capTrung += v.caHai;
+      thu += v.dip * diem * gia;
+      tra += v.caHai * diem * trung;
+    }
+    don += thu - tra;
+    return { date: k.date, soLoVe: h, soCap, capTrung, thu, tra, lai: thu - tra, don };
+  });
+}

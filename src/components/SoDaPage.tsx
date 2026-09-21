@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import { dungKy } from "@/lib/slot-stats";
-import { GIA_DA, TRUNG_DA, bienDa, soTungKy, soVong, tinhVe } from "@/lib/da";
+import { GIA_DA, TRUNG_DA, bangMacDinh, bienDa, chuanHoaBang, soTungKyTheoBang, soVong, tinhVe, type BangDa } from "@/lib/da";
+import DaBangTien from "./DaBangTien";
 import DaBaoCaoThang from "./DaBaoCaoThang";
 import DaCapNgay from "./DaCapNgay";
 import DaKyToi from "./DaKyToi";
@@ -48,8 +49,30 @@ export default function SoDaPage({ region }: { region: Region }) {
     return () => { huy = true; };
   }, [region]);
 
+  // Bảng tiền đá đã lưu của miền này. Mọi khối thống kê bên dưới tính theo nó.
+  const [bang, setBang] = useState<BangDa | null>(null);
+  const [luuLuc, setLuuLuc] = useState<string | null>(null);
+  // Tăng mỗi lần lưu, để Báo Cáo Tháng (tự tải bảng của cả ba miền) biết mà tải lại.
+  const [phienBan, setPhienBan] = useState(0);
+
+  useEffect(() => {
+    let huy = false;
+    setBang(null);
+    setLuuLuc(null);
+    fetch(`/api/config/da?region=${region}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (huy) return;
+        setBang(chuanHoaBang(d?.data?.bang));
+        setLuuLuc(typeof d?.data?.luuLuc === "string" ? d.data.luuLuc : null);
+      })
+      // Không đọc được bảng thì chạy bảng mặc định, chứ không để cả tab trắng.
+      .catch(() => !huy && setBang(bangMacDinh()));
+    return () => { huy = true; };
+  }, [region]);
+
   const ky = useMemo(() => (draws ? dungKy(draws) : null), [draws]);
-  const rows = useMemo(() => (ky ? soTungKy(ky, region) : null), [ky, region]);
+  const rows = useMemo(() => (ky && bang ? soTungKyTheoBang(ky, region, bang) : null), [ky, region, bang]);
   const chuan = bienDa(region);
 
   return (
@@ -60,7 +83,24 @@ export default function SoDaPage({ region }: { region: Region }) {
 
       {draws && ky && (
         <div id="da-kytoi" style={{ scrollMarginTop: 150 }}>
-          <DaKyToi draws={draws} ky={ky} region={region} />
+          <DaKyToi draws={draws} ky={ky} region={region} bang={bang ?? undefined} />
+        </div>
+      )}
+
+      {draws && ky && bang && (
+        <div id="da-bangtien" style={{ scrollMarginTop: 150 }}>
+          <DaBangTien
+            draws={draws}
+            ky={ky}
+            region={region}
+            bang={bang}
+            luuLuc={luuLuc}
+            onLuu={(b, l) => {
+              setBang(b);
+              setLuuLuc(l);
+              setPhienBan((v) => v + 1);
+            }}
+          />
         </div>
       )}
 
@@ -130,18 +170,18 @@ export default function SoDaPage({ region }: { region: Region }) {
 
       {/* ── Ba khối thống kê, cùng khuôn Dashboard ──────────────────── */}
       <div id="da-thang" style={{ scrollMarginTop: 150 }}>
-        <DaBaoCaoThang />
+        <DaBaoCaoThang phienBan={phienBan} />
       </div>
 
       {loi && <p className="text-sm text-[#ff9d9d]">{loi}</p>}
-      {!ky && !loi && (
+      {(!ky || !rows) && !loi && (
         <section className="plate rise rise-3">
           <div className="p-4 text-sm text-[var(--text-muted)]">Đang tính…</div>
         </section>
       )}
       {ky && rows && (
         <div id="da-tungky" style={{ scrollMarginTop: 150 }}>
-          <DaTungKy rows={rows} region={region} />
+          <DaTungKy rows={rows} region={region} daCai={!!bang && Object.values(bang).some((v) => v !== 1)} />
         </div>
       )}
       {ky && (
@@ -168,6 +208,7 @@ export default function SoDaPage({ region }: { region: Region }) {
 function DieuHuong() {
   const MUC: [string, string][] = [
     ["da-kytoi", "🌅 Kỳ tới đá con nào"],
+    ["da-bangtien", "💰 Cài tiền từng ô"],
     ["da-gia", "🎲 Giá"],
     ["da-thang", "📅 Báo cáo tháng"],
     ["da-tungky", "📒 Từng kỳ"],

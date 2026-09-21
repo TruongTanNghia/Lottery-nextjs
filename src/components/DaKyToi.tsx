@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
   GIA_DA, TRUNG_DA, bienDa, khoKyToi, soVong, thongKeCapTheoThang,
-  type KyDa, type NhanO,
+  type BangDa, type KyDa, type NhanO,
 } from "@/lib/da";
 import { useToast } from "./Toast";
 import { REGION_LABELS, type Region } from "@/lib/types";
@@ -53,7 +53,15 @@ type Chon = { kieu: "con"; lo: string } | { kieu: "o"; i: number; j: number } | 
  * Câu trả lời thật cho "ôm con nào" bên đá vẫn là: ôm hết, vì đá lời nhờ giá.
  * Ba ô tiền trên cùng nói điều đó; phần xanh đỏ là tinh chỉnh, và có ghi rõ.
  */
-export default function DaKyToi({ draws, ky, region }: { draws: DrawHits[]; ky: KyDa[]; region: Region }) {
+export default function DaKyToi({
+  draws, ky, region, bang,
+}: {
+  draws: DrawHits[];
+  ky: KyDa[];
+  region: Region;
+  /** Bảng Tiền Đá đã lưu. Không có thì ba ô tiền tính như ôm đều 1 điểm. */
+  bang?: BangDa;
+}) {
   const toast = useToast();
   const [chon, setChon] = useState<Chon>(null);
   const [go, setGo] = useState("");
@@ -87,9 +95,18 @@ export default function DaKyToi({ draws, ky, region }: { draws: DrawHits[]; ky: 
   if (!tt || !tkt || !d) return null;
 
   const chuan = bienDa(region);
-  const tongCap = soVong(100);
-  const thu = tongCap * GIA_DA[region];
-  const traTB = tongCap * chuan.p * TRUNG_DA[region];
+  // Kỳ tới mỗi ô có bao nhiêu cặp thì đã biết chắc, nên tiền nhận tối đa theo
+  // bảng tiền cũng tính ra chắc: cặp của ô × điểm của ô × giá.
+  const daCai = !!bang && Object.values(bang).some((v) => v !== 1);
+  let capNhan = 0, diemCap = 0;
+  for (const x of tkt.bang) {
+    const soCap = x.i === x.j ? soVong(d.nhom[x.i].length) : d.nhom[x.i].length * d.nhom[x.j].length;
+    const diem = bang ? bang[`${x.i}-${x.j}`] ?? 0 : 1;
+    if (diem > 0) capNhan += soCap;
+    diemCap += soCap * diem;
+  }
+  const thu = diemCap * GIA_DA[region];
+  const traTB = diemCap * chuan.p * TRUNG_DA[region];
 
   const kyToi = (() => {
     const [y, m, n] = tt.ngayCuoi.split("-").map(Number);
@@ -174,7 +191,12 @@ export default function DaKyToi({ draws, ky, region }: { draws: DrawHits[]; ky: 
 
         {/* Câu trả lời thẳng: ba ô tiền, một câu. */}
         <div className="grid grid-cols-3 gap-2">
-          <OTien nhan="Ôm hết 4.950 cặp" gt={tien(thu)} phu="thu mỗi kỳ, 1 điểm/cặp" m="#34e6a8" />
+          <OTien
+            nhan={daCai ? `Nhận ${capNhan.toLocaleString("vi-VN")} cặp` : "Ôm hết 4.950 cặp"}
+            gt={tien(thu)}
+            phu={daCai ? "thu kỳ tới nếu khách đánh kín Bảng Tiền" : "thu mỗi kỳ, 1 điểm/cặp"}
+            m="#34e6a8"
+          />
           <OTien nhan="Chờ đợi trả" gt={tien(traTB)} phu={`${(chuan.p * 100).toFixed(2)}% cặp cùng về`} m="#ff6b78" />
           <OTien nhan="Chờ đợi lời" gt={"+" + tien(thu - traTB)} phu={`phần ăn ${pc(chuan.bien)}`} m="#ffd24a" />
         </div>

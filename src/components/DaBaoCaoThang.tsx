@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import { dungKy } from "@/lib/slot-stats";
-import { bienDa, doLechKy, gomThang, soTungKy, type ThangDa } from "@/lib/da";
+import { bangMacDinh, bienDa, chuanHoaBang, doLechKy, gomThang, soTungKyTheoBang, type ThangDa } from "@/lib/da";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
 const MIEN: Region[] = ["xsmn", "xsmt", "xsmb"];
@@ -27,19 +27,23 @@ interface MienDa {
   bienChuan: number;
   tuNgay: string;
   denNgay: string;
+  /** Miền này đã có người cài bảng tiền riêng chưa, hay vẫn 1 điểm mọi ô. */
+  daCai: boolean;
+  soOChan: number;
 }
 
 /**
  * Báo cáo tháng của sổ đá — cùng khuôn với Báo Cáo Tháng bên Dashboard.
  *
- * Cuốn sổ đem ra đo: ôm đều 1 điểm mỗi cặp, đủ 4.950 cặp ghép từ 100 con. Bên
+ * Cuốn sổ đem ra đo: mỗi cặp ôm đúng số điểm của ô nó rơi vào trong Bảng Tiền
+ * Đá của miền đó (chưa cài thì là 1 điểm mọi ô, đủ 4.950 cặp). Bên
  * lô, mức chờ đợi của một tháng là 0 nên câu hỏi chỉ là "lệch bao nhiêu thì
  * còn bình thường". Bên đá mức chờ đợi DƯƠNG, nên mỗi tháng phải so với hai
  * thứ: mức chờ đợi của nó, và khoảng dao động quanh mức đó. Một tháng đá lỗ
  * không có nghĩa là giá sai — tháng nào đông con về thì số cặp trúng tăng theo
  * bình phương, nên dao động của đá rộng hơn lô nhiều.
  */
-export default function DaBaoCaoThang() {
+export default function DaBaoCaoThang({ phienBan = 0 }: { phienBan?: number }) {
   const [ds, setDs] = useState<MienDa[] | null>(null);
   const [loi, setLoi] = useState<string | null>(null);
 
@@ -47,9 +51,14 @@ export default function DaBaoCaoThang() {
     let huy = false;
     Promise.all(
       MIEN.map(async (r) => {
-        const h = await fetch(`/api/history/hits?region=${r}`).then((x) => x.json());
+        const [h, c] = await Promise.all([
+          fetch(`/api/history/hits?region=${r}`).then((x) => x.json()),
+          // Không đọc được bảng thì tính theo bảng mặc định, không để báo cáo trắng.
+          fetch(`/api/config/da?region=${r}`).then((x) => x.json()).catch(() => null),
+        ]);
         const ky = dungKy((h.draws ?? []) as DrawHits[]);
-        const rows = soTungKy(ky, r);
+        const bang = c?.data?.bang ? chuanHoaBang(c.data.bang) : bangMacDinh();
+        const rows = soTungKyTheoBang(ky, r, bang);
         return {
           region: r,
           thang: gomThang(rows),
@@ -57,13 +66,15 @@ export default function DaBaoCaoThang() {
           bienChuan: bienDa(r).bien,
           tuNgay: rows[0]?.date ?? "",
           denNgay: rows[rows.length - 1]?.date ?? "",
+          daCai: Object.values(bang).some((v) => v !== 1),
+          soOChan: Object.values(bang).filter((v) => v <= 0).length,
         };
       })
     )
       .then((x) => !huy && setDs(x))
       .catch(() => !huy && setLoi("Không tải được dữ liệu báo cáo"));
     return () => { huy = true; };
-  }, []);
+  }, [phienBan]);
 
   const cacThang = useMemo(() => {
     if (!ds) return [];
@@ -77,7 +88,7 @@ export default function DaBaoCaoThang() {
         <div>
           <h2 className="plate-title">📅 Báo Cáo Tháng — Số Đá</h2>
           <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-            Ôm đều 1 điểm mỗi cặp, đủ 4.950 cặp · mỗi tháng đứng riêng
+            {ds?.some((d) => d.daCai) ? "Tính theo Bảng Tiền Đá đã lưu của từng miền" : "Ôm đều 1 điểm mỗi cặp, đủ 4.950 cặp"} · mỗi tháng đứng riêng
             {ds?.[0]?.tuNgay && ` · đo từ ${ds[0].tuNgay.slice(8, 10)}/${ds[0].tuNgay.slice(5, 7)}`}
           </p>
         </div>
@@ -177,8 +188,21 @@ export default function DaBaoCaoThang() {
           })}
 
         <div className="rounded-lg border border-[rgba(251,191,36,0.45)] bg-[rgba(245,158,11,0.09)] px-3 py-2.5 text-[0.74rem] leading-relaxed text-[#ffe9c4]">
-          <b>Đọc báo cáo này thế nào.</b> Đây là cuốn sổ <b>mô phỏng ôm đều</b> — mỗi cặp 1 điểm, đủ
-          4.950 cặp mỗi kỳ — để đo xem <b>giá đá</b> đang chạy cho ra gì trên kết quả xổ thật. Nó
+          <b>Đọc báo cáo này thế nào.</b> Đây là cuốn sổ <b>mô phỏng</b> — mỗi cặp ôm đúng số điểm đã cài
+          cho ô của nó trong <b>Bảng Tiền Đá</b>
+          {ds && (
+            <>
+              {" "}(
+              {ds.map((d, i) => (
+                <span key={d.region}>
+                  {i > 0 && " · "}
+                  {TEN_NGAN[d.region]}: {d.daCai ? `đã cài riêng${d.soOChan > 0 ? `, chặn ${d.soOChan} ô` : ""}` : "1 điểm mọi ô"}
+                </span>
+              ))}
+              )
+            </>
+          )}{" "}
+          — để đo xem <b>giá đá</b> đang chạy cho ra gì trên kết quả xổ thật. Nó
           chưa phải tiền đá thật trong túi, vì máy chưa có sổ đá thật. Đá dao động mạnh hơn lô: kỳ nào
           đông con về thì số cặp trúng tăng rất nhanh (30 con về là 435 cặp, 36 con về đã là 630
           cặp), nên một tháng lỗ vẫn có thể nằm trong khoảng bình thường.
