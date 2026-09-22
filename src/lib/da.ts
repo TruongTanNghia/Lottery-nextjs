@@ -660,31 +660,103 @@ export function capBiChan(kho: Record<string, number>, bang: BangDa, tran = 10):
   return out;
 }
 
-/** "st tv ag …: 01 00; 10 01; … dx0n" — hậu tố là chữ của khách: đá xiên, 0 nhận. */
+/** Hậu tố là chữ của khách: đá xiên, 0 nhận. */
 export const HAU_TO_CHAN_DA = "dx0n";
 
 /**
- * Chia danh sách cặp thành các khối, mỗi khối là MỘT chuỗi dán được trọn vẹn
- * (đủ đầu đài lẫn đuôi dx0n) và không dài quá `toiDa` ký tự. Khách sợ đúng
+ * Gom các cặp bị chặn thành VÒNG để chuỗi ngắn lại.
+ *
+ * Khách: "số nào xếp vòng vào được với nhau thì mình cho nó theo vòng gọn
+ * gàng, để tiết kiệm ký tự tin nhắn; các số không theo vòng thì làm kiểu
+ * 01 10 dx0n 10 11 dx0n". Một vòng k con nghĩa là chặn đủ C(k,2) cặp của nó,
+ * nên một nhóm chỉ được gồm những con mà TỪNG CẶP trong nhóm đều đang bị chặn
+ * — gom lố một con là chặn nhầm cặp khách vẫn nhận. Bài kiểm giữ đúng điều đó:
+ * gộp mọi nhóm lại phải ra ĐÚNG tập cặp bị chặn, không thừa không thiếu.
+ *
+ * Tham lam: mỗi lượt dựng một nhóm lớn nhất có thể quanh con còn nhiều cặp
+ * chưa gom nhất, chỉ nhận thêm con nào kề với cả nhóm. Không tối ưu tuyệt đối
+ * (bài toán đó là NP-khó) nhưng với cấu trúc ô-bậc-ngày thì các bậc bị chặn
+ * "với nhau" gom được thành vòng rất to.
+ */
+export function nhomVong(cap: [string, string][]): string[][] {
+  const ke = new Map<string, Set<string>>();
+  const noi = (a: string, b: string) => {
+    let s = ke.get(a);
+    if (!s) ke.set(a, (s = new Set()));
+    s.add(b);
+  };
+  const kc = (a: string, b: string) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+  const chuaGom = new Set<string>();
+  for (const [a, b] of cap) {
+    if (a === b) continue;
+    noi(a, b);
+    noi(b, a);
+    chuaGom.add(kc(a, b));
+  }
+
+  const out: string[][] = [];
+  while (chuaGom.size > 0) {
+    // Con còn nhiều cặp chưa gom nhất làm hạt nhân.
+    const bac = new Map<string, number>();
+    for (const k of chuaGom) {
+      const [a, b] = k.split("-");
+      bac.set(a, (bac.get(a) ?? 0) + 1);
+      bac.set(b, (bac.get(b) ?? 0) + 1);
+    }
+    let hat = "", max = -1;
+    for (const [v, n] of bac) if (n > max || (n === max && v < hat)) (hat = v), (max = n);
+
+    const nhom = [hat];
+    let ungVien = [...(ke.get(hat) ?? [])];
+    while (ungVien.length > 0) {
+      // Chọn con phủ được nhiều cặp chưa gom nhất; hoà thì con còn nhiều bạn
+      // chung với các ứng viên còn lại, để nhóm còn lớn thêm được.
+      let tot: string | null = null, totMoi = -1, totBan = -1;
+      for (const v of ungVien) {
+        let moi = 0;
+        for (const u of nhom) if (chuaGom.has(kc(u, v))) moi++;
+        let ban = 0;
+        const kv = ke.get(v)!;
+        for (const w of ungVien) if (w !== v && kv.has(w)) ban++;
+        if (moi > totMoi || (moi === totMoi && (ban > totBan || (ban === totBan && v < tot!)))) (tot = v), (totMoi = moi), (totBan = ban);
+      }
+      if (!tot || totMoi === 0) break;
+      nhom.push(tot);
+      const kt = ke.get(tot)!;
+      ungVien = ungVien.filter((w) => w !== tot && kt.has(w));
+    }
+    nhom.sort();
+    for (let i = 0; i < nhom.length; i++) for (let j = i + 1; j < nhom.length; j++) chuaGom.delete(kc(nhom[i], nhom[j]));
+    out.push(nhom);
+  }
+  return out;
+}
+
+/** "01 10 11 dx0n" — một nhóm thành một mẩu dán được. */
+export const mauNhom = (nhom: string[]) => `${nhom.join(" ")} ${HAU_TO_CHAN_DA}`;
+
+/**
+ * Chia các nhóm thành các khối, mỗi khối là MỘT chuỗi dán được trọn vẹn (đủ
+ * đầu đài, không đứt giữa nhóm) và không dài quá `toiDa` ký tự. Khách sợ đúng
  * chỗ này: "e sợ Tele hạn chế ký tự".
  */
-export function chiaKhoiChanDa(dau: string, cap: [string, string][], toiDa: number): string[] {
-  if (cap.length === 0) return [];
-  const mo = `${dau}: `, dong = ` ${HAU_TO_CHAN_DA}`;
+export function chiaKhoiChanDa(dau: string, nhom: string[][], toiDa: number): string[] {
+  if (nhom.length === 0) return [];
+  const mo = `${dau}: `;
   const khoi: string[] = [];
   let hien: string[] = [];
-  let dai = mo.length + dong.length;
-  for (const [a, b] of cap) {
-    const c = `${a} ${b}`;
-    const them = c.length + (hien.length ? 2 : 0);
+  let dai = mo.length;
+  for (const n of nhom) {
+    const c = mauNhom(n);
+    const them = c.length + (hien.length ? 1 : 0);
     if (hien.length && dai + them > toiDa) {
-      khoi.push(mo + hien.join("; ") + dong);
+      khoi.push(mo + hien.join(" "));
       hien = [];
-      dai = mo.length + dong.length;
+      dai = mo.length;
     }
     hien.push(c);
-    dai += c.length + (hien.length > 1 ? 2 : 0);
+    dai += c.length + (hien.length > 1 ? 1 : 0);
   }
-  if (hien.length) khoi.push(mo + hien.join("; ") + dong);
+  if (hien.length) khoi.push(mo + hien.join(" "));
   return khoi;
 }

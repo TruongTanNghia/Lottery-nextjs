@@ -21,7 +21,7 @@ import { esc } from "@/lib/telegram";
 import { baoCaoTheoThang } from "@/lib/profit-calculator";
 import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
 import { bangHieuLuc } from "@/lib/da-bang";
-import { chiaKhoiChanDa } from "@/lib/da";
+import { chiaKhoiChanDa, nhomVong } from "@/lib/da";
 
 // Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
 // list is read side by side with theirs.
@@ -391,20 +391,24 @@ export async function chanSoAll(): Promise<string> {
 /**
  * /chanlq <miền> — lệnh chặn đá cho người ghi cược.
  *
- * Khách gõ mẫu: "st tv ag … hg: 01 00; 10 01; … dx0n", và dặn "3 lệnh riêng
- * biệt nha a, e sợ Tele hạn chế ký tự". Nên mỗi miền một lệnh, và một miền mà
- * dài quá thì cắt thành nhiều khối — khối nào cũng là một chuỗi dán được trọn
- * vẹn, có đầu đài lẫn đuôi dx0n, chứ không cắt ngang giữa cặp.
+ * Khách dặn "3 lệnh riêng biệt nha a, e sợ Tele hạn chế ký tự", rồi chốt dạng
+ * gọn: "số nào xếp vòng vào được với nhau thì cho theo vòng — các số không
+ * theo vòng thì làm kiểu 01 10 dx0n 10 11 dx0n". Nên mỗi miền một lệnh, cặp
+ * bị chặn gom thành vòng (nhomVong), và một miền mà dài quá thì cắt thành
+ * nhiều khối — khối nào cũng là một chuỗi dán được trọn vẹn, không đứt giữa
+ * vòng.
  *
  * Cặp nào bị chặn là do Bảng Tiền Đá trên web quyết (ô cài 0, hoặc luật tự
  * động "dưới phần ăn theo giá thì chặn"). Bot chỉ đọc ra, không sửa gì.
  */
 export async function chanDa(region: Region): Promise<string> {
   const h = await bangHieuLuc(region);
-  const khoi = chiaKhoiChanDa(provincePrefix(region), h.capChan, SAFE_BLOCK);
+  const nhom = nhomVong(h.capChan);
+  const khoi = chiaKhoiChanDa(provincePrefix(region), nhom, SAFE_BLOCK);
   const soOChan = Object.values(h.bang).filter((v) => v <= 0).length;
+  const soVong = nhom.filter((n) => n.length > 2).length;
   const head = [
-    `<b>${label(region)} · chặn đá</b> · ${num(h.capChan.length)} cặp · ${soOChan}/66 ô`,
+    `<b>${label(region)} · chặn đá</b> · ${num(h.capChan.length)} cặp · ${soOChan}/66 ô · gom ${soVong} vòng + ${num(nhom.length - soVong)} cặp lẻ`,
     h.luu.tuDong
       ? `<i>luật tự động đang bật: chặn ${h.luat?.chan.length ?? 0} ô dưới ${h.luat ? h.luat.nguong.toFixed(2).replace(".", ",") : "?"}%${
           h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""

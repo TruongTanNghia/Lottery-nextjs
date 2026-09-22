@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
   CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, TRUNG_DA, apLuatTuDong, bangMacDinh, bienDa,
-  capBiChan, chiaKhoiChanDa, khoKyToi, khoaCap, soVong, thongKeCapTheoThang, thongKeDa,
+  capBiChan, chiaKhoiChanDa, khoKyToi, khoaCap, nhomVong, soVong, thongKeCapTheoThang, thongKeDa,
   type BangDa, type KyDa, type OCapDayDu,
 } from "@/lib/da";
 import { provincePrefix } from "@/lib/provinces";
@@ -121,8 +121,10 @@ export default function DaBangTien({
   const lenhChan = useMemo(() => {
     if (!tt) return null;
     const cap = capBiChan(tt.kho, hieuLuc, TRAN);
-    const chuoi = chiaKhoiChanDa(provincePrefix(region), cap, Number.POSITIVE_INFINITY)[0] ?? "";
-    return { cap, chuoi };
+    // Gom vòng như bot, để chuỗi copy trên web và chuỗi bot trả là một.
+    const nhom = nhomVong(cap);
+    const chuoi = chiaKhoiChanDa(provincePrefix(region), nhom, Number.POSITIVE_INFINITY)[0] ?? "";
+    return { cap, nhom, soVong: nhom.filter((n) => n.length > 2).length, chuoi };
   }, [tt, hieuLuc, region]);
 
   if (!tk || !tkt || !tong) return null;
@@ -296,6 +298,9 @@ export default function DaBangTien({
               <span className="eyebrow">Lệnh chặn đá kỳ tới</span>
               <span className="text-[0.72rem] text-[var(--text-secondary)]">
                 <b className="text-white" data-lenh-so-cap>{so(lenhChan.cap.length)} cặp</b> theo bảng đang gõ
+                {lenhChan.cap.length > 0 && (
+                  <> — gom thành <b className="text-white">{lenhChan.soVong} vòng</b> + {so(lenhChan.nhom.length - lenhChan.soVong)} cặp lẻ, {so(lenhChan.chuoi.length)} ký tự</>
+                )}
                 {doi > 0 && <span className="text-[#ffd24a]"> (chưa lưu — bot vẫn trả theo bản đã lưu)</span>}
               </span>
               <button
@@ -309,7 +314,8 @@ export default function DaBangTien({
             </div>
             <div className="text-[0.66rem] text-[var(--text-muted)] mt-1">
               Trên Telegram gõ <code className="text-[#c2d4ea]">/chanlq {region === "xsmn" ? "mn" : region === "xsmt" ? "mt" : "mb"}</code>{" "}
-              là ra đúng chuỗi này (bot tự cắt khúc nếu dài).
+              là ra đúng chuỗi này (bot tự cắt khúc nếu dài). Mỗi mẩu <code className="text-[#c2d4ea]">a b c dx0n</code> là một
+              vòng: chặn mọi cặp trong đó.
             </div>
             {lenhChan.cap.length > 0 && (
               <code className="block mt-1.5 text-[0.66rem] leading-snug text-[#c2d4ea] break-all max-h-16 overflow-hidden" data-lenh-xem>
