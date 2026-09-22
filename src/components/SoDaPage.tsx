@@ -10,6 +10,7 @@ import {
 import DaBangTien from "./DaBangTien";
 import DaBaoCaoThang from "./DaBaoCaoThang";
 import DaCapNgay from "./DaCapNgay";
+import DaChotLoi from "./DaChotLoi";
 import DaKyToi from "./DaKyToi";
 import DaTungKy from "./DaTungKy";
 import ThuGon from "./ThuGon";
@@ -187,6 +188,11 @@ export default function SoDaPage({ region }: { region: Region }) {
         <DaBaoCaoThang phienBan={phienBan} />
       </div>
 
+      {/* Khách: "xem tổng 3 miền của đá, kiểu giống bên lô, nhìn giao diện đó quen rồi". */}
+      <div id="da-chotloi" style={{ scrollMarginTop: 150 }}>
+        <DaChotLoi phienBan={phienBan} />
+      </div>
+
       {loi && <p className="text-sm text-[#ff9d9d]">{loi}</p>}
       {(!ky || !rows) && !loi && (
         <section className="plate rise rise-3">
@@ -225,6 +231,7 @@ function DieuHuong() {
     ["da-bangtien", "💰 Cài tiền từng ô"],
     ["da-gia", "🎲 Giá"],
     ["da-thang", "📅 Báo cáo tháng"],
+    ["da-chotloi", "💰 Chốt lời sớm"],
     ["da-tungky", "📒 Từng kỳ"],
     ["da-capngay", "🎯 Cặp ngày"],
     ["da-vong", "🧮 Tính vòng"],
