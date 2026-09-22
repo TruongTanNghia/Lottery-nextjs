@@ -117,6 +117,7 @@ export function helpText(isAdmin = false): string {
     "<b>Chặn đá</b>",
     "<code>/chanlq</code> — cặp đá không nhận, cả 3 miền",
     "<code>/chanlq mn</code> — riêng một miền (mt, mb)",
+    "<code>/chanlq kl</code> — bản không lặp cặp (dài hơn)",
     "",
     "<b>Xem thêm</b>",
     "<code>/mn</code> <code>/mb</code> <code>/mt</code> — tóm tắt miền",
@@ -401,14 +402,16 @@ export async function chanSoAll(): Promise<string> {
  * Cặp nào bị chặn là do Bảng Tiền Đá trên web quyết (ô cài 0, hoặc luật tự
  * động "dưới phần ăn theo giá thì chặn"). Bot chỉ đọc ra, không sửa gì.
  */
-export async function chanDa(region: Region): Promise<string> {
+export async function chanDa(region: Region, khongLap = false): Promise<string> {
   const h = await bangHieuLuc(region);
-  const nhom = nhomVong(h.capChan);
+  const nhom = nhomVong(h.capChan, khongLap);
   const khoi = chiaKhoiChanDa(provincePrefix(region), nhom, SAFE_BLOCK, region);
   const soOChan = Object.values(h.bang).filter((v) => v <= 0).length;
   const soVong = nhom.filter((n) => n.length > 2).length;
   const head = [
-    `<b>${label(region)} · chặn đá</b> · ${num(h.capChan.length)} cặp · ${soOChan}/66 ô · gom ${soVong} vòng + ${num(nhom.length - soVong)} cặp lẻ`,
+    `<b>${label(region)} · chặn đá</b> · ${num(h.capChan.length)} cặp · ${soOChan}/66 ô · gom ${soVong} vòng + ${num(nhom.length - soVong)} cặp lẻ${
+      khongLap ? " · không lặp" : ""
+    }`,
     h.luu.tuDong
       ? `<i>luật tự động đang bật: chặn ${h.luat?.chan.length ?? 0} ô dưới ${h.luat ? h.luat.nguong.toFixed(2).replace(".", ",") : "?"}%${
           h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""
@@ -436,11 +439,11 @@ export async function chanDa(region: Region): Promise<string> {
  * nhãn ngắn rồi tới các khối <code>; bộ gửi cắt theo dòng ở 4000 nên một
  * khối (≤ 3400) không bao giờ bị đứt, và mỗi miền tự đứng riêng được.
  */
-export async function chanDaTatCa(): Promise<string> {
+export async function chanDaTatCa(khongLap = false): Promise<string> {
   const parts = await Promise.all(REGIONS.map(async (r) => ({ r, h: await bangHieuLuc(r) })));
-  const out: string[] = ["<b>🎲 Chặn đá cả 3 miền</b>"];
+  const out: string[] = [`<b>🎲 Chặn đá cả 3 miền</b>${khongLap ? " · không lặp cặp" : ""}`];
   for (const { r, h } of parts) {
-    const nhom = nhomVong(h.capChan);
+    const nhom = nhomVong(h.capChan, khongLap);
     const khoi = chiaKhoiChanDa(provincePrefix(r), nhom, SAFE_BLOCK, r);
     const soVong = nhom.filter((n) => n.length > 2).length;
     out.push(
@@ -703,8 +706,10 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
     case "/chanlq":
     case "/chanda": {
       const region = parseRegion(args);
-      if (!region) return (await staleWarningAll()) + (await chanDaTatCa());
-      return withWarning(region, chanDa);
+      // "/chanlq mb khonglap" (hay kl, 1): không cặp nào ghi hai lần, đổi lại dài hơn.
+      const khongLap = args.some((a) => /^(khonglap|khongtrung|kl|kt|1)$/.test(fold(a)));
+      if (!region) return (await staleWarningAll()) + (await chanDaTatCa(khongLap));
+      return withWarning(region, (r) => chanDa(r, khongLap));
     }
 
     case "/top": {

@@ -681,8 +681,16 @@ export const HAU_TO_CHAN_DA: Record<Region, string> = { xsmn: "dx0n", xsmt: "dx0
  * chưa gom nhất, chỉ nhận thêm con nào kề với cả nhóm. Không tối ưu tuyệt đối
  * (bài toán đó là NP-khó) nhưng với cấu trúc ô-bậc-ngày thì các bậc bị chặn
  * "với nhau" gom được thành vòng rất to.
+ *
+ * Mặc định một cặp CÓ THỂ nằm trong nhiều vòng: một bậc chặn với chính nó
+ * (vòng lõi) mà lại chặn chéo với nhiều con lẻ thì mỗi con lẻ được ghi "lõi +
+ * con đó" — 13 con lõi lặp lại 30 lần nhưng vẫn ngắn hơn ghi 30×13 cặp rời
+ * gấp mấy lần, và cặp lặp vẫn là cặp bị chặn thật. Khách soi thấy lặp và hỏi;
+ * `khongLap` là cho bên nào không nhận cặp ghi hai lần: chỉ thêm con nào mà
+ * MỌI cặp của nó với nhóm đều chưa gom — dài hơn, nhưng không cặp nào ghi
+ * quá một lần.
  */
-export function nhomVong(cap: [string, string][]): string[][] {
+export function nhomVong(cap: [string, string][], khongLap = false): string[][] {
   const ke = new Map<string, Set<string>>();
   const noi = (a: string, b: string) => {
     let s = ke.get(a);
@@ -719,6 +727,7 @@ export function nhomVong(cap: [string, string][]): string[][] {
       for (const v of ungVien) {
         let moi = 0;
         for (const u of nhom) if (chuaGom.has(kc(u, v))) moi++;
+        if (khongLap && moi < nhom.length) continue;
         let ban = 0;
         const kv = ke.get(v)!;
         for (const w of ungVien) if (w !== v && kv.has(w)) ban++;

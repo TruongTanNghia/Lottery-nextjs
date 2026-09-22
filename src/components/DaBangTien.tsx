@@ -74,6 +74,8 @@ export default function DaBangTien({
   /** Đá chéo: đang xem ngày nào ghép với các ngày khác. -1 = cả 55 ô. */
   const [ngay, setNgay] = useState(0);
   const [datHet, setDatHet] = useState("1");
+  /** Chuỗi chặn: cho phép một cặp nằm trong nhiều vòng (ngắn) hay không (dài hơn). */
+  const [khongLap, setKhongLap] = useState(false);
   const [dangLuu, setDangLuu] = useState(false);
 
   useEffect(() => setNhap(bang), [bang]);
@@ -122,10 +124,10 @@ export default function DaBangTien({
     if (!tt) return null;
     const cap = capBiChan(tt.kho, hieuLuc, TRAN);
     // Gom vòng như bot, để chuỗi copy trên web và chuỗi bot trả là một.
-    const nhom = nhomVong(cap);
+    const nhom = nhomVong(cap, khongLap);
     const chuoi = chiaKhoiChanDa(provincePrefix(region), nhom, Number.POSITIVE_INFINITY, region)[0] ?? "";
     return { cap, nhom, soVong: nhom.filter((n) => n.length > 2).length, chuoi };
-  }, [tt, hieuLuc, region]);
+  }, [tt, hieuLuc, region, khongLap]);
 
   if (!tk || !tkt || !tong) return null;
 
@@ -303,6 +305,17 @@ export default function DaBangTien({
                 )}
                 {doi > 0 && <span className="text-[#ffd24a]"> (chưa lưu — bot vẫn trả theo bản đã lưu)</span>}
               </span>
+              {/* Nút chứ không phải checkbox: CSS toàn cục bỏ appearance của input nên ô tick tàng hình. */}
+              <button
+                onClick={() => setKhongLap((v) => !v)}
+                data-lenh-khong-lap
+                title="Bật thì không cặp nào bị ghi trong hai vòng — chuỗi dài hơn"
+                className={`px-2 py-1 rounded-lg text-[0.7rem] font-bold border transition-colors ${
+                  khongLap ? "bg-[#7c3aed] border-[#c4b5fd] text-white" : "bg-white/[0.07] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.14]"
+                }`}
+              >
+                {khongLap ? "🔁 Không lặp cặp: BẬT" : "🔁 Không lặp cặp: tắt"}
+              </button>
               <button
                 onClick={copy}
                 disabled={lenhChan.cap.length === 0}
