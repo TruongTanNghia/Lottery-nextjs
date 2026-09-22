@@ -27,13 +27,18 @@ export function esc(s: string): string {
 /**
  * Split on line boundaries so a limit table never breaks mid-row. A single
  * line longer than the cap (the 100-lô bet string has none) is hard-cut.
+ *
+ * A <code>…</code> block counts as one line even when it spans several: the
+ * đá block command is "/chanloai" + newline + the đài line, and cutting
+ * between those two would leave an unclosed <code> (Telegram rejects the
+ * message) and a paste missing its first line.
  */
 export function splitMessage(text: string, max: number = MAX_MESSAGE): string[] {
   if (text.length <= max) return [text];
 
   const out: string[] = [];
   let buf = "";
-  for (const line of text.split("\n")) {
+  for (const line of splitLinesOutsideCode(text)) {
     if (line.length > max) {
       if (buf) (out.push(buf), (buf = ""));
       for (let i = 0; i < line.length; i += max) out.push(line.slice(i, i + max));
@@ -48,6 +53,20 @@ export function splitMessage(text: string, max: number = MAX_MESSAGE): string[] 
   }
   if (buf) out.push(buf);
   return out;
+}
+
+/** Like text.split("\n"), except a newline inside <code>…</code> does not split. */
+export function splitLinesOutsideCode(text: string): string[] {
+  const lines: string[] = [];
+  let buf = "", inCode = false, i = 0;
+  while (i < text.length) {
+    if (!inCode && text.startsWith("<code>", i)) { inCode = true; buf += "<code>"; i += 6; continue; }
+    if (inCode && text.startsWith("</code>", i)) { inCode = false; buf += "</code>"; i += 7; continue; }
+    const ch = text[i++];
+    if (ch === "\n" && !inCode) { lines.push(buf); buf = ""; } else buf += ch;
+  }
+  lines.push(buf);
+  return lines;
 }
 
 /** One row of tappable buttons under a message. */

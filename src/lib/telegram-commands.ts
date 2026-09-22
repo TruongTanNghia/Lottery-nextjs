@@ -115,9 +115,9 @@ export function helpText(isAdmin = false): string {
     "<code>/chanso</code> — số không nhận cược, cả 3 miền",
     "",
     "<b>Chặn đá</b>",
-    "<code>/chanlq</code> — cặp đá không nhận, cả 3 miền",
-    "<code>/chanlq mn</code> — riêng một miền (mt, mb)",
-    "<code>/chanlq kl</code> — bản không lặp cặp (dài hơn)",
+    "<code>/chanda mn</code> — cặp đá không nhận, Miền Nam (mt, mb)",
+    "<code>/chanda</code> — cả 3 miền một lượt",
+    "<code>/chanda mn kl</code> — bản không lặp cặp (dài hơn)",
     "",
     "<b>Xem thêm</b>",
     "<code>/mn</code> <code>/mb</code> <code>/mt</code> — tóm tắt miền",
@@ -390,7 +390,10 @@ export async function chanSoAll(): Promise<string> {
 }
 
 /**
- * /chanlq <miền> — lệnh chặn đá cho người ghi cược.
+ * /chanda <miền> (hay /chanlq) — lệnh chặn đá cho người ghi cược.
+ *
+ * Mỗi khối <code> là hai dòng: "/chanloai" rồi dòng đài — đúng mẫu tin khách
+ * vẽ, dán nguyên cả hai. Bộ cắt tin coi cả khối là một dòng nên không đứt.
  *
  * Khách dặn "3 lệnh riêng biệt nha a, e sợ Tele hạn chế ký tự", rồi chốt dạng
  * gọn: "số nào xếp vòng vào được với nhau thì cho theo vòng — các số không

@@ -745,6 +745,13 @@ export function nhomVong(cap: [string, string][], khongLap = false): string[][] 
   return out;
 }
 
+/**
+ * Dòng đầu của mỗi mẩu dán: lệnh của phần mềm ghi cược bên khách. Khách vẽ
+ * mẫu tin bot phải trả: "/chanloai" xuống dòng rồi "mb: …" — dán nguyên cả
+ * hai dòng, nên nó là một phần của khối chứ không phải chữ trang trí.
+ */
+export const LENH_CHAN_LOAI = "/chanloai";
+
 /** "01 10 11dx0n" — một nhóm thành một mẩu dán được, tiền dính vào con cuối. */
 export const mauNhom = (nhom: string[], region: Region) => `${nhom.join(" ")}${HAU_TO_CHAN_DA[region]}`;
 
@@ -755,7 +762,7 @@ export const mauNhom = (nhom: string[], region: Region) => `${nhom.join(" ")}${H
  */
 export function chiaKhoiChanDa(dau: string, nhom: string[][], toiDa: number, region: Region): string[] {
   if (nhom.length === 0) return [];
-  const mo = `${dau}: `;
+  const mo = `${LENH_CHAN_LOAI}\n${dau}: `;
   const khoi: string[] = [];
   let hien: string[] = [];
   let dai = mo.length;

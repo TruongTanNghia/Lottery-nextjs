@@ -328,10 +328,11 @@ export default function DaBangTien({
             <div className="text-[0.66rem] text-[var(--text-muted)] mt-1">
               Trên Telegram gõ <code className="text-[#c2d4ea]">/chanlq {region === "xsmn" ? "mn" : region === "xsmt" ? "mt" : "mb"}</code>{" "}
               là ra đúng chuỗi này (bot tự cắt khúc nếu dài; gõ <code className="text-[#c2d4ea]">/chanlq</code> không là ra cả 3 miền).
-              Mỗi mẩu <code className="text-[#c2d4ea]">a b c{HAU_TO_CHAN_DA[region]}</code> là một vòng: chặn mọi cặp trong đó.
+              Mỗi mẩu <code className="text-[#c2d4ea]">a b c{HAU_TO_CHAN_DA[region]}</code> là một vòng: chặn mọi cặp trong đó. Dòng
+              đầu <code className="text-[#c2d4ea]">/chanloai</code> là lệnh của phần mềm ghi cược — dán nguyên cả hai dòng.
             </div>
             {lenhChan.cap.length > 0 && (
-              <code className="block mt-1.5 text-[0.66rem] leading-snug text-[#c2d4ea] break-all max-h-16 overflow-hidden" data-lenh-xem>
+              <code className="block mt-1.5 text-[0.66rem] leading-snug text-[#c2d4ea] break-all max-h-16 overflow-hidden whitespace-pre-wrap" data-lenh-xem>
                 {lenhChan.chuoi.length > 260 ? lenhChan.chuoi.slice(0, 260) + " …" : lenhChan.chuoi}
               </code>
             )}
