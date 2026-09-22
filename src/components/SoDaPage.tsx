@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import { dungKy } from "@/lib/slot-stats";
-import { GIA_DA, TRUNG_DA, bangMacDinh, bienDa, chuanHoaBang, soTungKyTheoBang, soVong, tinhVe, type BangDa } from "@/lib/da";
+import {
+  GIA_DA, TRUNG_DA, apLuatTuDong, bangMacDinh, bienDa, chuanHoaBang, soTungKyTheoBang, soVong, thongKeDa, tinhVe,
+  type BangDa,
+} from "@/lib/da";
 import DaBangTien from "./DaBangTien";
 import DaBaoCaoThang from "./DaBaoCaoThang";
 import DaCapNgay from "./DaCapNgay";
@@ -52,6 +55,8 @@ export default function SoDaPage({ region }: { region: Region }) {
   // Bảng tiền đá đã lưu của miền này. Mọi khối thống kê bên dưới tính theo nó.
   const [bang, setBang] = useState<BangDa | null>(null);
   const [luuLuc, setLuuLuc] = useState<string | null>(null);
+  // Luật "ô dưới phần ăn theo giá thì chặn" — khách xin bật sẵn.
+  const [tuDong, setTuDong] = useState(true);
   // Tăng mỗi lần lưu, để Báo Cáo Tháng (tự tải bảng của cả ba miền) biết mà tải lại.
   const [phienBan, setPhienBan] = useState(0);
 
@@ -65,6 +70,7 @@ export default function SoDaPage({ region }: { region: Region }) {
         if (huy) return;
         setBang(chuanHoaBang(d?.data?.bang));
         setLuuLuc(typeof d?.data?.luuLuc === "string" ? d.data.luuLuc : null);
+        setTuDong(d?.data?.tuDong !== false);
       })
       // Không đọc được bảng thì chạy bảng mặc định, chứ không để cả tab trắng.
       .catch(() => !huy && setBang(bangMacDinh()));
@@ -72,7 +78,13 @@ export default function SoDaPage({ region }: { region: Region }) {
   }, [region]);
 
   const ky = useMemo(() => (draws ? dungKy(draws) : null), [draws]);
-  const rows = useMemo(() => (ky && bang ? soTungKyTheoBang(ky, region, bang) : null), [ky, region, bang]);
+  // Bảng ĐANG HIỆU LỰC: bảng đã lưu, áp luật nếu công tắc bật. Mọi khối bên
+  // dưới tính theo nó — cùng hàm thuần mà máy chủ dùng cho bot, nên không lệch.
+  const hieuLuc = useMemo(() => {
+    if (!ky || !bang) return null;
+    return tuDong ? apLuatTuDong(bang, thongKeDa(ky, region)).bang : bang;
+  }, [ky, region, bang, tuDong]);
+  const rows = useMemo(() => (ky && hieuLuc ? soTungKyTheoBang(ky, region, hieuLuc) : null), [ky, region, hieuLuc]);
   const chuan = bienDa(region);
 
   return (
@@ -83,7 +95,7 @@ export default function SoDaPage({ region }: { region: Region }) {
 
       {draws && ky && (
         <div id="da-kytoi" style={{ scrollMarginTop: 150 }}>
-          <DaKyToi draws={draws} ky={ky} region={region} bang={bang ?? undefined} />
+          <DaKyToi draws={draws} ky={ky} region={region} bang={hieuLuc ?? undefined} />
         </div>
       )}
 
@@ -95,9 +107,11 @@ export default function SoDaPage({ region }: { region: Region }) {
             region={region}
             bang={bang}
             luuLuc={luuLuc}
-            onLuu={(b, l) => {
+            tuDong={tuDong}
+            onLuu={(b, l, t) => {
               setBang(b);
               setLuuLuc(l);
+              setTuDong(t);
               setPhienBan((v) => v + 1);
             }}
           />
@@ -181,7 +195,7 @@ export default function SoDaPage({ region }: { region: Region }) {
       )}
       {ky && rows && (
         <div id="da-tungky" style={{ scrollMarginTop: 150 }}>
-          <DaTungKy rows={rows} region={region} daCai={!!bang && Object.values(bang).some((v) => v !== 1)} />
+          <DaTungKy rows={rows} region={region} daCai={!!hieuLuc && Object.values(hieuLuc).some((v) => v !== 1)} />
         </div>
       )}
       {ky && (

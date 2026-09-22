@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import { dungKy } from "@/lib/slot-stats";
-import { bangMacDinh, bienDa, chuanHoaBang, doLechKy, gomThang, soTungKyTheoBang, type ThangDa } from "@/lib/da";
+import {
+  apLuatTuDong, bangMacDinh, bienDa, chuanHoaBang, doLechKy, gomThang, soTungKyTheoBang, thongKeDa, type ThangDa,
+} from "@/lib/da";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
 const MIEN: Region[] = ["xsmn", "xsmt", "xsmb"];
@@ -30,6 +32,7 @@ interface MienDa {
   /** Miền này đã có người cài bảng tiền riêng chưa, hay vẫn 1 điểm mọi ô. */
   daCai: boolean;
   soOChan: number;
+  tuDong: boolean;
 }
 
 /**
@@ -57,7 +60,10 @@ export default function DaBaoCaoThang({ phienBan = 0 }: { phienBan?: number }) {
           fetch(`/api/config/da?region=${r}`).then((x) => x.json()).catch(() => null),
         ]);
         const ky = dungKy((h.draws ?? []) as DrawHits[]);
-        const bang = c?.data?.bang ? chuanHoaBang(c.data.bang) : bangMacDinh();
+        const daLuu = c?.data?.bang ? chuanHoaBang(c.data.bang) : bangMacDinh();
+        // Cùng luật, cùng hàm với tab và bot: bật thì ô dưới phần ăn theo giá về 0.
+        const tuDong = c?.data?.tuDong !== false;
+        const bang = tuDong ? apLuatTuDong(daLuu, thongKeDa(ky, r)).bang : daLuu;
         const rows = soTungKyTheoBang(ky, r, bang);
         return {
           region: r,
@@ -66,7 +72,8 @@ export default function DaBaoCaoThang({ phienBan = 0 }: { phienBan?: number }) {
           bienChuan: bienDa(r).bien,
           tuNgay: rows[0]?.date ?? "",
           denNgay: rows[rows.length - 1]?.date ?? "",
-          daCai: Object.values(bang).some((v) => v !== 1),
+          daCai: tuDong || Object.values(bang).some((v) => v !== 1),
+          tuDong,
           soOChan: Object.values(bang).filter((v) => v <= 0).length,
         };
       })
@@ -196,7 +203,10 @@ export default function DaBaoCaoThang({ phienBan = 0 }: { phienBan?: number }) {
               {ds.map((d, i) => (
                 <span key={d.region}>
                   {i > 0 && " · "}
-                  {TEN_NGAN[d.region]}: {d.daCai ? `đã cài riêng${d.soOChan > 0 ? `, chặn ${d.soOChan} ô` : ""}` : "1 điểm mọi ô"}
+                  {TEN_NGAN[d.region]}:{" "}
+                  {d.daCai
+                    ? `${d.tuDong ? "luật tự chặn bật" : "cài tay"}${d.soOChan > 0 ? `, chặn ${d.soOChan} ô` : ""}`
+                    : "1 điểm mọi ô"}
                 </span>
               ))}
               )

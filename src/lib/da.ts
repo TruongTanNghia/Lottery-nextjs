@@ -599,3 +599,92 @@ export function soTungKyTheoBang(ky: KyDa[], region: Region, bang: BangDa, tran 
     return { date: k.date, soLoVe: h, soCap, capTrung, thu, tra, lai: thu - tra, don };
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Luật tự chặn và lệnh chặn đá cho bot
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Khách chốt luật: "MN, MT dưới +2,92% là chặn; MB dưới +5,14% là chặn — chừng
+// nào em thay đổi thì bấm thay đổi hoặc vào cài thủ công". Hai con số đó chính
+// là phần ăn theo giá của từng miền (`bienDa(region).bien`), nên luật đọc là:
+// ô nào phần ăn đo được thấp hơn phần ăn theo giá thì không nhận.
+
+/** Ô có ít hơn ngần này cặp thì luật chưa động tới — con số còn là may rủi. */
+export const CAP_TOI_THIEU_LUAT = DIP_TOI_THIEU;
+
+export interface KetQuaLuat {
+  /** Bảng sau khi áp luật: ô dưới mức bị đưa về 0, ô khác giữ điểm đã cài. */
+  bang: BangDa;
+  /** Những ô luật vừa chặn (không tính ô đã tự cài 0). */
+  chan: string[];
+  /** Mức so sánh — phần ăn theo giá của miền. */
+  nguong: number;
+}
+
+/**
+ * Áp luật tự chặn lên bảng đã cài. Hàm thuần, nên web và bot cùng gọi một chỗ
+ * và không bao giờ cho hai kết quả khác nhau.
+ */
+export function apLuatTuDong(bang: BangDa, tk: ThongKeDa | null, tran = 10): KetQuaLuat {
+  const out: BangDa = { ...bangMacDinh(tran), ...bang };
+  const chan: string[] = [];
+  const nguong = tk ? tk.chuan.bien : 0;
+  if (tk) {
+    for (const o of tk.bang) {
+      if (o.dip < CAP_TOI_THIEU_LUAT || o.bien >= nguong) continue;
+      const k = khoaCap(o.i, o.j);
+      if ((out[k] ?? 0) > 0) chan.push(k);
+      out[k] = 0;
+    }
+  }
+  return { bang: out, chan, nguong };
+}
+
+/**
+ * Mọi cặp con số cụ thể rơi vào ô đang chặn, tính theo bậc ngày của 100 con
+ * sau kỳ mới nhất. Đây là thứ đem đi dán cho người ghi cược.
+ *
+ * Trong cặp con lớn đứng trước, cả danh sách xếp tăng dần — theo đúng ví dụ
+ * khách gõ ("01 00; 10 01").
+ */
+export function capBiChan(kho: Record<string, number>, bang: BangDa, tran = 10): [string, string][] {
+  const los = Object.keys(kho).sort();
+  const bac = (lo: string) => Math.min(tran, Math.max(0, kho[lo]));
+  const out: [string, string][] = [];
+  for (let x = 0; x < los.length; x++) {
+    for (let y = x + 1; y < los.length; y++) {
+      if ((bang[khoaCap(bac(los[x]), bac(los[y]))] ?? 0) > 0) continue;
+      out.push([los[y], los[x]]);
+    }
+  }
+  return out;
+}
+
+/** "st tv ag …: 01 00; 10 01; … dx0n" — hậu tố là chữ của khách: đá xiên, 0 nhận. */
+export const HAU_TO_CHAN_DA = "dx0n";
+
+/**
+ * Chia danh sách cặp thành các khối, mỗi khối là MỘT chuỗi dán được trọn vẹn
+ * (đủ đầu đài lẫn đuôi dx0n) và không dài quá `toiDa` ký tự. Khách sợ đúng
+ * chỗ này: "e sợ Tele hạn chế ký tự".
+ */
+export function chiaKhoiChanDa(dau: string, cap: [string, string][], toiDa: number): string[] {
+  if (cap.length === 0) return [];
+  const mo = `${dau}: `, dong = ` ${HAU_TO_CHAN_DA}`;
+  const khoi: string[] = [];
+  let hien: string[] = [];
+  let dai = mo.length + dong.length;
+  for (const [a, b] of cap) {
+    const c = `${a} ${b}`;
+    const them = c.length + (hien.length ? 2 : 0);
+    if (hien.length && dai + them > toiDa) {
+      khoi.push(mo + hien.join("; ") + dong);
+      hien = [];
+      dai = mo.length + dong.length;
+    }
+    hien.push(c);
+    dai += c.length + (hien.length > 1 ? 2 : 0);
+  }
+  if (hien.length) khoi.push(mo + hien.join("; ") + dong);
+  return khoi;
+}

@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, TRUNG_DA, bangMacDinh, bienDa, khoKyToi, khoaCap,
-  soVong, thongKeCapTheoThang,
+  CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, TRUNG_DA, apLuatTuDong, bangMacDinh, bienDa,
+  capBiChan, chiaKhoiChanDa, khoKyToi, khoaCap, soVong, thongKeCapTheoThang, thongKeDa,
   type BangDa, type KyDa, type OCapDayDu,
 } from "@/lib/da";
+import { provincePrefix } from "@/lib/provinces";
 import { useToast } from "./Toast";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
@@ -46,22 +47,29 @@ type Nhom = "cung" | "cheo";
  * riêng, thống kê của chính nó nằm ngay bên dưới, và chia đúng hai nhóm khách
  * kể: 11 ô cùng ngày, 55 ô đá chéo.
  *
- * Sửa xong phải bấm Lưu thì các khối thống kê của tab mới tính theo bảng mới —
- * số đang gõ dở không được lẳng lặng đổi báo cáo. Thanh tổng ở trên thì tính
- * theo số đang gõ, để thấy trước rồi mới quyết.
+ * Rồi khách chốt luật: "MN, MT dưới +2,92% là chặn; MB dưới +5,14% là chặn —
+ * chừng nào em thay đổi thì bấm thay đổi hoặc vào cài thủ công". Đó là công
+ * tắc LUẬT TỰ CHẶN ở đầu bảng: bật thì ô nào phần ăn đo được thấp hơn phần ăn
+ * theo giá bị chặn, bất kể điểm đã cài; tắt thì bảng chạy đúng số cài tay.
+ *
+ * Sửa xong phải bấm Lưu thì các khối thống kê của tab (và bot /chanlq) mới
+ * tính theo bảng mới — số đang gõ dở không được lẳng lặng đổi báo cáo. Thanh
+ * tổng ở trên thì tính theo số đang gõ, để thấy trước rồi mới quyết.
  */
 export default function DaBangTien({
-  draws, ky, region, bang, luuLuc, onLuu,
+  draws, ky, region, bang, luuLuc, tuDong, onLuu,
 }: {
   draws: DrawHits[];
   ky: KyDa[];
   region: Region;
   bang: BangDa;
   luuLuc: string | null;
-  onLuu: (bang: BangDa, luuLuc: string | null) => void;
+  tuDong: boolean;
+  onLuu: (bang: BangDa, luuLuc: string | null, tuDong: boolean) => void;
 }) {
   const toast = useToast();
   const [nhap, setNhap] = useState<BangDa>(bang);
+  const [tuDongNhap, setTuDongNhap] = useState(tuDong);
   const [nhom, setNhom] = useState<Nhom>("cung");
   /** Đá chéo: đang xem ngày nào ghép với các ngày khác. -1 = cả 55 ô. */
   const [ngay, setNgay] = useState(0);
@@ -69,9 +77,15 @@ export default function DaBangTien({
   const [dangLuu, setDangLuu] = useState(false);
 
   useEffect(() => setNhap(bang), [bang]);
+  useEffect(() => setTuDongNhap(tuDong), [tuDong]);
 
+  const tk = useMemo(() => thongKeDa(ky, region, TRAN), [ky, region]);
   const tkt = useMemo(() => thongKeCapTheoThang(ky, region, TRAN), [ky, region]);
   const tt = useMemo(() => khoKyToi(draws), [draws]);
+
+  // Bảng ĐANG GÕ sau khi áp luật — đây mới là thứ sẽ có hiệu lực nếu bấm Lưu.
+  const luat = useMemo(() => (tuDongNhap ? apLuatTuDong(nhap, tk, TRAN) : null), [tuDongNhap, nhap, tk]);
+  const hieuLuc = luat ? luat.bang : nhap;
 
   /** Kỳ tới mỗi ô có bao nhiêu cặp — biết chắc, vì bậc ngày của 100 con đã định. */
   const capKyToi = useMemo(() => {
@@ -86,24 +100,40 @@ export default function DaBangTien({
 
   const tong = useMemo(() => {
     if (!tkt) return null;
-    let thu = 0, tra = 0, mo = 0, chan = 0, thuKyToi = 0;
+    let thu = 0, tra = 0, mo = 0, chan = 0, thuKyToi = 0, capChanKyToi = 0;
     for (const o of tkt.bang) {
-      const d = nhap[khoaCap(o.i, o.j)] ?? 0;
+      const k = khoaCap(o.i, o.j);
+      const d = hieuLuc[k] ?? 0;
       if (d > 0) mo++;
-      else chan++;
+      else {
+        chan++;
+        capChanKyToi += capKyToi.get(k) ?? 0;
+      }
       thu += o.thu * d;
       tra += o.tra * d;
-      thuKyToi += (capKyToi.get(khoaCap(o.i, o.j)) ?? 0) * d * GIA_DA[region];
+      thuKyToi += (capKyToi.get(k) ?? 0) * d * GIA_DA[region];
     }
-    return { thu, tra, lai: thu - tra, pct: thu > 0 ? ((thu - tra) / thu) * 100 : 0, mo, chan, thuKyToi };
-  }, [tkt, nhap, capKyToi, region]);
+    return { thu, tra, lai: thu - tra, pct: thu > 0 ? ((thu - tra) / thu) * 100 : 0, mo, chan, thuKyToi, capChanKyToi };
+  }, [tkt, hieuLuc, capKyToi, region]);
 
-  if (!tkt || !tong) return null;
+  // Chuỗi chặn đá kỳ tới — y hệt thứ bot trả cho /chanlq, chỉ khác là không
+  // cắt khúc: copy trên web thì dán vào đâu là việc của người dán.
+  const lenhChan = useMemo(() => {
+    if (!tt) return null;
+    const cap = capBiChan(tt.kho, hieuLuc, TRAN);
+    const chuoi = chiaKhoiChanDa(provincePrefix(region), cap, Number.POSITIVE_INFINITY)[0] ?? "";
+    return { cap, chuoi };
+  }, [tt, hieuLuc, region]);
+
+  if (!tk || !tkt || !tong) return null;
 
   const gia = GIA_DA[region];
   const chuan = bienDa(region);
   const soKy = ky.length;
-  const doi = Object.keys(nhap).filter((k) => nhap[k] !== bang[k]).length;
+  const doiO = Object.keys(nhap).filter((k) => nhap[k] !== bang[k]).length;
+  const doiLuat = tuDongNhap !== tuDong;
+  const doi = doiO + (doiLuat ? 1 : 0);
+  const luatChan = new Set(luat?.chan ?? []);
 
   const hien = tkt.bang.filter((o) =>
     nhom === "cung" ? o.i === o.j : o.i !== o.j && (ngay < 0 || o.i === ngay || o.j === ngay)
@@ -125,16 +155,26 @@ export default function DaBangTien({
       const r = await fetch(`/api/config/da?region=${region}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bang: nhap }),
+        body: JSON.stringify({ bang: nhap, tuDong: tuDongNhap }),
       });
       const d = await r.json();
       if (!r.ok || d.status !== "success") throw new Error(d.detail ?? "Lưu không được");
-      onLuu(d.data.bang as BangDa, d.data.luuLuc as string | null);
-      toast.show("success", `Đã lưu bảng tiền đá ${REGION_LABELS[region]} — thống kê bên dưới tính lại theo bảng mới`);
+      onLuu(d.data.bang as BangDa, d.data.luuLuc as string | null, d.data.tuDong !== false);
+      toast.show("success", `Đã lưu bảng tiền đá ${REGION_LABELS[region]} — thống kê bên dưới và bot /chanlq tính theo bảng mới`);
     } catch (e) {
       toast.show("error", e instanceof Error ? e.message : "Lưu không được");
     } finally {
       setDangLuu(false);
+    }
+  };
+
+  const copy = async () => {
+    if (!lenhChan || !lenhChan.chuoi) return;
+    try {
+      await navigator.clipboard.writeText(lenhChan.chuoi);
+      toast.show("success", `Đã copy lệnh chặn ${so(lenhChan.cap.length)} cặp đá`);
+    } catch {
+      toast.show("error", "Trình duyệt không cho copy — bấm giữ để chép tay");
     }
   };
 
@@ -148,7 +188,7 @@ export default function DaBangTien({
           <h2 className="plate-title">💰 Bảng Tiền Đá — Cài Riêng Từng Ô</h2>
           <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
             {REGION_LABELS[region]} · 11 ô cùng ngày + 55 ô đá chéo · 1 điểm = {tien(gia)} ·{" "}
-            {luuLuc ? `lưu lần cuối ${new Date(luuLuc).toLocaleString("vi-VN")}` : "chưa lưu lần nào — đang là 1 điểm mọi ô"}
+            {luuLuc ? `lưu lần cuối ${new Date(luuLuc).toLocaleString("vi-VN")}` : "chưa lưu lần nào"}
           </p>
         </div>
       </div>
@@ -160,13 +200,52 @@ export default function DaBangTien({
           không nhận cặp nào của ô đó. Thống kê dưới mỗi ô tính như thể khách đánh <b>kín mức</b> đã cài.
         </div>
 
-        {/* ── Thanh tổng: tính theo số ĐANG GÕ ─────────────────────── */}
+        {/* ── Luật tự chặn — đúng câu khách chốt ───────────────────── */}
+        <div
+          className="rounded-lg border px-3 py-2.5"
+          data-luat-tu-dong={tuDongNhap ? "bat" : "tat"}
+          style={{
+            borderColor: tuDongNhap ? "rgba(16,185,129,0.5)" : "var(--hairline)",
+            background: tuDongNhap ? "rgba(16,185,129,0.08)" : "rgba(255,255,255,0.03)",
+          }}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setTuDongNhap((v) => !v)}
+              data-bat-luat
+              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border transition-colors ${
+                tuDongNhap
+                  ? "bg-[#059669] border-[#34e6a8] text-white"
+                  : "bg-white/[0.07] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.14]"
+              }`}
+            >
+              {tuDongNhap ? "✅ Luật tự chặn: ĐANG BẬT" : "⭕ Luật tự chặn: ĐANG TẮT"}
+            </button>
+            <span className="text-[0.74rem] text-[var(--text-secondary)]">
+              Ô nào phần ăn đo được <b className="text-white">dưới {pc(chuan.bien)}</b> (phần ăn theo giá của{" "}
+              {REGION_LABELS[region]}) là <b className="text-white">chặn</b>
+            </span>
+          </div>
+          <div className="text-[0.72rem] leading-relaxed text-[var(--text-secondary)] mt-1.5" data-luat-ket-qua>
+            {tuDongNhap ? (
+              <>
+                Đang chặn theo luật <b className="text-[#ff9d9d]">{luat?.chan.length ?? 0} ô</b> trên {soKy} kỳ, bỏ qua ô
+                dưới {so(CAP_TOI_THIEU_LUAT)} cặp. Luật tự tính lại mỗi khi có kỳ mới. Ô bị luật chặn vẫn giữ số điểm đã
+                cài để lúc tắt luật thì dùng lại. <b className="text-white">Muốn khác đi:</b> tắt luật rồi cài tay từng ô.
+              </>
+            ) : (
+              <>Đang tắt — bảng chạy đúng số cài tay từng ô bên dưới, không tự chặn gì.</>
+            )}
+          </div>
+        </div>
+
+        {/* ── Thanh tổng: tính theo số ĐANG GÕ, đã áp luật ─────────── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2" data-bang-tong>
           <OTong nhan="Ô đang mở / chặn" gt={`${tong.mo} / ${tong.chan}`} phu="trên 66 ô" m="#8fd0ff" />
           <OTong
             nhan="Kỳ tới nhận tối đa"
             gt={tien(tong.thuKyToi)}
-            phu={tt ? `theo bậc ngày sau kỳ ${tt.ngayCuoi.slice(8, 10)}/${tt.ngayCuoi.slice(5, 7)}` : ""}
+            phu={tt ? `chặn ${so(tong.capChanKyToi)} cặp · theo kỳ ${tt.ngayCuoi.slice(8, 10)}/${tt.ngayCuoi.slice(5, 7)}` : ""}
             m="#34e6a8"
           />
           <OTong nhan={`Dò lại ${soKy} kỳ`} gt={dau(tong.lai)} phu={`thu ${tien(tong.thu)} · trả ${tien(tong.tra)}`} m={mau(tong.lai)} />
@@ -184,15 +263,17 @@ export default function DaBangTien({
           <span className="text-[0.74rem] text-[var(--text-secondary)] flex-1 min-w-[160px]" data-bang-trang-thai>
             {doi > 0 ? (
               <>
-                <b className="text-[#ffd24a]">Đã sửa {doi} ô, chưa lưu.</b> Bốn ô tổng ở trên đã tính theo số mới;
-                các khối thống kê bên dưới chỉ đổi sau khi bấm Lưu.
+                <b className="text-[#ffd24a]">
+                  Đã sửa {doiO > 0 ? `${doiO} ô` : ""}{doiO > 0 && doiLuat ? " và " : ""}{doiLuat ? "công tắc luật" : ""}, chưa lưu.
+                </b>{" "}
+                Bốn ô tổng ở trên đã tính theo số mới; các khối thống kê bên dưới và bot chỉ đổi sau khi bấm Lưu.
               </>
             ) : (
-              <>Bảng đang khớp với bản đã lưu. Các khối thống kê bên dưới đang tính theo đúng bảng này.</>
+              <>Bảng đang khớp với bản đã lưu. Thống kê bên dưới và bot /chanlq đang tính theo đúng bảng này.</>
             )}
           </span>
           <button
-            onClick={() => setNhap(bang)}
+            onClick={() => { setNhap(bang); setTuDongNhap(tuDong); }}
             disabled={doi === 0 || dangLuu}
             className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16] disabled:opacity-40"
           >
@@ -207,6 +288,36 @@ export default function DaBangTien({
             {dangLuu ? "Đang lưu…" : "💾 Lưu bảng tiền"}
           </button>
         </div>
+
+        {/* ── Lệnh chặn đá kỳ tới — cùng chuỗi với bot ─────────────── */}
+        {lenhChan && (
+          <div className="rounded-lg border border-[var(--hairline)] bg-black/20 px-3 py-2.5" data-lenh-chan>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="eyebrow">Lệnh chặn đá kỳ tới</span>
+              <span className="text-[0.72rem] text-[var(--text-secondary)]">
+                <b className="text-white" data-lenh-so-cap>{so(lenhChan.cap.length)} cặp</b> theo bảng đang gõ
+                {doi > 0 && <span className="text-[#ffd24a]"> (chưa lưu — bot vẫn trả theo bản đã lưu)</span>}
+              </span>
+              <button
+                onClick={copy}
+                disabled={lenhChan.cap.length === 0}
+                data-lenh-copy
+                className="ml-auto px-3 py-1.5 rounded-lg text-xs font-bold bg-[#2563eb] text-white hover:bg-[#1d4ed8] disabled:opacity-40"
+              >
+                📋 Copy
+              </button>
+            </div>
+            <div className="text-[0.66rem] text-[var(--text-muted)] mt-1">
+              Trên Telegram gõ <code className="text-[#c2d4ea]">/chanlq {region === "xsmn" ? "mn" : region === "xsmt" ? "mt" : "mb"}</code>{" "}
+              là ra đúng chuỗi này (bot tự cắt khúc nếu dài).
+            </div>
+            {lenhChan.cap.length > 0 && (
+              <code className="block mt-1.5 text-[0.66rem] leading-snug text-[#c2d4ea] break-all max-h-16 overflow-hidden" data-lenh-xem>
+                {lenhChan.chuoi.length > 260 ? lenhChan.chuoi.slice(0, 260) + " …" : lenhChan.chuoi}
+              </code>
+            )}
+          </div>
+        )}
 
         {/* ── Hai nhóm, đúng như khách kể ─────────────────────────── */}
         <div className="grid grid-cols-2 gap-2">
@@ -262,7 +373,7 @@ export default function DaBangTien({
           <span className="eyebrow">Cài nhanh {hien.length} ô đang hiện</span>
           <input
             value={datHet}
-            onChange={(e) => setDatHet(e.target.value.replace(/[^\d]/g, "").slice(0, 6))}
+            onChange={(e) => setDatHet(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
             inputMode="numeric"
             aria-label="Số điểm cài cho các ô đang hiện"
             className="w-16 bg-black/30 border border-[var(--hairline)] rounded-lg px-2 py-1 text-white numeric text-sm text-center"
@@ -307,6 +418,8 @@ export default function DaBangTien({
                 o={o}
                 diem={nhap[k] ?? 0}
                 daLuu={bang[k] ?? 0}
+                luatChan={luatChan.has(k)}
+                nguong={chuan.bien}
                 dat={(v) => dat(k, v)}
                 capKyToi={capKyToi.get(k) ?? 0}
                 soKy={soKy}
@@ -322,9 +435,10 @@ export default function DaBangTien({
         <div className="rounded-lg border border-[rgba(251,191,36,0.45)] bg-[rgba(245,158,11,0.09)] px-3 py-2.5 text-[0.74rem] leading-relaxed text-[#ffe9c4]">
           <b>Đọc bảng này thế nào.</b> Lời/lỗ của từng ô là <b>chuyện đã xảy ra</b> trên {soKy} kỳ, không phải lời hứa
           cho kỳ tới: bài thử ở khối <b>Cặp Ngày Nào Đẹp Nhất</b> cho thấy ô đẹp ở nửa đầu không giữ được sang nửa sau.
-          Đá lời nhờ <b>giá</b> ({pc(chuan.bien)} mỗi cặp, ô nào cũng vậy), nên dồn tiền vào ô &quot;đẹp&quot; không làm
-          phần ăn cao lên — nó chỉ làm sổ <b>lắc mạnh hơn</b>. Bảng này hợp nhất để <b>giữ mức nhận vừa sức</b> ở
-          từng ô; máy chưa có sổ đá thật nên mọi con số ở đây là dò lại theo kết quả xổ, chưa phải tiền trong túi.
+          Riêng ô <b>Dò lại {soKy} kỳ</b> khi luật đang bật là <b>nhìn lại đáp án</b>: luật chọn ô lỗ bằng chính {soKy} kỳ
+          này rồi dò lại trên đúng {soKy} kỳ đó, nên con số đẹp hơn thật. Đá lời nhờ <b>giá</b> ({pc(chuan.bien)} mỗi cặp,
+          ô nào cũng vậy); chặn bớt ô thì nhận ít tiền hơn chứ phần ăn thật không cao lên. Máy chưa có sổ đá thật nên mọi
+          con số ở đây là dò lại theo kết quả xổ, chưa phải tiền trong túi.
         </div>
       </div>
     </section>
@@ -332,11 +446,14 @@ export default function DaBangTien({
 }
 
 function DongO({
-  o, diem, daLuu, dat, capKyToi, soKy, gia, trung, chuanP, thangChay,
+  o, diem, daLuu, luatChan, nguong, dat, capKyToi, soKy, gia, trung, chuanP, thangChay,
 }: {
   o: OCapDayDu;
   diem: number;
   daLuu: number;
+  /** Luật tự chặn đang đè lên ô này (điểm cài > 0 nhưng hiệu lực là 0). */
+  luatChan: boolean;
+  nguong: number;
   dat: (v: number) => void;
   capKyToi: number;
   soKy: number;
@@ -346,7 +463,7 @@ function DongO({
   thangChay: string;
 }) {
   const n = NHAN[o.nhan];
-  const chan = diem <= 0;
+  const chan = diem <= 0 || luatChan;
   const sua = diem !== daLuu;
   const itCap = o.dip < DIP_TOI_THIEU * 6;
   const k = khoaCap(o.i, o.j);
@@ -354,6 +471,7 @@ function DongO({
   return (
     <div
       data-o-tien={k}
+      data-o-chan={chan ? (luatChan ? "luat" : "tay") : "mo"}
       className="rounded-lg border px-3 py-2"
       style={{
         borderColor: sua ? "rgba(251,191,36,0.7)" : chan ? "rgba(248,113,113,0.45)" : "var(--hairline)",
@@ -372,17 +490,22 @@ function DongO({
                 ⚠ ÍT CẶP
               </span>
             )}
-            {chan && (
+            {luatChan ? (
+              <span className="rounded px-1.5 py-0.5 text-[0.62rem] font-bold text-[#ff9d9d]" style={{ background: "rgba(0,0,0,0.28)" }}>
+                LUẬT CHẶN · {pc(o.bien)} &lt; {pc(nguong)}
+              </span>
+            ) : chan ? (
               <span className="rounded px-1.5 py-0.5 text-[0.62rem] font-bold text-[#ff9d9d]" style={{ background: "rgba(0,0,0,0.28)" }}>
                 ĐANG CHẶN
               </span>
-            )}
+            ) : null}
           </div>
           <div className="text-[0.68rem] text-[var(--text-muted)] mt-0.5 numeric">
             Kỳ tới ô này có <b className="text-[var(--text-secondary)]">{so(capKyToi)} cặp</b>
             {!chan && capKyToi > 0 && (
               <> → nhận tối đa <b className="text-[#7ff0c0]">{tien(capKyToi * diem * gia)}</b></>
             )}
+            {luatChan && <> → <b className="text-[#ff9d9d]">không nhận</b> (luật đang chặn dù cài {so(diem)} điểm)</>}
           </div>
         </div>
 
@@ -398,13 +521,14 @@ function DongO({
             <input
               value={String(diem)}
               onChange={(e) => {
-                const v = e.target.value.replace(/[^\d]/g, "").slice(0, 6);
+                const v = e.target.value.replace(/[^0-9]/g, "").slice(0, 6);
                 dat(v === "" ? 0 : Number(v));
               }}
               inputMode="numeric"
               data-o-diem={k}
               aria-label={`Số điểm mỗi cặp ô ${tenO(o.i, o.j)}`}
               className="w-16 h-8 bg-black/40 border border-[var(--hairline)] rounded-lg px-1 text-white numeric text-sm font-bold text-center"
+              style={luatChan ? { opacity: 0.55, textDecoration: "line-through" } : undefined}
             />
             <button
               onClick={() => dat(diem + 1)}
@@ -415,7 +539,7 @@ function DongO({
             </button>
           </div>
           <div className="text-[0.62rem] text-[var(--text-muted)] mt-0.5 numeric">
-            {chan ? "0 điểm = chặn" : `điểm/cặp · ${tien(diem * gia)}`}
+            {diem <= 0 ? "0 điểm = chặn" : `điểm/cặp · ${tien(diem * gia)}`}
             {sua && <span className="text-[#ffd24a]"> · đã lưu {so(daLuu)}</span>}
           </div>
         </div>

@@ -20,6 +20,8 @@ import { freshness, freshnessText } from "@/lib/freshness";
 import { esc } from "@/lib/telegram";
 import { baoCaoTheoThang } from "@/lib/profit-calculator";
 import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
+import { bangHieuLuc } from "@/lib/da-bang";
+import { chiaKhoiChanDa } from "@/lib/da";
 
 // Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
 // list is read side by side with theirs.
@@ -111,6 +113,10 @@ export function helpText(isAdmin = false): string {
     "",
     "<b>Số chặn</b>",
     "<code>/chanso</code> — số không nhận cược, cả 3 miền",
+    "",
+    "<b>Chặn đá</b>",
+    "<code>/chanlq mn</code> — cặp đá không nhận, Miền Nam",
+    "<code>/chanlq mt</code> · <code>/chanlq mb</code> — Trung, Bắc",
     "",
     "<b>Xem thêm</b>",
     "<code>/mn</code> <code>/mb</code> <code>/mt</code> — tóm tắt miền",
@@ -383,6 +389,51 @@ export async function chanSoAll(): Promise<string> {
 }
 
 /**
+ * /chanlq <miền> — lệnh chặn đá cho người ghi cược.
+ *
+ * Khách gõ mẫu: "st tv ag … hg: 01 00; 10 01; … dx0n", và dặn "3 lệnh riêng
+ * biệt nha a, e sợ Tele hạn chế ký tự". Nên mỗi miền một lệnh, và một miền mà
+ * dài quá thì cắt thành nhiều khối — khối nào cũng là một chuỗi dán được trọn
+ * vẹn, có đầu đài lẫn đuôi dx0n, chứ không cắt ngang giữa cặp.
+ *
+ * Cặp nào bị chặn là do Bảng Tiền Đá trên web quyết (ô cài 0, hoặc luật tự
+ * động "dưới phần ăn theo giá thì chặn"). Bot chỉ đọc ra, không sửa gì.
+ */
+export async function chanDa(region: Region): Promise<string> {
+  const h = await bangHieuLuc(region);
+  const khoi = chiaKhoiChanDa(provincePrefix(region), h.capChan, SAFE_BLOCK);
+  const soOChan = Object.values(h.bang).filter((v) => v <= 0).length;
+  const head = [
+    `<b>${label(region)} · chặn đá</b> · ${num(h.capChan.length)} cặp · ${soOChan}/66 ô`,
+    h.luu.tuDong
+      ? `<i>luật tự động đang bật: chặn ${h.luat?.chan.length ?? 0} ô dưới ${h.luat ? h.luat.nguong.toFixed(2).replace(".", ",") : "?"}%${
+          h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""
+        }</i>`
+      : `<i>luật tự động đang tắt — theo bảng cài tay${h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""}</i>`,
+  ].join("\n");
+
+  if (khoi.length === 0) return `${head}\n\nKhông có cặp nào bị chặn — bảng tiền đá đang nhận mọi ô.`;
+  if (khoi.length === 1) return `${head}\n\n<code>${esc(khoi[0])}</code>`;
+
+  // Mỗi khối một dòng nhãn + một <code>. Bộ chia tin nhắn cắt theo dòng, và
+  // một khối luôn dưới mức cắt, nên không bao giờ đứt giữa thẻ <code>.
+  return [
+    head,
+    `<i>Dài quá một tin — chia ${khoi.length} phần, dán lần lượt cả ${khoi.length}.</i>`,
+    ...khoi.map((k, i) => `\n<i>phần ${i + 1}/${khoi.length}</i>\n<code>${esc(k)}</code>`),
+  ].join("\n");
+}
+
+/** /chanlq không có miền: đếm nhanh rồi chỉ ba lệnh, không dội cả ba miền vào một lúc. */
+export async function chanDaTomTat(): Promise<string> {
+  const parts = await Promise.all(REGIONS.map(async (r) => ({ r, h: await bangHieuLuc(r) })));
+  return [
+    "<b>Chặn đá — gõ riêng từng miền</b>",
+    ...parts.map(({ r, h }) => `<code>/chanlq ${TEN_NGAN[r].toLowerCase()}</code> — ${label(r)}: ${num(h.capChan.length)} cặp`),
+  ].join("\n");
+}
+
+/**
  * Báo cáo theo tháng dương lịch, ba miền, mỗi tháng đứng riêng.
  *
  * Khách yêu cầu đúng khuôn: nhận − bù − lời lỗ (%) và một câu nhận định. Câu
@@ -626,6 +677,13 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
     case "/chanso":
     case "/chan":
       return (await staleWarningAll()) + (await chanSoAll());
+
+    case "/chanlq":
+    case "/chanda": {
+      const region = parseRegion(args);
+      if (!region) return chanDaTomTat();
+      return withWarning(region, chanDa);
+    }
 
     case "/top": {
       const region = parseRegion(args);
