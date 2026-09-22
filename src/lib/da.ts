@@ -660,8 +660,12 @@ export function capBiChan(kho: Record<string, number>, bang: BangDa, tran = 10):
   return out;
 }
 
-/** Hậu tố là chữ của khách: đá xiên, 0 nhận. */
-export const HAU_TO_CHAN_DA = "dx0n";
+/**
+ * Hậu tố tiền, chữ của khách, dính liền vào con cuối: "99 90dx0n". Miền Nam
+ * và Trung là "đá xiên" (dx), Miền Bắc là "đá" (da) — khách gõ mẫu "mb: 01 10
+ * da0n". 0n là 0 nhận, tức chặn.
+ */
+export const HAU_TO_CHAN_DA: Record<Region, string> = { xsmn: "dx0n", xsmt: "dx0n", xsmb: "da0n" };
 
 /**
  * Gom các cặp bị chặn thành VÒNG để chuỗi ngắn lại.
@@ -732,22 +736,22 @@ export function nhomVong(cap: [string, string][]): string[][] {
   return out;
 }
 
-/** "01 10 11 dx0n" — một nhóm thành một mẩu dán được. */
-export const mauNhom = (nhom: string[]) => `${nhom.join(" ")} ${HAU_TO_CHAN_DA}`;
+/** "01 10 11dx0n" — một nhóm thành một mẩu dán được, tiền dính vào con cuối. */
+export const mauNhom = (nhom: string[], region: Region) => `${nhom.join(" ")}${HAU_TO_CHAN_DA[region]}`;
 
 /**
  * Chia các nhóm thành các khối, mỗi khối là MỘT chuỗi dán được trọn vẹn (đủ
  * đầu đài, không đứt giữa nhóm) và không dài quá `toiDa` ký tự. Khách sợ đúng
  * chỗ này: "e sợ Tele hạn chế ký tự".
  */
-export function chiaKhoiChanDa(dau: string, nhom: string[][], toiDa: number): string[] {
+export function chiaKhoiChanDa(dau: string, nhom: string[][], toiDa: number, region: Region): string[] {
   if (nhom.length === 0) return [];
   const mo = `${dau}: `;
   const khoi: string[] = [];
   let hien: string[] = [];
   let dai = mo.length;
   for (const n of nhom) {
-    const c = mauNhom(n);
+    const c = mauNhom(n, region);
     const them = c.length + (hien.length ? 1 : 0);
     if (hien.length && dai + them > toiDa) {
       khoi.push(mo + hien.join(" "));

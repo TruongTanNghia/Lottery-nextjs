@@ -115,8 +115,8 @@ export function helpText(isAdmin = false): string {
     "<code>/chanso</code> — số không nhận cược, cả 3 miền",
     "",
     "<b>Chặn đá</b>",
-    "<code>/chanlq mn</code> — cặp đá không nhận, Miền Nam",
-    "<code>/chanlq mt</code> · <code>/chanlq mb</code> — Trung, Bắc",
+    "<code>/chanlq</code> — cặp đá không nhận, cả 3 miền",
+    "<code>/chanlq mn</code> — riêng một miền (mt, mb)",
     "",
     "<b>Xem thêm</b>",
     "<code>/mn</code> <code>/mb</code> <code>/mt</code> — tóm tắt miền",
@@ -404,7 +404,7 @@ export async function chanSoAll(): Promise<string> {
 export async function chanDa(region: Region): Promise<string> {
   const h = await bangHieuLuc(region);
   const nhom = nhomVong(h.capChan);
-  const khoi = chiaKhoiChanDa(provincePrefix(region), nhom, SAFE_BLOCK);
+  const khoi = chiaKhoiChanDa(provincePrefix(region), nhom, SAFE_BLOCK, region);
   const soOChan = Object.values(h.bang).filter((v) => v <= 0).length;
   const soVong = nhom.filter((n) => n.length > 2).length;
   const head = [
@@ -428,13 +428,31 @@ export async function chanDa(region: Region): Promise<string> {
   ].join("\n");
 }
 
-/** /chanlq không có miền: đếm nhanh rồi chỉ ba lệnh, không dội cả ba miền vào một lúc. */
-export async function chanDaTomTat(): Promise<string> {
+/**
+ * /chanlq không có miền: cả ba miền một lượt, Nam → Trung → Bắc.
+ *
+ * Khách đổi ý so với "3 lệnh riêng": "giờ a chia ra kiểu /chanlq, mn… mt…
+ * mb…, chia thành nhiều tin, mỗi tin tối đa 4000 ký tự". Mỗi miền một dòng
+ * nhãn ngắn rồi tới các khối <code>; bộ gửi cắt theo dòng ở 4000 nên một
+ * khối (≤ 3400) không bao giờ bị đứt, và mỗi miền tự đứng riêng được.
+ */
+export async function chanDaTatCa(): Promise<string> {
   const parts = await Promise.all(REGIONS.map(async (r) => ({ r, h: await bangHieuLuc(r) })));
-  return [
-    "<b>Chặn đá — gõ riêng từng miền</b>",
-    ...parts.map(({ r, h }) => `<code>/chanlq ${TEN_NGAN[r].toLowerCase()}</code> — ${label(r)}: ${num(h.capChan.length)} cặp`),
-  ].join("\n");
+  const out: string[] = ["<b>🎲 Chặn đá cả 3 miền</b>"];
+  for (const { r, h } of parts) {
+    const nhom = nhomVong(h.capChan);
+    const khoi = chiaKhoiChanDa(provincePrefix(r), nhom, SAFE_BLOCK, r);
+    const soVong = nhom.filter((n) => n.length > 2).length;
+    out.push(
+      "",
+      `<b>${TEN_NGAN[r]}</b> · ${num(h.capChan.length)} cặp · ${soVong} vòng + ${num(nhom.length - soVong)} cặp lẻ${
+        h.luu.tuDong ? "" : " · cài tay"
+      }${khoi.length > 1 ? ` · ${khoi.length} phần` : ""}`
+    );
+    if (khoi.length === 0) out.push("<i>không chặn cặp nào</i>");
+    else out.push(...khoi.map((k) => `<code>${esc(k)}</code>`));
+  }
+  return out.join("\n");
 }
 
 /**
@@ -685,7 +703,7 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
     case "/chanlq":
     case "/chanda": {
       const region = parseRegion(args);
-      if (!region) return chanDaTomTat();
+      if (!region) return (await staleWarningAll()) + (await chanDaTatCa());
       return withWarning(region, chanDa);
     }
 

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, TRUNG_DA, apLuatTuDong, bangMacDinh, bienDa,
+  CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, TRUNG_DA, apLuatTuDong, bangMacDinh, bienDa,
   capBiChan, chiaKhoiChanDa, khoKyToi, khoaCap, nhomVong, soVong, thongKeCapTheoThang, thongKeDa,
   type BangDa, type KyDa, type OCapDayDu,
 } from "@/lib/da";
@@ -123,7 +123,7 @@ export default function DaBangTien({
     const cap = capBiChan(tt.kho, hieuLuc, TRAN);
     // Gom vòng như bot, để chuỗi copy trên web và chuỗi bot trả là một.
     const nhom = nhomVong(cap);
-    const chuoi = chiaKhoiChanDa(provincePrefix(region), nhom, Number.POSITIVE_INFINITY)[0] ?? "";
+    const chuoi = chiaKhoiChanDa(provincePrefix(region), nhom, Number.POSITIVE_INFINITY, region)[0] ?? "";
     return { cap, nhom, soVong: nhom.filter((n) => n.length > 2).length, chuoi };
   }, [tt, hieuLuc, region]);
 
@@ -314,8 +314,8 @@ export default function DaBangTien({
             </div>
             <div className="text-[0.66rem] text-[var(--text-muted)] mt-1">
               Trên Telegram gõ <code className="text-[#c2d4ea]">/chanlq {region === "xsmn" ? "mn" : region === "xsmt" ? "mt" : "mb"}</code>{" "}
-              là ra đúng chuỗi này (bot tự cắt khúc nếu dài). Mỗi mẩu <code className="text-[#c2d4ea]">a b c dx0n</code> là một
-              vòng: chặn mọi cặp trong đó.
+              là ra đúng chuỗi này (bot tự cắt khúc nếu dài; gõ <code className="text-[#c2d4ea]">/chanlq</code> không là ra cả 3 miền).
+              Mỗi mẩu <code className="text-[#c2d4ea]">a b c{HAU_TO_CHAN_DA[region]}</code> là một vòng: chặn mọi cặp trong đó.
             </div>
             {lenhChan.cap.length > 0 && (
               <code className="block mt-1.5 text-[0.66rem] leading-snug text-[#c2d4ea] break-all max-h-16 overflow-hidden" data-lenh-xem>
