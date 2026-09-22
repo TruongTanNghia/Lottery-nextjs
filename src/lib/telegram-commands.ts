@@ -115,9 +115,8 @@ export function helpText(isAdmin = false): string {
     "<code>/chanso</code> — số không nhận cược, cả 3 miền",
     "",
     "<b>Chặn đá</b>",
-    "<code>/chanda mn</code> — cặp đá không nhận, Miền Nam (mt, mb)",
-    "<code>/chanda</code> — cả 3 miền một lượt",
-    "<code>/chanda mn kl</code> — bản không lặp cặp (dài hơn)",
+    "<code>/chandamn</code> <code>/chandamt</code> <code>/chandamb</code> — cặp đá không nhận, dán vào phần mềm",
+    "<code>/chanda</code> — cả 3 miền một lượt · <code>/chanda mn kl</code> — bản không lặp cặp",
     "",
     "<b>Xem thêm</b>",
     "<code>/mn</code> <code>/mb</code> <code>/mt</code> — tóm tắt miền",
@@ -705,6 +704,14 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
     case "/chanso":
     case "/chan":
       return (await staleWarningAll()) + (await chanSoAll());
+
+    // Ba lệnh không tham số cho menu Telegram (menu không mang được tham số).
+    case "/chandamn":
+      return withWarning("xsmn", (r) => chanDa(r, false));
+    case "/chandamt":
+      return withWarning("xsmt", (r) => chanDa(r, false));
+    case "/chandamb":
+      return withWarning("xsmb", (r) => chanDa(r, false));
 
     case "/chanlq":
     case "/chanda": {

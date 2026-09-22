@@ -11,8 +11,14 @@
  * operator gets autocomplete instead of having to remember anything.
  *
  * Safe to re-run — setWebhook and setMyCommands both overwrite.
+ *
+ *   node --env-file=.env.local scripts/telegram-setup.mjs --chi-menu
+ *
+ * only re-registers the command menu and leaves the webhook alone — for when
+ * a menu entry changes and nothing else should be touched.
  */
-const [argToken, argSecret, argUrl] = process.argv.slice(2);
+const chiMenu = process.argv.includes("--chi-menu");
+const [argToken, argSecret, argUrl] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 
 const token = argToken || process.env.TELEGRAM_BOT_TOKEN;
 const secret = argSecret || process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -45,19 +51,21 @@ if (!me.ok) {
 }
 console.log(`✅ Bot: @${me.result.username}`);
 
-const hook = await api("setWebhook", {
-  url: `${appUrl}/api/telegram/webhook`,
-  secret_token: secret,
-  // callback_query carries the Duyệt / Từ chối button taps; anything else
-  // Telegram sends would only be dropped on the floor.
-  allowed_updates: ["message", "edited_message", "callback_query"],
-  drop_pending_updates: true,
-});
-if (hook.ok) {
-  console.log(`✅ Webhook → ${appUrl}/api/telegram/webhook`);
-} else {
-  console.error(`❌ Webhook: ${hook.description}`);
-  process.exitCode = 1;
+if (!chiMenu) {
+  const hook = await api("setWebhook", {
+    url: `${appUrl}/api/telegram/webhook`,
+    secret_token: secret,
+    // callback_query carries the Duyệt / Từ chối button taps; anything else
+    // Telegram sends would only be dropped on the floor.
+    allowed_updates: ["message", "edited_message", "callback_query"],
+    drop_pending_updates: true,
+  });
+  if (hook.ok) {
+    console.log(`✅ Webhook → ${appUrl}/api/telegram/webhook`);
+  } else {
+    console.error(`❌ Webhook: ${hook.description}`);
+    process.exitCode = 1;
+  }
 }
 
 const cmds = await api("setMyCommands", {
@@ -65,10 +73,13 @@ const cmds = await api("setMyCommands", {
     { command: "copy", description: "Chuỗi cược CẢ 3 MIỀN — /copy hoặc /copy de" },
     { command: "baocao", description: "Báo cáo tháng — 3 miền, nhận/bù/lời lỗ" },
     { command: "chanso", description: "Số chặn — không nhận cược, cả 3 miền" },
-    { command: "mn", description: "Tóm tắt Miền Nam" },
-    { command: "mb", description: "Tóm tắt Miền Bắc" },
-    { command: "mt", description: "Tóm tắt Miền Trung" },
-    { command: "top", description: "Lô đang bị chia đôi — /top mn" },
+    // The bookie asked for the three region summaries and /top to go, and
+    // three đá-block commands in their place. Menu entries cannot carry an
+    // argument, so each region gets its own command; /mn /mb /mt /top still
+    // answer when typed, they are just off the menu.
+    { command: "chandamn", description: "Chặn đá Miền Nam — dán vào phần mềm" },
+    { command: "chandamt", description: "Chặn đá Miền Trung — dán vào phần mềm" },
+    { command: "chandamb", description: "Chặn đá Miền Bắc — dán vào phần mềm" },
     { command: "kq", description: "Kết quả kỳ mới nhất — /kq mn" },
     { command: "help", description: "Hướng dẫn" },
     { command: "ai", description: "Ai đang dùng bot (quản trị)" },
