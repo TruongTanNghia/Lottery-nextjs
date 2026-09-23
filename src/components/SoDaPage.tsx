@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import { dungKy } from "@/lib/slot-stats";
 import {
-  GIA_DA, TRUNG_DA, apLuatTuDong, bangMacDinh, bienDa, chuanHoaBang, soTungKyTheoBang, soVong, thongKeDa, tinhVe,
+  GIAI, GIA_DA, TRUNG_DA, apLuatTuDong, bangMacDinh, bienDa, chuanHoaBang, soTungKyTheoBang, soVong, thongKeDa, tinhVe,
   type BangDa,
 } from "@/lib/da";
 import DaBangTien from "./DaBangTien";
@@ -87,6 +87,18 @@ export default function SoDaPage({ region }: { region: Region }) {
   }, [ky, region, bang, tuDong]);
   const rows = useMemo(() => (ky && hieuLuc ? soTungKyTheoBang(ky, region, hieuLuc) : null), [ky, region, hieuLuc]);
   const chuan = bienDa(region);
+
+  // Khách hỏi thẳng: "kết quả dò của đá vẫn tính bằng các đài của lô, bỏ mấy
+  // đài mình chặn rồi đúng không?" — đúng, vì đá đọc cùng một kho lo_daily đã
+  // lọc đài. Nhưng câu đó phải tự nhìn thấy được chứ không phải tin lời: số
+  // nháy mỗi kỳ đúng bằng 2 đài × 18 giải (Bắc: 27) thì đài bị chặn chắc chắn
+  // không lọt vào; gồm cả đài chặn thì nó nhảy lên 54.
+  const nhayKy = useMemo(() => {
+    if (!draws || draws.length === 0) return null;
+    const tong = draws.reduce((s, d) => s + Object.values(d.hits).reduce((a, v) => a + v, 0), 0);
+    return tong / draws.length;
+  }, [draws]);
+  const dungDai = nhayKy != null && Math.abs(nhayKy - GIAI[region]) < 0.5;
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -180,6 +192,33 @@ export default function SoDaPage({ region }: { region: Region }) {
             Giá hoà vốn của {REGION_LABELS[region]} là <b className="text-white">{tien(chuan.giaHoaVon)}</b> một
             điểm — đang bán <b className="text-white">{tien(chuan.gia)}</b>.
           </div>
+
+          {nhayKy != null && (
+            <div
+              data-da-nhay-ky={dungDai ? "dung" : "lech"}
+              className="rounded-lg border px-3 py-2 text-[0.72rem] leading-relaxed"
+              style={{
+                borderColor: dungDai ? "var(--hairline)" : "rgba(248,113,113,0.55)",
+                background: dungDai ? "rgba(255,255,255,0.03)" : "rgba(220,38,38,0.12)",
+                color: dungDai ? "var(--text-secondary)" : "#ffd9d9",
+              }}
+            >
+              <b className="text-white">Đo trên đúng các đài đang tính của lô</b> — mỗi kỳ trung bình{" "}
+              <b className="numeric text-white">{nhayKy.toFixed(1)} nháy</b>
+              {dungDai ? (
+                <>
+                  {" "}= {region === "xsmb" ? "27 giải của Miền Bắc" : `2 đài × 18 giải`}, tức các đài bị chặn{" "}
+                  <b className="text-white">không lọt vào</b> thống kê đá (gồm cả đài chặn thì con số này phải là{" "}
+                  {region === "xsmb" ? "—" : "54"}).
+                </>
+              ) : (
+                <>
+                  {" "}— <b>lệch so với {GIAI[region]} giải</b>. Kho đang không lọc đúng đài; mọi thống kê đá ở đây
+                  đang sai. Kiểm lại cài đặt đài bên Dashboard.
+                </>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
