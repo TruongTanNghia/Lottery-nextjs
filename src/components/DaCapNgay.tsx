@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from "react";
 import {
-  DIP_TOI_THIEU, kiemThuDa, thongKeCapTheoThang, thongKeDa,
+  DIP_TOI_THIEU, SO_O_DA, TRAN_DA, kiemThuDa, thongKeCapTheoThang, thongKeDa,
   type KyDa, type OCapDayDu,
 } from "@/lib/da";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
-const TRAN = 10;
+const TRAN = TRAN_DA;
 
 const tien = (n: number) => {
   const a = Math.abs(n), s = n < 0 ? "−" : "";
@@ -59,7 +59,7 @@ export default function DaCapNgay({ ky, region }: { ky: KyDa[]; region: Region }
         <div>
           <h2 className="plate-title">🎯 Cặp Ngày Nào Đẹp Nhất</h2>
           <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-            {REGION_LABELS[region]} · ghép hai con theo số kỳ chưa về, từ vừa ra tới 10 · 66 ô
+            {REGION_LABELS[region]} · ghép hai con theo số kỳ chưa về, từ vừa ra tới {TRAN}+ · {SO_O_DA} ô
           </p>
         </div>
       </div>
@@ -276,7 +276,7 @@ function Luoi({ bang, chon, bam }: { bang: OCapDayDu[]; chon: number; bam: (n: n
         </table>
       </div>
       <div className="mt-1 text-[0.66rem] text-[var(--text-muted)] leading-relaxed">
-        Toàn cảnh 66 ô — số trong ô là phần ăn (%). Viền xanh là NÊN ÔM, viền đỏ là NÉ RA. Bấm tên ngày
+        Toàn cảnh {SO_O_DA} ô — số trong ô là phần ăn (%). Viền xanh là NÊN ÔM, viền đỏ là NÉ RA. Bấm tên ngày
         để xem thẻ chi tiết của ngày đó ở dưới.
       </div>
     </div>

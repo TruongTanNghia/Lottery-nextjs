@@ -21,7 +21,7 @@ import { esc } from "@/lib/telegram";
 import { baoCaoTheoThang } from "@/lib/profit-calculator";
 import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
 import { bangHieuLuc } from "@/lib/da-bang";
-import { chiaKhoiChanDa, nhomVong } from "@/lib/da";
+import { SO_O_DA, chiaKhoiChanDa, nhomVong } from "@/lib/da";
 
 // Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
 // list is read side by side with theirs.
@@ -411,11 +411,11 @@ export async function chanDa(region: Region, khongLap = false): Promise<string> 
   const soOChan = Object.values(h.bang).filter((v) => v <= 0).length;
   const soVong = nhom.filter((n) => n.length > 2).length;
   const head = [
-    `<b>${label(region)} · chặn đá</b> · ${num(h.capChan.length)} cặp · ${soOChan}/66 ô · gom ${soVong} vòng + ${num(nhom.length - soVong)} cặp lẻ${
+    `<b>${label(region)} · chặn đá</b> · ${num(h.capChan.length)} cặp · ${soOChan}/${SO_O_DA} ô · gom ${soVong} vòng + ${num(nhom.length - soVong)} cặp lẻ${
       khongLap ? " · không lặp" : ""
     }`,
     h.luu.tuDong
-      ? `<i>luật tự động đang bật: chặn ${h.luat?.chan.length ?? 0} ô dưới ${h.luat ? h.luat.nguong.toFixed(2).replace(".", ",") : "?"}%${
+      ? `<i>chặn ô đỏ đang bật: chặn ${h.luat?.chan.length ?? 0} ô phần ăn âm${
           h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""
         }</i>`
       : `<i>luật tự động đang tắt — theo bảng cài tay${h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""}</i>`,

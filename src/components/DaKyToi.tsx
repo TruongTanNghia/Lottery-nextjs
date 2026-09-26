@@ -3,13 +3,13 @@
 import { useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  GIA_DA, TRUNG_DA, bienDa, khoKyToi, soVong, thongKeCapTheoThang,
+  GIA_DA, TRAN_DA, TRUNG_DA, bienDa, khoKyToi, soVong, thongKeCapTheoThang,
   type BangDa, type KyDa, type NhanO,
 } from "@/lib/da";
 import { useToast } from "./Toast";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
-const TRAN = 10;
+const TRAN = TRAN_DA;
 const LOS = Array.from({ length: 100 }, (_, i) => String(i).padStart(2, "0"));
 
 const tien = (n: number) => {
@@ -148,7 +148,7 @@ export default function DaKyToi({
   /** Màu một ô trên bảng, tuỳ đang chọn gì. */
   const mauO = (lo: string): React.CSSProperties => {
     const b = d.bac[lo];
-    const goc = { background: `rgba(56,189,248,${(0.5 - b * 0.042).toFixed(3)})`, color: "#fff", borderColor: "transparent" };
+    const goc = { background: `rgba(56,189,248,${(0.5 - b * (0.42 / TRAN)).toFixed(3)})`, color: "#fff", borderColor: "transparent" };
     if (!chon) return goc;
     if (chon.kieu === "con") {
       if (lo === chon.lo) return { background: "#2563eb", color: "#fff", borderColor: "#fff" };
@@ -252,7 +252,7 @@ export default function DaKyToi({
               <>
                 <Cham m="rgba(56,189,248,0.5)" chu="mới = vừa ra" />
                 <Cham m="rgba(56,189,248,0.25)" chu="5k = 5 kỳ chưa về" />
-                <Cham m="rgba(56,189,248,0.08)" chu="10+ = khô lâu" />
+                <Cham m="rgba(56,189,248,0.08)" chu={`${TRAN}+ = khô lâu`} />
               </>
             )}
             {chon?.kieu === "con" && (

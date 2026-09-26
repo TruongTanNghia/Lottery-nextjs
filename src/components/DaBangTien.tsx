@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, TRUNG_DA, apLuatTuDong, bangMacDinh, bienDa,
+  CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, SO_O_DA, TRAN_DA, TRUNG_DA, apLuatTuDong, bangMacDinh, bienDa,
   capBiChan, chiaKhoiChanDa, khoKyToi, khoaCap, nhomVong, soVong, thongKeCapTheoThang, thongKeDa,
   type BangDa, type KyDa, type OCapDayDu,
 } from "@/lib/da";
@@ -11,7 +11,9 @@ import { provincePrefix } from "@/lib/provinces";
 import { useToast } from "./Toast";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
-const TRAN = 10;
+const TRAN = TRAN_DA;
+const SO_CUNG = TRAN + 1;
+const SO_CHEO = SO_O_DA - SO_CUNG;
 
 const tien = (n: number) => {
   const a = Math.abs(n), s = n < 0 ? "−" : "";
@@ -45,12 +47,13 @@ type Nhom = "cung" | "cheo";
  * 1 đá với nhau, ngày 2 đá với nhau… ngày này đá chéo ngày kia cho tất cả 10
  * ngày, hiện rõ thống kê chi tiết". Nên mỗi ô ở đây là một dòng có ô nhập điểm
  * riêng, thống kê của chính nó nằm ngay bên dưới, và chia đúng hai nhóm khách
- * kể: 11 ô cùng ngày, 55 ô đá chéo.
+ * kể: các ô cùng ngày và các ô đá chéo (16 bậc → 16 + 120 ô).
  *
- * Rồi khách chốt luật: "MN, MT dưới +2,92% là chặn; MB dưới +5,14% là chặn —
- * chừng nào em thay đổi thì bấm thay đổi hoặc vào cài thủ công". Đó là công
- * tắc LUẬT TỰ CHẶN ở đầu bảng: bật thì ô nào phần ăn đo được thấp hơn phần ăn
- * theo giá bị chặn, bất kể điểm đã cài; tắt thì bảng chạy đúng số cài tay.
+ * Rồi khách nhìn lưới màu và chốt: "cứ đỏ là chặn — thêm bật/tắt chặn các ô
+ * đỏ". Đó là công tắc CHẶN CÁC Ô ĐỎ ở đầu bảng: bật thì ô nào phần ăn đo được
+ * âm bị chặn, bất kể điểm đã cài; tắt thì bảng chạy đúng số cài tay. Lưới
+ * ngay dưới công tắc là để "cài tiền hoặc chặn ở dưới bảng này": bấm ô nào
+ * thì nhảy tới dòng cài tiền của ô đó.
  *
  * Sửa xong phải bấm Lưu thì các khối thống kê của tab (và bot /chanlq) mới
  * tính theo bảng mới — số đang gõ dở không được lẳng lặng đổi báo cáo. Thanh
@@ -71,7 +74,7 @@ export default function DaBangTien({
   const [nhap, setNhap] = useState<BangDa>(bang);
   const [tuDongNhap, setTuDongNhap] = useState(tuDong);
   const [nhom, setNhom] = useState<Nhom>("cung");
-  /** Đá chéo: đang xem ngày nào ghép với các ngày khác. -1 = cả 55 ô. */
+  /** Đá chéo: đang xem ngày nào ghép với các ngày khác. -1 = mọi ô chéo. */
   const [ngay, setNgay] = useState(0);
   const [datHet, setDatHet] = useState("1");
   /** Chuỗi chặn: cho phép một cặp nằm trong nhiều vòng (ngắn) hay không (dài hơn). */
@@ -191,7 +194,7 @@ export default function DaBangTien({
         <div>
           <h2 className="plate-title">💰 Bảng Tiền Đá — Cài Riêng Từng Ô</h2>
           <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-            {REGION_LABELS[region]} · 11 ô cùng ngày + 55 ô đá chéo · 1 điểm = {tien(gia)} ·{" "}
+            {REGION_LABELS[region]} · {SO_CUNG} ô cùng ngày + {SO_CHEO} ô đá chéo (vừa ra → {TRAN}+) · 1 điểm = {tien(gia)} ·{" "}
             {luuLuc ? `lưu lần cuối ${new Date(luuLuc).toLocaleString("vi-VN")}` : "chưa lưu lần nào"}
           </p>
         </div>
@@ -223,19 +226,20 @@ export default function DaBangTien({
                   : "bg-white/[0.07] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.14]"
               }`}
             >
-              {tuDongNhap ? "✅ Luật tự chặn: ĐANG BẬT" : "⭕ Luật tự chặn: ĐANG TẮT"}
+              {tuDongNhap ? "✅ Chặn các ô đỏ: ĐANG BẬT" : "⭕ Chặn các ô đỏ: ĐANG TẮT"}
             </button>
             <span className="text-[0.74rem] text-[var(--text-secondary)]">
-              Ô nào phần ăn đo được <b className="text-white">dưới {pc(chuan.bien)}</b> (phần ăn theo giá của{" "}
-              {REGION_LABELS[region]}) là <b className="text-white">chặn</b>
+              Ô nào <b className="text-[#ff9d9d]">đỏ</b> trên lưới (phần ăn đo được <b className="text-white">âm</b>) là{" "}
+              <b className="text-white">chặn</b>; xanh thì nhận theo điểm đã cài
             </span>
           </div>
           <div className="text-[0.72rem] leading-relaxed text-[var(--text-secondary)] mt-1.5" data-luat-ket-qua>
             {tuDongNhap ? (
               <>
-                Đang chặn theo luật <b className="text-[#ff9d9d]">{luat?.chan.length ?? 0} ô</b> trên {soKy} kỳ, bỏ qua ô
-                dưới {so(CAP_TOI_THIEU_LUAT)} cặp. Luật tự tính lại mỗi khi có kỳ mới. Ô bị luật chặn vẫn giữ số điểm đã
-                cài để lúc tắt luật thì dùng lại. <b className="text-white">Muốn khác đi:</b> tắt luật rồi cài tay từng ô.
+                Đang chặn theo luật <b className="text-[#ff9d9d]">{luat?.chan.length ?? 0} ô đỏ</b> trên {soKy} kỳ, bỏ qua ô
+                dưới {so(CAP_TOI_THIEU_LUAT)} cặp. Màu đỏ tự tính lại mỗi khi có kỳ mới, nên ô chặn hôm nay có thể đổi ngày
+                mai. Ô bị chặn vẫn giữ số điểm đã cài để lúc tắt thì dùng lại.{" "}
+                <b className="text-white">Muốn khác đi:</b> tắt công tắc rồi cài tay từng ô.
               </>
             ) : (
               <>Đang tắt — bảng chạy đúng số cài tay từng ô bên dưới, không tự chặn gì.</>
@@ -243,9 +247,25 @@ export default function DaBangTien({
           </div>
         </div>
 
+        {/* ── Lưới 136 ô: cài tiền hoặc chặn "ở dưới bảng này" ─────── */}
+        <LuoiTien
+          bang={tkt.bang}
+          nhap={nhap}
+          hieuLuc={hieuLuc}
+          luatChan={luatChan}
+          bam={(i, j) => {
+            if (i === j) setNhom("cung");
+            else {
+              setNhom("cheo");
+              setNgay(i);
+            }
+            setTimeout(() => document.querySelector(`[data-o-tien="${khoaCap(i, j)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+          }}
+        />
+
         {/* ── Thanh tổng: tính theo số ĐANG GÕ, đã áp luật ─────────── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2" data-bang-tong>
-          <OTong nhan="Ô đang mở / chặn" gt={`${tong.mo} / ${tong.chan}`} phu="trên 66 ô" m="#8fd0ff" />
+          <OTong nhan="Ô đang mở / chặn" gt={`${tong.mo} / ${tong.chan}`} phu={`trên ${SO_O_DA} ô`} m="#8fd0ff" />
           <OTong
             nhan="Kỳ tới nhận tối đa"
             gt={tien(tong.thuKyToi)}
@@ -343,8 +363,8 @@ export default function DaBangTien({
         <div className="grid grid-cols-2 gap-2">
           {(
             [
-              ["cung", "Cùng ngày đá với nhau", "11 ô"],
-              ["cheo", "Ngày này đá chéo ngày kia", "55 ô"],
+              ["cung", "Cùng ngày đá với nhau", `${SO_CUNG} ô`],
+              ["cheo", "Ngày này đá chéo ngày kia", `${SO_CHEO} ô`],
             ] as [Nhom, string, string][]
           ).map(([k, ten, phu]) => (
             <button
@@ -383,7 +403,7 @@ export default function DaBangTien({
                 ngay < 0 ? "bg-[#2563eb] text-white" : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16]"
               }`}
             >
-              Cả 55 ô
+              Cả {SO_CHEO} ô
             </button>
           </div>
         )}
@@ -417,15 +437,15 @@ export default function DaBangTien({
             onClick={() => setNhap(bangMacDinh(TRAN))}
             className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16]"
           >
-            Cả 66 ô về 1 điểm
+            Cả {SO_O_DA} ô về 1 điểm
           </button>
         </div>
 
         <div className="eyebrow text-[var(--text-muted)]">
           {nhom === "cung"
-            ? "Hai con cùng một ngày đá với nhau — 11 ô"
+            ? `Hai con cùng một ngày đá với nhau — ${SO_CUNG} ô`
             : ngay < 0
-            ? "Mọi ô đá chéo — 55 ô"
+            ? `Mọi ô đá chéo — ${SO_CHEO} ô`
             : `${tenNgay(ngay)} đá chéo với từng ngày khác — ${hien.length} ô`}
         </div>
 
@@ -512,7 +532,7 @@ function DongO({
             )}
             {luatChan ? (
               <span className="rounded px-1.5 py-0.5 text-[0.62rem] font-bold text-[#ff9d9d]" style={{ background: "rgba(0,0,0,0.28)" }}>
-                LUẬT CHẶN · {pc(o.bien)} &lt; {pc(nguong)}
+                Ô ĐỎ · {pc(o.bien)} — CHẶN
               </span>
             ) : chan ? (
               <span className="rounded px-1.5 py-0.5 text-[0.62rem] font-bold text-[#ff9d9d]" style={{ background: "rgba(0,0,0,0.28)" }}>
@@ -525,7 +545,7 @@ function DongO({
             {!chan && capKyToi > 0 && (
               <> → nhận tối đa <b className="text-[#7ff0c0]">{tien(capKyToi * diem * gia)}</b></>
             )}
-            {luatChan && <> → <b className="text-[#ff9d9d]">không nhận</b> (luật đang chặn dù cài {so(diem)} điểm)</>}
+            {luatChan && <> → <b className="text-[#ff9d9d]">không nhận</b> (ô đỏ đang bị chặn dù cài {so(diem)} điểm)</>}
           </div>
         </div>
 
@@ -614,6 +634,81 @@ function DongO({
             (phần ăn {pc(o.bien)})
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Lưới toàn cảnh có thể bấm: mỗi ô là một cặp ngày, nền đỏ/xanh theo phần ăn
+ * đo được, chữ là số điểm đang cài (✕ = đang chặn). Bấm ô nào thì nhảy tới
+ * dòng cài tiền của ô đó — khách xin "cài tiền hoặc chặn ở dưới bảng này".
+ */
+function LuoiTien({
+  bang, nhap, hieuLuc, luatChan, bam,
+}: {
+  bang: OCapDayDu[];
+  nhap: BangDa;
+  hieuLuc: BangDa;
+  luatChan: Set<string>;
+  bam: (i: number, j: number) => void;
+}) {
+  const m = new Map(bang.map((x) => [khoaCap(x.i, x.j), x]));
+  const tenCot = (i: number) => (i === 0 ? "vr" : i >= TRAN ? `${TRAN}+` : `${i}`);
+  const nen = (bien: number) => {
+    const d = Math.max(-8, Math.min(8, bien)) / 8;
+    return d >= 0 ? `rgba(16,185,129,${(0.1 + d * 0.35).toFixed(3)})` : `rgba(220,38,38,${(0.12 + -d * 0.4).toFixed(3)})`;
+  };
+  return (
+    <div className="rounded-lg border border-[var(--hairline)] bg-black/20 p-2" data-luoi-tien>
+      <div className="flex flex-wrap items-baseline gap-x-2 mb-1">
+        <span className="eyebrow">Lưới {SO_O_DA} ô — bấm ô để cài tiền hoặc chặn</span>
+        <span className="text-[0.62rem] text-[var(--text-muted)]">nền đỏ = phần ăn âm · số trong ô = điểm đang cài · ✕ = đang chặn</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="text-[0.58rem] border-separate" style={{ borderSpacing: "1.5px" }}>
+          <thead>
+            <tr>
+              <th className="text-[var(--text-muted)] font-semibold px-0.5">ngày</th>
+              {Array.from({ length: TRAN + 1 }, (_, j) => (
+                <th key={j} className="numeric font-semibold text-[var(--text-muted)] px-0.5">{tenCot(j)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: TRAN + 1 }, (_, i) => (
+              <tr key={i}>
+                <th className="numeric font-semibold text-[var(--text-muted)] text-right px-0.5">{tenCot(i)}</th>
+                {Array.from({ length: TRAN + 1 }, (_, j) => {
+                  if (j < i) return <td key={j} />;
+                  const k = khoaCap(i, j);
+                  const o = m.get(k);
+                  const diem = hieuLuc[k] ?? 0;
+                  const chan = diem <= 0;
+                  return (
+                    <td key={j} className="p-0">
+                      <button
+                        onClick={() => bam(i, j)}
+                        data-luoi-o={k}
+                        data-luoi-chan={chan ? "1" : "0"}
+                        title={`${k}: cài ${nhap[k] ?? 0} điểm${luatChan.has(k) ? " — ô đỏ, đang bị chặn" : chan ? " — chặn tay" : ""}${o ? ` · phần ăn ${pc(o.bien)} · ${so(o.dip)} cặp` : " · chưa có cặp"}`}
+                        className="w-6 h-6 rounded numeric font-bold leading-none"
+                        style={{
+                          background: o ? nen(o.bien) : "rgba(255,255,255,0.05)",
+                          color: chan ? "#ffb4b4" : "#fff",
+                          outline: luatChan.has(k) ? "1.5px solid #ff6b78" : chan ? "1.5px dashed #ff9d9d" : "none",
+                          outlineOffset: "-1.5px",
+                        }}
+                      >
+                        {chan ? "✕" : nhap[k] >= 100 ? "99+" : nhap[k]}
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

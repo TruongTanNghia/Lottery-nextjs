@@ -32,6 +32,14 @@ export const TRUNG_DA: Record<Region, number> = {
 export const GIAI: Record<Region, number> = { xsmn: 36, xsmt: 36, xsmb: 27 };
 
 /**
+ * Bậc ngày cao nhất, mọi bậc từ đó trở lên gom một rọ. Khách mở khung ở
+ * "từ vừa ra tới 10", chạy một tuần rồi xin "nâng lên 15+, cả 3 miền". 16 bậc
+ * ghép ra 136 ô.
+ */
+export const TRAN_DA = 15;
+export const SO_O_DA = ((TRAN_DA + 1) * (TRAN_DA + 2)) / 2;
+
+/**
  * Số vòng khi đá một bộ `a` con: mỗi hai con ghép thành một vòng.
  *
  * Đúng công thức khách đưa: V = a × (a − 1) / 2. Đá 5 con ra 10 vòng.
@@ -176,7 +184,7 @@ export interface OCapNgay {
  */
 export function demCapTheoNgay(
   ky: KyDa[],
-  tran = 10
+  tran = TRAN_DA
 ): Map<string, { dip: number; caHai: number }> {
   const out = new Map<string, { dip: number; caHai: number }>();
   const cong = (i: number, j: number, dip: number, caHai: number) => {
@@ -222,7 +230,7 @@ export interface ThongKeDa {
   tong: { dip: number; caHai: number; tyLe: number; thu: number; tra: number; lai: number; bien: number };
 }
 
-export function thongKeDa(ky: KyDa[], region: Region, tran = 10): ThongKeDa | null {
+export function thongKeDa(ky: KyDa[], region: Region, tran = TRAN_DA): ThongKeDa | null {
   if (ky.length === 0) return null;
   const gia = GIA_DA[region];
   const trung = TRUNG_DA[region];
@@ -387,7 +395,7 @@ export interface ThongKeCapThang {
   soNe: number;
 }
 
-export function thongKeCapTheoThang(ky: KyDa[], region: Region, tran = 10): ThongKeCapThang | null {
+export function thongKeCapTheoThang(ky: KyDa[], region: Region, tran = TRAN_DA): ThongKeCapThang | null {
   const tong = thongKeDa(ky, region, tran);
   if (!tong) return null;
   const gia = GIA_DA[region];
@@ -448,7 +456,7 @@ export interface KiemThuDa {
  * những ô đó ở NỬA SAU, so với cứ ôm đều mọi ô. Nếu biết chọn ô mà có giá trị
  * thì nửa sau phải hơn hẳn; nếu ngang nhau thì bảng xếp hạng ô là may rủi.
  */
-export function kiemThuDa(ky: KyDa[], region: Region, tran = 10): KiemThuDa | null {
+export function kiemThuDa(ky: KyDa[], region: Region, tran = TRAN_DA): KiemThuDa | null {
   const giua = Math.floor(ky.length / 2);
   if (giua < 20) return null;
   const gia = GIA_DA[region];
@@ -542,14 +550,14 @@ export const DIEM_DA_TOI_DA = 100_000;
 export const khoaCap = (i: number, j: number) => `${Math.min(i, j)}-${Math.max(i, j)}`;
 
 /** Mọi ô, cùng-ngày đứng trước rồi tới đá chéo — đúng thứ tự khách liệt kê. */
-export function moiOCap(tran = 10): { i: number; j: number; cungNgay: boolean }[] {
+export function moiOCap(tran = TRAN_DA): { i: number; j: number; cungNgay: boolean }[] {
   const out: { i: number; j: number; cungNgay: boolean }[] = [];
   for (let i = 0; i <= tran; i++) out.push({ i, j: i, cungNgay: true });
   for (let i = 0; i <= tran; i++) for (let j = i + 1; j <= tran; j++) out.push({ i, j, cungNgay: false });
   return out;
 }
 
-export function bangMacDinh(tran = 10): BangDa {
+export function bangMacDinh(tran = TRAN_DA): BangDa {
   const b: BangDa = {};
   for (const o of moiOCap(tran)) b[khoaCap(o.i, o.j)] = DIEM_DA_MAC_DINH;
   return b;
@@ -561,7 +569,7 @@ export function bangMacDinh(tran = 10): BangDa {
  * Thứ gì lạ thì bỏ chứ không đoán — đây là bảng tiền. Ô thiếu thì về mức mặc
  * định, để một bảng lưu từ bản cũ ít ô hơn vẫn mở ra dùng được.
  */
-export function chuanHoaBang(raw: unknown, tran = 10): BangDa {
+export function chuanHoaBang(raw: unknown, tran = TRAN_DA): BangDa {
   const b = bangMacDinh(tran);
   if (!raw || typeof raw !== "object") return b;
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
@@ -579,7 +587,7 @@ export function chuanHoaBang(raw: unknown, tran = 10): BangDa {
  * Bảng toàn 1 điểm thì ra y hệt `soTungKy` — bài kiểm giữ chặt điều đó, để hai
  * đường tính không bao giờ lệch nhau.
  */
-export function soTungKyTheoBang(ky: KyDa[], region: Region, bang: BangDa, tran = 10): KyDaRow[] {
+export function soTungKyTheoBang(ky: KyDa[], region: Region, bang: BangDa, tran = TRAN_DA): KyDaRow[] {
   const gia = GIA_DA[region];
   const trung = TRUNG_DA[region];
   let don = 0;
@@ -622,13 +630,20 @@ export interface KetQuaLuat {
 }
 
 /**
- * Áp luật tự chặn lên bảng đã cài. Hàm thuần, nên web và bot cùng gọi một chỗ
- * và không bao giờ cho hai kết quả khác nhau.
+ * Ô đỏ là ô phần ăn đo được dưới mức này. Khách nhìn lưới "Cặp Ngày Nào Đẹp
+ * Nhất" — đỏ là âm — rồi chốt "cứ đỏ là chặn", nên luật đi theo đúng màu đó,
+ * thay cho mức "dưới phần ăn theo giá" thử lúc đầu.
  */
-export function apLuatTuDong(bang: BangDa, tk: ThongKeDa | null, tran = 10): KetQuaLuat {
+export const NGUONG_O_DO = 0;
+
+/**
+ * Áp luật "chặn các ô đỏ" lên bảng đã cài. Hàm thuần, nên web và bot cùng
+ * gọi một chỗ và không bao giờ cho hai kết quả khác nhau.
+ */
+export function apLuatTuDong(bang: BangDa, tk: ThongKeDa | null, tran = TRAN_DA): KetQuaLuat {
   const out: BangDa = { ...bangMacDinh(tran), ...bang };
   const chan: string[] = [];
-  const nguong = tk ? tk.chuan.bien : 0;
+  const nguong = NGUONG_O_DO;
   if (tk) {
     for (const o of tk.bang) {
       if (o.dip < CAP_TOI_THIEU_LUAT || o.bien >= nguong) continue;
@@ -647,7 +662,7 @@ export function apLuatTuDong(bang: BangDa, tk: ThongKeDa | null, tran = 10): Ket
  * Trong cặp con lớn đứng trước, cả danh sách xếp tăng dần — theo đúng ví dụ
  * khách gõ ("01 00; 10 01").
  */
-export function capBiChan(kho: Record<string, number>, bang: BangDa, tran = 10): [string, string][] {
+export function capBiChan(kho: Record<string, number>, bang: BangDa, tran = TRAN_DA): [string, string][] {
   const los = Object.keys(kho).sort();
   const bac = (lo: string) => Math.min(tran, Math.max(0, kho[lo]));
   const out: [string, string][] = [];
