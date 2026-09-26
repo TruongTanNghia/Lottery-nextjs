@@ -620,39 +620,100 @@ export function soTungKyTheoBang(ky: KyDa[], region: Region, bang: BangDa, tran 
 /** Ô có ít hơn ngần này cặp thì luật chưa động tới — con số còn là may rủi. */
 export const CAP_TOI_THIEU_LUAT = DIP_TOI_THIEU;
 
-export interface KetQuaLuat {
-  /** Bảng sau khi áp luật: ô dưới mức bị đưa về 0, ô khác giữ điểm đã cài. */
-  bang: BangDa;
-  /** Những ô luật vừa chặn (không tính ô đã tự cài 0). */
-  chan: string[];
-  /** Mức so sánh — phần ăn theo giá của miền. */
+export type LyDoChan = "tong" | "thang" | "cahai";
+
+export interface LuatHaiBuoc {
+  /** Ô luật đang muốn chặn ở số liệu mới nhất, kèm lý do. */
+  chan: Map<string, LyDoChan>;
+  /** Ngưỡng — phần ăn theo giá của miền (MN/MT 2,92%, MB 5,14%). */
   nguong: number;
+  /** Tháng đang chấm ở bước 2. */
+  thang: string;
 }
 
 /**
- * Ô đỏ là ô phần ăn đo được dưới mức này. Khách nhìn lưới "Cặp Ngày Nào Đẹp
- * Nhất" — đỏ là âm — rồi chốt "cứ đỏ là chặn", nên luật đi theo đúng màu đó,
- * thay cho mức "dưới phần ăn theo giá" thử lúc đầu.
+ * Luật hai bước của khách:
+ *   1. tổng thể mọi kỳ: ô nào tỷ lệ cả hai cùng về CAO hơn mức chung → chặn
+ *      (tức phần ăn đo được thấp hơn phần ăn theo giá);
+ *   2. tháng đang chạy: ô nào phần ăn tháng này ≤ phần ăn theo giá → chặn.
+ * Ô ít hơn CAP_TOI_THIEU_LUAT cặp (cả quãng, hoặc trong tháng) thì bước đó
+ * không chấm — con số còn là may rủi. Hàm thuần, web và bot cùng gọi.
  */
-export const NGUONG_O_DO = 0;
+export function luatHaiBuoc(tk: ThongKeDa | null, tkt: ThongKeCapThang | null): LuatHaiBuoc | null {
+  if (!tk) return null;
+  const nguong = tk.chuan.bien;
+  const thang = tkt?.thangDangChay ?? "";
+  const theoThang = new Map<string, OCapThang | undefined>();
+  if (tkt) for (const o of tkt.bang) theoThang.set(khoaCap(o.i, o.j), o.theoThang.find((t) => t.thang === thang));
+  const chan = new Map<string, LyDoChan>();
+  for (const o of tk.bang) {
+    const k = khoaCap(o.i, o.j);
+    const b1 = o.dip >= CAP_TOI_THIEU_LUAT && o.tyLe > tk.chuan.p;
+    const t = theoThang.get(k);
+    const b2 = !!t && t.bien != null && t.bien <= nguong;
+    if (b1 && b2) chan.set(k, "cahai");
+    else if (b1) chan.set(k, "tong");
+    else if (b2) chan.set(k, "thang");
+  }
+  return { chan, nguong, thang };
+}
+
+export interface TrangThaiLuat {
+  /** Ô luật đã chặn — giữ nguyên tới khi khách mở tay. */
+  chanLuat: string[];
+  /** Ô khách đã mở tay — luật không đụng lại. */
+  moTay: string[];
+}
+
+export interface KetQuaLuat {
+  /** Bảng hiệu lực: ô trong danh sách chặn bị ép về 0, ô khác giữ điểm đã cài. */
+  bang: BangDa;
+  /** Danh sách chặn SAU khi cộng thêm ô luật vừa bắt được. */
+  chanLuat: string[];
+  /** Ô vừa được cộng thêm ở lần áp này. */
+  moi: string[];
+  /** Lý do của từng ô luật đang muốn chặn (ô cũ trong danh sách mà nay hết lý do thì không có ở đây). */
+  lyDo: Record<string, LyDoChan>;
+}
 
 /**
- * Áp luật "chặn các ô đỏ" lên bảng đã cài. Hàm thuần, nên web và bot cùng
- * gọi một chỗ và không bao giờ cho hai kết quả khác nhau.
+ * Áp luật kiểu "đóng đinh": ô luật bắt được thì thêm vào danh sách chặn và ở
+ * đó mãi — luật không bao giờ tự mở ô ra. Chỉ khách mở tay (moTay) mới mở,
+ * và ô đã mở tay thì luật bỏ qua. Đúng câu khách: "khi chặn rồi lưu giữ
+ * nguyên tới khi thay đổi lại".
  */
-export function apLuatTuDong(bang: BangDa, tk: ThongKeDa | null, tran = TRAN_DA): KetQuaLuat {
-  const out: BangDa = { ...bangMacDinh(tran), ...bang };
-  const chan: string[] = [];
-  const nguong = NGUONG_O_DO;
-  if (tk) {
-    for (const o of tk.bang) {
-      if (o.dip < CAP_TOI_THIEU_LUAT || o.bien >= nguong) continue;
-      const k = khoaCap(o.i, o.j);
-      if ((out[k] ?? 0) > 0) chan.push(k);
-      out[k] = 0;
+export function apLuatDinh(bang: BangDa, luat: LuatHaiBuoc | null, tt: TrangThaiLuat, tran = TRAN_DA): KetQuaLuat {
+  const goc: BangDa = { ...bangMacDinh(tran), ...bang };
+  const moTay = new Set(tt.moTay);
+  const chanLuat = new Set(tt.chanLuat.filter((k) => k in goc && !moTay.has(k)));
+  const moi: string[] = [];
+  const lyDo: Record<string, LyDoChan> = {};
+  if (luat) {
+    for (const [k, ly] of luat.chan) {
+      if (!(k in goc)) continue;
+      lyDo[k] = ly;
+      if (moTay.has(k) || chanLuat.has(k)) continue;
+      chanLuat.add(k);
+      moi.push(k);
     }
   }
-  return { bang: out, chan, nguong };
+  const out = { ...goc };
+  for (const k of chanLuat) out[k] = 0;
+  return { bang: out, chanLuat: [...chanLuat].sort(), moi: moi.sort(), lyDo };
+}
+
+/** Chỉ ép danh sách đã đóng đinh về 0, không tính luật lại — cho các khối chỉ đọc. */
+export function apChanLuat(bang: BangDa, chanLuat: string[], tran = TRAN_DA): BangDa {
+  const out: BangDa = { ...bangMacDinh(tran), ...bang };
+  for (const k of chanLuat) if (k in out) out[k] = 0;
+  return out;
+}
+
+/** Dọn một danh sách ô đọc từ ngoài: chỉ giữ khoá "i-j" hợp lệ, không lặp. */
+export function chuanHoaDanhSachO(raw: unknown, tran = TRAN_DA): string[] {
+  if (!Array.isArray(raw)) return [];
+  const hopLe = bangMacDinh(tran);
+  return [...new Set(raw.filter((k): k is string => typeof k === "string" && k in hopLe))].sort();
 }
 
 /**

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import { dungKy } from "@/lib/slot-stats";
-import { apLuatTuDong, bangMacDinh, chuanHoaBang, soTungKyTheoBang, thongKeDa } from "@/lib/da";
+import { apChanLuat, bangMacDinh, chuanHoaBang, chuanHoaDanhSachO, soTungKyTheoBang } from "@/lib/da";
 import { phanTichChotLoi, type ChotLoi, type KyLai, type ThangChuoi } from "@/lib/chot-loi";
 import type { Region } from "@/lib/types";
 
@@ -48,7 +48,7 @@ export default function DaChotLoi({ phienBan = 0 }: { phienBan?: number }) {
         ]);
         const ky = dungKy((h.draws ?? []) as DrawHits[]);
         const daLuu = c?.data?.bang ? chuanHoaBang(c.data.bang) : bangMacDinh();
-        const bang = c?.data?.tuDong !== false ? apLuatTuDong(daLuu, thongKeDa(ky, r)).bang : daLuu;
+        const bang = c?.data?.tuDong !== false ? apChanLuat(daLuu, chuanHoaDanhSachO(c?.data?.chanLuat)) : daLuu;
         return soTungKyTheoBang(ky, r, bang).map((x) => ({ date: x.date, lai: x.lai, thu: x.thu }));
       })
     )

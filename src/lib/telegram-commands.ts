@@ -415,7 +415,7 @@ export async function chanDa(region: Region, khongLap = false): Promise<string> 
       khongLap ? " · không lặp" : ""
     }`,
     h.luu.tuDong
-      ? `<i>chặn ô đỏ đang bật: chặn ${h.luat?.chan.length ?? 0} ô phần ăn âm${
+      ? `<i>luật 2 bước đang bật: chặn ${h.luu.chanLuat.length} ô (giữ nguyên tới khi đổi), ${h.luu.moTay.length} ô mở tay${
           h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""
         }</i>`
       : `<i>luật tự động đang tắt — theo bảng cài tay${h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""}</i>`,

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import { dungKy } from "@/lib/slot-stats";
 import {
-  apLuatTuDong, bangMacDinh, bienDa, chuanHoaBang, doLechKy, gomThang, soTungKyTheoBang, thongKeDa, type ThangDa,
+  apChanLuat, bangMacDinh, bienDa, chuanHoaBang, chuanHoaDanhSachO, doLechKy, gomThang, soTungKyTheoBang, type ThangDa,
 } from "@/lib/da";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
@@ -61,9 +61,9 @@ export default function DaBaoCaoThang({ phienBan = 0 }: { phienBan?: number }) {
         ]);
         const ky = dungKy((h.draws ?? []) as DrawHits[]);
         const daLuu = c?.data?.bang ? chuanHoaBang(c.data.bang) : bangMacDinh();
-        // Cùng luật, cùng hàm với tab và bot: bật thì ô dưới phần ăn theo giá về 0.
+        // Máy chủ đã chạy luật và đóng đinh ô lúc trả cấu hình; ở đây chỉ ép về 0.
         const tuDong = c?.data?.tuDong !== false;
-        const bang = tuDong ? apLuatTuDong(daLuu, thongKeDa(ky, r)).bang : daLuu;
+        const bang = tuDong ? apChanLuat(daLuu, chuanHoaDanhSachO(c?.data?.chanLuat)) : daLuu;
         const rows = soTungKyTheoBang(ky, r, bang);
         return {
           region: r,

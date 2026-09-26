@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, SO_O_DA, TRAN_DA, TRUNG_DA, apLuatTuDong, bangMacDinh, bienDa,
-  capBiChan, chiaKhoiChanDa, khoKyToi, khoaCap, nhomVong, soVong, thongKeCapTheoThang, thongKeDa,
-  type BangDa, type KyDa, type OCapDayDu,
+  CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, SO_O_DA, TRAN_DA, TRUNG_DA, apChanLuat, bangMacDinh, bienDa,
+  capBiChan, chiaKhoiChanDa, khoKyToi, khoaCap, nhomVong, soVong, thongKeCapTheoThang,
+  type BangDa, type KyDa, type LyDoChan, type OCapDayDu,
 } from "@/lib/da";
 import { provincePrefix } from "@/lib/provinces";
 import { useToast } from "./Toast";
@@ -49,18 +49,20 @@ type Nhom = "cung" | "cheo";
  * riêng, thống kê của chính nó nằm ngay bên dưới, và chia đúng hai nhóm khách
  * kể: các ô cùng ngày và các ô đá chéo (16 bậc → 16 + 120 ô).
  *
- * Rồi khách nhìn lưới màu và chốt: "cứ đỏ là chặn — thêm bật/tắt chặn các ô
- * đỏ". Đó là công tắc CHẶN CÁC Ô ĐỎ ở đầu bảng: bật thì ô nào phần ăn đo được
- * âm bị chặn, bất kể điểm đã cài; tắt thì bảng chạy đúng số cài tay. Lưới
- * ngay dưới công tắc là để "cài tiền hoặc chặn ở dưới bảng này": bấm ô nào
- * thì nhảy tới dòng cài tiền của ô đó.
+ * Rồi khách chốt LUẬT HAI BƯỚC (xem luatHaiBuoc trong da.ts): tổng thể tỷ lệ
+ * cùng về cao hơn mức chung → chặn; tháng này phần ăn ≤ phần ăn theo giá →
+ * chặn; "chặn rồi giữ nguyên tới khi thay đổi lại". Máy chủ chạy luật và
+ * đóng đinh ô mỗi lần đọc cấu hình; ở đây chỉ hiện danh sách đó, cho khách
+ * mở tay từng ô (luật không đụng lại) hoặc cho luật chặn lại. Lưới ngay dưới
+ * công tắc là để "cài tiền hoặc chặn ở dưới bảng này": bấm ô nào thì nhảy
+ * tới dòng cài tiền của ô đó.
  *
  * Sửa xong phải bấm Lưu thì các khối thống kê của tab (và bot /chanlq) mới
  * tính theo bảng mới — số đang gõ dở không được lẳng lặng đổi báo cáo. Thanh
  * tổng ở trên thì tính theo số đang gõ, để thấy trước rồi mới quyết.
  */
 export default function DaBangTien({
-  draws, ky, region, bang, luuLuc, tuDong, onLuu,
+  draws, ky, region, bang, luuLuc, tuDong, chanLuat, moTay, lyDo, nguong, thangLuat, onLuu,
 }: {
   draws: DrawHits[];
   ky: KyDa[];
@@ -68,11 +70,18 @@ export default function DaBangTien({
   bang: BangDa;
   luuLuc: string | null;
   tuDong: boolean;
-  onLuu: (bang: BangDa, luuLuc: string | null, tuDong: boolean) => void;
+  chanLuat: string[];
+  moTay: string[];
+  lyDo: Record<string, LyDoChan>;
+  nguong: number | null;
+  thangLuat: string | null;
+  onLuu: (data: Record<string, unknown>) => void;
 }) {
   const toast = useToast();
   const [nhap, setNhap] = useState<BangDa>(bang);
   const [tuDongNhap, setTuDongNhap] = useState(tuDong);
+  const [chanLuatNhap, setChanLuatNhap] = useState<string[]>(chanLuat);
+  const [moTayNhap, setMoTayNhap] = useState<string[]>(moTay);
   const [nhom, setNhom] = useState<Nhom>("cung");
   /** Đá chéo: đang xem ngày nào ghép với các ngày khác. -1 = mọi ô chéo. */
   const [ngay, setNgay] = useState(0);
@@ -83,14 +92,17 @@ export default function DaBangTien({
 
   useEffect(() => setNhap(bang), [bang]);
   useEffect(() => setTuDongNhap(tuDong), [tuDong]);
+  useEffect(() => setChanLuatNhap(chanLuat), [chanLuat]);
+  useEffect(() => setMoTayNhap(moTay), [moTay]);
 
-  const tk = useMemo(() => thongKeDa(ky, region, TRAN), [ky, region]);
   const tkt = useMemo(() => thongKeCapTheoThang(ky, region, TRAN), [ky, region]);
   const tt = useMemo(() => khoKyToi(draws), [draws]);
 
-  // Bảng ĐANG GÕ sau khi áp luật — đây mới là thứ sẽ có hiệu lực nếu bấm Lưu.
-  const luat = useMemo(() => (tuDongNhap ? apLuatTuDong(nhap, tk, TRAN) : null), [tuDongNhap, nhap, tk]);
-  const hieuLuc = luat ? luat.bang : nhap;
+  // Bảng ĐANG GÕ sau khi ép ô luật về 0 — đây mới là thứ sẽ có hiệu lực nếu bấm Lưu.
+  const hieuLuc = useMemo(
+    () => (tuDongNhap ? apChanLuat(nhap, chanLuatNhap, TRAN) : nhap),
+    [tuDongNhap, nhap, chanLuatNhap]
+  );
 
   /** Kỳ tới mỗi ô có bao nhiêu cặp — biết chắc, vì bậc ngày của 100 con đã định. */
   const capKyToi = useMemo(() => {
@@ -132,15 +144,33 @@ export default function DaBangTien({
     return { cap, nhom, soVong: nhom.filter((n) => n.length > 2).length, chuoi };
   }, [tt, hieuLuc, region, khongLap]);
 
-  if (!tk || !tkt || !tong) return null;
+  if (!tkt || !tong) return null;
 
   const gia = GIA_DA[region];
   const chuan = bienDa(region);
   const soKy = ky.length;
   const doiO = Object.keys(nhap).filter((k) => nhap[k] !== bang[k]).length;
   const doiLuat = tuDongNhap !== tuDong;
-  const doi = doiO + (doiLuat ? 1 : 0);
-  const luatChan = new Set(luat?.chan ?? []);
+  const doiDanhSach = chanLuatNhap.join(",") !== chanLuat.join(",") || moTayNhap.join(",") !== moTay.join(",");
+  const doi = doiO + (doiLuat ? 1 : 0) + (doiDanhSach ? 1 : 0);
+  const luatChan = new Set(tuDongNhap ? chanLuatNhap : []);
+  const moTaySet = new Set(moTayNhap);
+  const demLyDo = { tong: 0, thang: 0, cahai: 0 };
+  for (const k of chanLuatNhap) { const l = lyDo[k]; if (l) demLyDo[l]++; }
+  const giuNguyen = chanLuatNhap.filter((k) => !lyDo[k]).length;
+  const tenThangLuat = thangLuat ? `tháng ${Number(thangLuat.slice(5))}` : "tháng này";
+  const chuNguong = nguong != null ? pc(nguong) : pc(chuan.bien);
+
+  /** Khách mở tay một ô: luật không đụng lại ô đó nữa. */
+  const moLai = (k: string) => {
+    setChanLuatNhap((d) => d.filter((x) => x !== k));
+    setMoTayNhap((d) => (d.includes(k) ? d : [...d, k].sort()));
+  };
+  /** Cho luật chặn lại một ô đã mở tay. */
+  const chanLai = (k: string) => {
+    setMoTayNhap((d) => d.filter((x) => x !== k));
+    if (lyDo[k]) setChanLuatNhap((d) => (d.includes(k) ? d : [...d, k].sort()));
+  };
 
   const hien = tkt.bang.filter((o) =>
     nhom === "cung" ? o.i === o.j : o.i !== o.j && (ngay < 0 || o.i === ngay || o.j === ngay)
@@ -162,11 +192,11 @@ export default function DaBangTien({
       const r = await fetch(`/api/config/da?region=${region}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bang: nhap, tuDong: tuDongNhap }),
+        body: JSON.stringify({ bang: nhap, tuDong: tuDongNhap, chanLuat: chanLuatNhap, moTay: moTayNhap }),
       });
       const d = await r.json();
       if (!r.ok || d.status !== "success") throw new Error(d.detail ?? "Lưu không được");
-      onLuu(d.data.bang as BangDa, d.data.luuLuc as string | null, d.data.tuDong !== false);
+      onLuu(d.data as Record<string, unknown>);
       toast.show("success", `Đã lưu bảng tiền đá ${REGION_LABELS[region]} — thống kê bên dưới và bot /chanlq tính theo bảng mới`);
     } catch (e) {
       toast.show("error", e instanceof Error ? e.message : "Lưu không được");
@@ -226,25 +256,55 @@ export default function DaBangTien({
                   : "bg-white/[0.07] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.14]"
               }`}
             >
-              {tuDongNhap ? "✅ Chặn các ô đỏ: ĐANG BẬT" : "⭕ Chặn các ô đỏ: ĐANG TẮT"}
+              {tuDongNhap ? "✅ Luật chặn 2 bước: ĐANG BẬT" : "⭕ Luật chặn 2 bước: ĐANG TẮT"}
             </button>
             <span className="text-[0.74rem] text-[var(--text-secondary)]">
-              Ô nào <b className="text-[#ff9d9d]">đỏ</b> trên lưới (phần ăn đo được <b className="text-white">âm</b>) là{" "}
-              <b className="text-white">chặn</b>; xanh thì nhận theo điểm đã cài
+              ngưỡng <b className="text-white">{chuNguong}</b> = phần ăn theo giá của {REGION_LABELS[region]}
             </span>
           </div>
+          <ul className="text-[0.72rem] leading-relaxed text-[var(--text-secondary)] mt-1.5 space-y-0.5">
+            <li>
+              <b className="text-white">Bước 1 — tổng thể {soKy} kỳ:</b> ô nào tỷ lệ cả hai cùng về <b>cao hơn</b> mức chung{" "}
+              {(chuan.p * 100).toFixed(2)}% (tức phần ăn dưới {chuNguong}) → chặn.
+            </li>
+            <li>
+              <b className="text-white">Bước 2 — {tenThangLuat}:</b> ô nào phần ăn tháng này <b>≤ {chuNguong}</b> → chặn.
+            </li>
+            <li>
+              <b className="text-white">Chặn rồi giữ nguyên</b> tới khi anh tự đổi: máy không tự mở ô ra dù số liệu sau này đẹp
+              lên. Bỏ qua ô dưới {so(CAP_TOI_THIEU_LUAT)} cặp.
+            </li>
+          </ul>
           <div className="text-[0.72rem] leading-relaxed text-[var(--text-secondary)] mt-1.5" data-luat-ket-qua>
             {tuDongNhap ? (
               <>
-                Đang chặn theo luật <b className="text-[#ff9d9d]">{luat?.chan.length ?? 0} ô đỏ</b> trên {soKy} kỳ, bỏ qua ô
-                dưới {so(CAP_TOI_THIEU_LUAT)} cặp. Màu đỏ tự tính lại mỗi khi có kỳ mới, nên ô chặn hôm nay có thể đổi ngày
-                mai. Ô bị chặn vẫn giữ số điểm đã cài để lúc tắt thì dùng lại.{" "}
-                <b className="text-white">Muốn khác đi:</b> tắt công tắc rồi cài tay từng ô.
+                Đang chặn theo luật <b className="text-[#ff9d9d]">{chanLuatNhap.length} ô</b>
+                {chanLuatNhap.length > 0 && (
+                  <>
+                    {" "}(bước 1: {demLyDo.tong} · bước 2: {demLyDo.thang} · cả hai: {demLyDo.cahai}
+                    {giuNguyen > 0 && <> · giữ nguyên dù nay hết lý do: {giuNguyen}</>})
+                  </>
+                )}
+                {moTayNhap.length > 0 && (
+                  <>
+                    {" "}· <b className="text-[#ffd24a]">{moTayNhap.length} ô anh đã mở tay</b>, luật không đụng lại
+                  </>
+                )}
+                . Muốn mở một ô: bấm <b className="text-white">Mở lại</b> ở dòng ô đó rồi Lưu.
               </>
             ) : (
-              <>Đang tắt — bảng chạy đúng số cài tay từng ô bên dưới, không tự chặn gì.</>
+              <>Đang tắt — bảng chạy đúng số cài tay từng ô bên dưới, không tự chặn gì. Danh sách ô luật đã chặn vẫn được giữ để lúc bật lại dùng tiếp.</>
             )}
           </div>
+          {moTayNhap.length > 0 && tuDongNhap && (
+            <button
+              onClick={() => setMoTayNhap([])}
+              data-chan-lai-het
+              className="mt-1.5 px-2.5 py-1 rounded-lg text-[0.7rem] font-bold bg-[rgba(220,38,38,0.15)] text-[#ff9d9d] hover:bg-[rgba(220,38,38,0.25)]"
+            >
+              Cho luật chặn lại cả {moTayNhap.length} ô đã mở tay (sau khi Lưu)
+            </button>
+          )}
         </div>
 
         {/* ── Lưới 136 ô: cài tiền hoặc chặn "ở dưới bảng này" ─────── */}
@@ -459,7 +519,10 @@ export default function DaBangTien({
                 diem={nhap[k] ?? 0}
                 daLuu={bang[k] ?? 0}
                 luatChan={luatChan.has(k)}
-                nguong={chuan.bien}
+                lyDo={lyDo[k] === "cahai" ? "cả hai bước" : lyDo[k] === "tong" ? "bước 1 · tổng thể" : lyDo[k] === "thang" ? `bước 2 · ${tenThangLuat}` : "giữ nguyên từ trước"}
+                moTay={moTaySet.has(k)}
+                moLai={() => moLai(k)}
+                chanLai={() => chanLai(k)}
                 dat={(v) => dat(k, v)}
                 capKyToi={capKyToi.get(k) ?? 0}
                 soKy={soKy}
@@ -486,14 +549,18 @@ export default function DaBangTien({
 }
 
 function DongO({
-  o, diem, daLuu, luatChan, nguong, dat, capKyToi, soKy, gia, trung, chuanP, thangChay,
+  o, diem, daLuu, luatChan, lyDo, moTay, moLai, chanLai, dat, capKyToi, soKy, gia, trung, chuanP, thangChay,
 }: {
   o: OCapDayDu;
   diem: number;
   daLuu: number;
-  /** Luật tự chặn đang đè lên ô này (điểm cài > 0 nhưng hiệu lực là 0). */
+  /** Luật đang đè lên ô này (điểm cài > 0 nhưng hiệu lực là 0). */
   luatChan: boolean;
-  nguong: number;
+  lyDo: string;
+  /** Khách đã mở tay — luật bỏ qua ô này. */
+  moTay: boolean;
+  moLai: () => void;
+  chanLai: () => void;
   dat: (v: number) => void;
   capKyToi: number;
   soKy: number;
@@ -532,7 +599,7 @@ function DongO({
             )}
             {luatChan ? (
               <span className="rounded px-1.5 py-0.5 text-[0.62rem] font-bold text-[#ff9d9d]" style={{ background: "rgba(0,0,0,0.28)" }}>
-                Ô ĐỎ · {pc(o.bien)} — CHẶN
+                LUẬT CHẶN · {lyDo}
               </span>
             ) : chan ? (
               <span className="rounded px-1.5 py-0.5 text-[0.62rem] font-bold text-[#ff9d9d]" style={{ background: "rgba(0,0,0,0.28)" }}>
@@ -545,7 +612,22 @@ function DongO({
             {!chan && capKyToi > 0 && (
               <> → nhận tối đa <b className="text-[#7ff0c0]">{tien(capKyToi * diem * gia)}</b></>
             )}
-            {luatChan && <> → <b className="text-[#ff9d9d]">không nhận</b> (ô đỏ đang bị chặn dù cài {so(diem)} điểm)</>}
+            {luatChan && (
+              <>
+                {" "}→ <b className="text-[#ff9d9d]">không nhận</b> (luật đang chặn dù cài {so(diem)} điểm){" "}
+                <button onClick={moLai} data-mo-lai className="ml-1 px-1.5 py-0.5 rounded text-[0.62rem] font-bold bg-[rgba(16,185,129,0.2)] text-[#7ff0c0] hover:bg-[rgba(16,185,129,0.35)]">
+                  Mở lại
+                </button>
+              </>
+            )}
+            {moTay && !luatChan && (
+              <>
+                {" "}· <b className="text-[#ffd24a]">đã mở tay</b>, luật không đụng{" "}
+                <button onClick={chanLai} data-chan-lai className="ml-1 px-1.5 py-0.5 rounded text-[0.62rem] font-bold bg-[rgba(220,38,38,0.15)] text-[#ff9d9d] hover:bg-[rgba(220,38,38,0.3)]">
+                  Cho luật chặn lại
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -691,7 +773,7 @@ function LuoiTien({
                         onClick={() => bam(i, j)}
                         data-luoi-o={k}
                         data-luoi-chan={chan ? "1" : "0"}
-                        title={`${k}: cài ${nhap[k] ?? 0} điểm${luatChan.has(k) ? " — ô đỏ, đang bị chặn" : chan ? " — chặn tay" : ""}${o ? ` · phần ăn ${pc(o.bien)} · ${so(o.dip)} cặp` : " · chưa có cặp"}`}
+                        title={`${k}: cài ${nhap[k] ?? 0} điểm${luatChan.has(k) ? " — luật đang chặn" : chan ? " — chặn tay" : ""}${o ? ` · phần ăn ${pc(o.bien)} · ${so(o.dip)} cặp` : " · chưa có cặp"}`}
                         className="w-6 h-6 rounded numeric font-bold leading-none"
                         style={{
                           background: o ? nen(o.bien) : "rgba(255,255,255,0.05)",

@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import { dungKy } from "@/lib/slot-stats";
 import {
-  GIAI, GIA_DA, TRUNG_DA, apLuatTuDong, bangMacDinh, bienDa, chuanHoaBang, soTungKyTheoBang, soVong, thongKeDa, tinhVe,
-  type BangDa,
+  GIAI, GIA_DA, TRUNG_DA, apChanLuat, bangMacDinh, bienDa, chuanHoaBang, chuanHoaDanhSachO, soTungKyTheoBang, soVong, tinhVe,
+  type BangDa, type LyDoChan,
 } from "@/lib/da";
 import DaBangTien from "./DaBangTien";
 import DaBaoCaoThang from "./DaBaoCaoThang";
@@ -56,8 +56,14 @@ export default function SoDaPage({ region }: { region: Region }) {
   // Bảng tiền đá đã lưu của miền này. Mọi khối thống kê bên dưới tính theo nó.
   const [bang, setBang] = useState<BangDa | null>(null);
   const [luuLuc, setLuuLuc] = useState<string | null>(null);
-  // Luật "ô dưới phần ăn theo giá thì chặn" — khách xin bật sẵn.
+  // Luật hai bước — khách xin bật sẵn. Máy chủ chạy luật lúc GET, ô nào mới
+  // bị chặn đã được đóng đinh và lưu trước khi trả về đây.
   const [tuDong, setTuDong] = useState(true);
+  const [chanLuat, setChanLuat] = useState<string[]>([]);
+  const [moTay, setMoTay] = useState<string[]>([]);
+  const [lyDo, setLyDo] = useState<Record<string, LyDoChan>>({});
+  const [nguong, setNguong] = useState<number | null>(null);
+  const [thangLuat, setThangLuat] = useState<string | null>(null);
   // Tăng mỗi lần lưu, để Báo Cáo Tháng (tự tải bảng của cả ba miền) biết mà tải lại.
   const [phienBan, setPhienBan] = useState(0);
 
@@ -72,6 +78,11 @@ export default function SoDaPage({ region }: { region: Region }) {
         setBang(chuanHoaBang(d?.data?.bang));
         setLuuLuc(typeof d?.data?.luuLuc === "string" ? d.data.luuLuc : null);
         setTuDong(d?.data?.tuDong !== false);
+        setChanLuat(chuanHoaDanhSachO(d?.data?.chanLuat));
+        setMoTay(chuanHoaDanhSachO(d?.data?.moTay));
+        setLyDo(d?.data?.lyDo && typeof d.data.lyDo === "object" ? d.data.lyDo : {});
+        setNguong(typeof d?.data?.nguong === "number" ? d.data.nguong : null);
+        setThangLuat(typeof d?.data?.thangLuat === "string" ? d.data.thangLuat : null);
       })
       // Không đọc được bảng thì chạy bảng mặc định, chứ không để cả tab trắng.
       .catch(() => !huy && setBang(bangMacDinh()));
@@ -79,12 +90,12 @@ export default function SoDaPage({ region }: { region: Region }) {
   }, [region]);
 
   const ky = useMemo(() => (draws ? dungKy(draws) : null), [draws]);
-  // Bảng ĐANG HIỆU LỰC: bảng đã lưu, áp luật nếu công tắc bật. Mọi khối bên
-  // dưới tính theo nó — cùng hàm thuần mà máy chủ dùng cho bot, nên không lệch.
+  // Bảng ĐANG HIỆU LỰC: bảng đã lưu, ép các ô luật đã đóng đinh về 0 nếu công
+  // tắc bật. Danh sách đó do máy chủ tính và lưu — bot đọc cùng một chỗ.
   const hieuLuc = useMemo(() => {
     if (!ky || !bang) return null;
-    return tuDong ? apLuatTuDong(bang, thongKeDa(ky, region)).bang : bang;
-  }, [ky, region, bang, tuDong]);
+    return tuDong ? apChanLuat(bang, chanLuat) : bang;
+  }, [ky, bang, tuDong, chanLuat]);
   const rows = useMemo(() => (ky && hieuLuc ? soTungKyTheoBang(ky, region, hieuLuc) : null), [ky, region, hieuLuc]);
   const chuan = bienDa(region);
 
@@ -121,10 +132,20 @@ export default function SoDaPage({ region }: { region: Region }) {
             bang={bang}
             luuLuc={luuLuc}
             tuDong={tuDong}
-            onLuu={(b, l, t) => {
-              setBang(b);
-              setLuuLuc(l);
-              setTuDong(t);
+            chanLuat={chanLuat}
+            moTay={moTay}
+            lyDo={lyDo}
+            nguong={nguong}
+            thangLuat={thangLuat}
+            onLuu={(d) => {
+              setBang(chuanHoaBang(d.bang));
+              setLuuLuc(typeof d.luuLuc === "string" ? d.luuLuc : null);
+              setTuDong(d.tuDong !== false);
+              setChanLuat(chuanHoaDanhSachO(d.chanLuat));
+              setMoTay(chuanHoaDanhSachO(d.moTay));
+              setLyDo(d.lyDo && typeof d.lyDo === "object" ? (d.lyDo as Record<string, LyDoChan>) : {});
+              setNguong(typeof d.nguong === "number" ? d.nguong : null);
+              setThangLuat(typeof d.thangLuat === "string" ? d.thangLuat : null);
               setPhienBan((v) => v + 1);
             }}
           />
