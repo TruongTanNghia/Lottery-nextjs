@@ -361,7 +361,7 @@ export default function DaBangTien({
             {doi > 0 ? (
               <>
                 <b className="text-[#ffd24a]">
-                  Đã sửa {doiO > 0 ? `${doiO} ô` : ""}{doiO > 0 && doiLuat ? " và " : ""}{doiLuat ? "công tắc luật" : ""}, chưa lưu.
+                  Đã sửa {[doiO > 0 ? `${doiO} ô` : "", doiLuat ? "công tắc luật" : "", doiDanhSach ? "danh sách ô luật/mở tay" : "", doiGon ? "cách rút gọn" : ""].filter(Boolean).join(" và ")}, chưa lưu.
                 </b>{" "}
                 Bốn ô tổng ở trên đã tính theo số mới; các khối thống kê bên dưới và bot chỉ đổi sau khi bấm Lưu.
               </>
@@ -439,11 +439,7 @@ export default function DaBangTien({
               Trên Telegram gõ <code className="text-[#c2d4ea]">/chanlq {region === "xsmn" ? "mn" : region === "xsmt" ? "mt" : "mb"}</code>{" "}
               là ra đúng chuỗi này (bot tự cắt khúc nếu dài; gõ <code className="text-[#c2d4ea]">/chanlq</code> không là ra cả 3 miền).
               Mỗi mẩu <code className="text-[#c2d4ea]">a b c{HAU_TO_CHAN_DA[region]}</code> là một vòng: chặn mọi cặp trong đó. Mẩu{" "}
-              <b>một con</b> <code className="text-[#c2d4ea]">05{HAU_TO_CHAN_DA[region]}</code> là con chặn 100%: mọi đá dính con đó đều không nhận.
-              {lenhChan.con100.length > 0 && (
-                <> Kỳ này: <b className="text-[#ffd24a] numeric">{lenhChan.con100.join(" ")}</b>.</>
-              )} Mẩu{" "}
-              <b>một con</b> <code className="text-[#c2d4ea]">05{HAU_TO_CHAN_DA[region]}</code> là con chặn 100%: mọi đá dính con đó đều không nhận.
+              <b>một con</b> <code className="text-[#c2d4ea]">05{HAU_TO_CHAN_DA[region]}</code> là con chặn {rutGonNhap ? "tròn" : "100%"}: mọi đá dính con đó đều không nhận.
               {lenhChan.con100.length > 0 && (
                 <> Kỳ này: <b className="text-[#ffd24a] numeric">{lenhChan.con100.join(" ")}</b>.</>
               )} Dòng
