@@ -5,6 +5,7 @@ import type { DrawHits } from "@/lib/backtest";
 import { KY_TOI_THIEU_LO, chuoiChanLo, luatChanLo, type LoChan } from "@/lib/chan-lo";
 import { STAKE_PRICE, WIN_PER_POINT } from "@/lib/exposure";
 import { provincePrefix } from "@/lib/provinces";
+import ChanNgayKhoi from "./ChanNgayKhoi";
 import { useToast } from "./Toast";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
@@ -193,6 +194,9 @@ export default function ChanLoPage({ region }: { region: Region }) {
           </div>
         </div>
       </section>
+
+      {/* Khách: "mình áp dụng theo ngày á — theo từng kỳ": cùng luật, đơn vị là bậc ngày, ghi vào lịch hạn mức. */}
+      <ChanNgayKhoi region={region} />
     </div>
   );
 }

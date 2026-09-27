@@ -15,6 +15,7 @@ import { scrapeAllRegionsRange } from "@/lib/scraper";
 import { recalculateAllFromHistory, updateAllLoStatus } from "@/lib/limit-engine";
 import { cleanupOldData, query, VALID_REGIONS, rebuildLoDaily } from "@/lib/db";
 import { computeAndSaveModelPerformance } from "@/lib/prediction";
+import { apDungChanNgay, docAuto } from "@/lib/chan-ngay-server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -95,6 +96,20 @@ export async function GET(req: Request) {
     }
     const recalcMs = Date.now() - t1;
     console.log(`[Cron] Recalc done in ${recalcMs}ms`);
+
+    // Chặn theo ngày, "áp dụng theo từng kỳ": miền nào bật tự áp thì sau khi
+    // có kết quả mới, bậc dính luật được ghi 0 vào lịch hạn mức và tính lại.
+    // Lỗi ở đây không được làm hỏng phần cào: ghi log rồi đi tiếp.
+    for (const region of VALID_REGIONS) {
+      try {
+        if (await docAuto(region)) {
+          const r = await apDungChanNgay(region);
+          console.log(`[Cron] Chặn theo ngày ${region}: ${r.kq.chan.length} bậc dính luật, đã áp ${r.doi.length === 0 ? "(lịch đã khớp hoặc vừa ghi)" : ""}`);
+        }
+      } catch (e) {
+        console.error(`[Cron] Chặn theo ngày ${region} lỗi:`, e);
+      }
+    }
 
     // Rolling 180-day window — Đá + 3 Chân need a lot more data to be
     // accurate (sparse spaces). VIP only uses up to 90 days so the extra

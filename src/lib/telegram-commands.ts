@@ -22,6 +22,7 @@ import { baoCaoTheoThang } from "@/lib/profit-calculator";
 import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
 import { bangHieuLuc, taiKyDaXo } from "@/lib/da-bang";
 import { chuoiChanLo, luatChanLo } from "@/lib/chan-lo";
+import { trangThaiChanNgay } from "@/lib/chan-ngay-server";
 import { SO_O_DA, chiaKhoiChanDa, nhomChanDa } from "@/lib/da";
 
 // Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
@@ -117,6 +118,7 @@ export function helpText(isAdmin = false): string {
     "",
     "<b>Chặn lô 2 bước</b>",
     "<code>/chanlo</code> — cả 3 miền · <code>/chanlo mn</code> — riêng một miền",
+    "<code>/channgay</code> — chặn theo ngày (bậc), ô nào trong lịch sẽ về 0",
     "",
     "<b>Chặn đá</b>",
     "<code>/chandamn</code> <code>/chandamt</code> <code>/chandamb</code> — cặp đá không nhận, dán vào phần mềm",
@@ -498,6 +500,26 @@ export async function chanLoBot(regions: Region[]): Promise<string> {
 }
 
 /**
+ * /channgay [miền] — chặn theo ngày (bậc) hai bước: bậc nào dính luật, ô nào
+ * trong lịch hạn mức sẽ về 0, và công tắc tự áp đang bật hay tắt. Chỉ đọc;
+ * áp thật thì bấm trên web (hoặc bật tự áp).
+ */
+export async function chanNgayBot(regions: Region[]): Promise<string> {
+  const parts = await Promise.all(regions.map(async (r) => ({ r, tt: await trangThaiChanNgay(r) })));
+  const out: string[] = ["<b>🗓 Chặn theo ngày 2 bước</b>"];
+  for (const { r, tt } of parts) {
+    const thang = tt.kq.thang2.map((t) => `T${Number(t.slice(5))}`).join("+");
+    out.push(
+      "",
+      `<b>${TEN_NGAN[r]}</b> · ${tt.kq.chan.length}/${tt.kq.bang.length} bậc dính luật (bước 1: ${tt.kq.dem.tong + tt.kq.dem.cahai} · bước 2 ${thang}: ${tt.kq.dem.thang + tt.kq.dem.cahai}) · tự áp ${tt.auto ? "BẬT" : "tắt"}`,
+      tt.kq.chan.length ? `chặn: ${esc(tt.kq.bang.filter((x) => x.lyDo).map((x) => x.ten).join(", "))}` : "<i>không bậc nào dính luật</i>",
+      tt.doi.length ? `<i>lịch còn ${tt.doi.length} ô chưa về 0: ${esc(tt.doi.map((d) => `${d.o} (${d.tu})`).join(", "))} — áp trên web</i>` : "<i>lịch đã khớp luật</i>"
+    );
+  }
+  return out.join("\n");
+}
+
+/**
  * Báo cáo theo tháng dương lịch, ba miền, mỗi tháng đứng riêng.
  *
  * Khách yêu cầu đúng khuôn: nhận − bù − lời lỗ (%) và một câu nhận định. Câu
@@ -749,6 +771,12 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
       return withWarning("xsmt", (r) => chanDa(r, false));
     case "/chandamb":
       return withWarning("xsmb", (r) => chanDa(r, false));
+
+    case "/channgay": {
+      const region = parseRegion(args);
+      if (!region) return (await staleWarningAll()) + (await chanNgayBot(REGIONS));
+      return withWarning(region, (r) => chanNgayBot([r]));
+    }
 
     case "/chanlo": {
       const region = parseRegion(args);
