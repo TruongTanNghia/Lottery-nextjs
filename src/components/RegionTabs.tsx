@@ -2,12 +2,12 @@
 
 import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
 
-type ViewKey = "dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda";
+type ViewKey = "dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda" | "chanlo";
 
 // Every view the app can render, in tab order. Kept as the full list so the
 // pages stay wired up and nothing has to be rebuilt to bring one back.
 const ALL_VIEWS = [
-  "dashboard", "soda", "exposure", "lab", "simai", "results", "prediction", "vip", "golden", "pair", "three",
+  "dashboard", "soda", "chanlo", "exposure", "lab", "simai", "results", "prediction", "vip", "golden", "pair", "three",
   "four", "sim", "watcher", "today", "accuracy", "history", "rolling",
 ] as const;
 
@@ -18,7 +18,7 @@ const ALL_VIEWS = [
 // "SIM-AI" chỉ ẩn khỏi thanh tab — code, API và dữ liệu vẫn nguyên, thêm lại
 // tên vào mảng này là hiện lại ngay.
 // Khách chốt 21/09: thêm tab "Số Đá" riêng, phần còn lại giữ nguyên vì đang chạy tốt.
-const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard", "soda", "exposure", "results"];
+const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard", "soda", "chanlo", "exposure", "results"];
 
 interface Props {
   current: Region;
@@ -73,6 +73,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
           const labels: Record<ViewKey, string> = {
             dashboard: "📊 Dashboard",
             soda: "🎲 Số Đá",
+            chanlo: "🚫 Chặn Lô",
             exposure: "💰 Rủi Ro Tiền",
             lab: "🔬 Thử Chiến Thuật",
             simai: "🤖 SIM-AI",
@@ -93,6 +94,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
           const activeBg: Record<ViewKey, string> = {
             dashboard: "bg-blue-900 shadow-[0_1px_6px_rgba(59,130,246,0.25)]",
             soda: "bg-teal-700 shadow-[0_1px_6px_rgba(20,184,166,0.35)]",
+            chanlo: "bg-rose-700 shadow-[0_1px_6px_rgba(244,63,94,0.35)]",
             exposure: "bg-rose-800 shadow-[0_1px_6px_rgba(244,63,94,0.35)]",
             lab: "bg-violet-800 shadow-[0_1px_6px_rgba(139,92,246,0.35)]",
             simai: "bg-cyan-800 shadow-[0_1px_6px_rgba(34,211,238,0.35)]",

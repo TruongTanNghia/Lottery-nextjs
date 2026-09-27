@@ -20,7 +20,8 @@ import { freshness, freshnessText } from "@/lib/freshness";
 import { esc } from "@/lib/telegram";
 import { baoCaoTheoThang } from "@/lib/profit-calculator";
 import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
-import { bangHieuLuc } from "@/lib/da-bang";
+import { bangHieuLuc, taiKyDaXo } from "@/lib/da-bang";
+import { chuoiChanLo, luatChanLo } from "@/lib/chan-lo";
 import { SO_O_DA, chiaKhoiChanDa, nhomChanDa } from "@/lib/da";
 
 // Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
@@ -113,6 +114,9 @@ export function helpText(isAdmin = false): string {
     "",
     "<b>Số chặn</b>",
     "<code>/chanso</code> — số không nhận cược, cả 3 miền",
+    "",
+    "<b>Chặn lô 2 bước</b>",
+    "<code>/chanlo</code> — cả 3 miền · <code>/chanlo mn</code> — riêng một miền",
     "",
     "<b>Chặn đá</b>",
     "<code>/chandamn</code> <code>/chandamt</code> <code>/chandamb</code> — cặp đá không nhận, dán vào phần mềm",
@@ -472,6 +476,28 @@ export async function chanDaTatCa(khongLap = false, epGon = false, epNguong: num
 }
 
 /**
+ * /chanlo [miền] — chặn lô hai bước (xem chan-lo.ts): tổng thể về trên mức
+ * chung, hoặc hai tháng gần nhất lỗ. Mỗi miền một khối <code> "đài: 05b0n
+ * 17b0n …" — cùng cú pháp lô của phần mềm ghi cược. Không đổi hạn mức.
+ */
+export async function chanLoBot(regions: Region[]): Promise<string> {
+  const parts = await Promise.all(regions.map(async (r) => ({ r, kq: luatChanLo(await taiKyDaXo(r), r) })));
+  const out: string[] = [regions.length > 1 ? "<b>🚫 Chặn lô 2 bước — cả 3 miền</b>" : `<b>🚫 Chặn lô 2 bước — ${label(regions[0])}</b>`];
+  for (const { r, kq } of parts) {
+    const thang = kq.thang2.map((t) => `T${Number(t.slice(5))}`).join("+");
+    out.push(
+      "",
+      `<b>${TEN_NGAN[r]}</b> · ${kq.chan.length}/100 lô · bước 1 (trên ${Math.round(kq.mucChung * 100)}/100 kỳ): ${kq.dem.tong + kq.dem.cahai} · bước 2 (${thang} lỗ): ${kq.dem.thang + kq.dem.cahai} · ${kq.soKy} kỳ${
+        kq.denNgay ? ` tới ${ddmm(kq.denNgay)}` : ""
+      }`
+    );
+    const chuoi = chuoiChanLo(provincePrefix(r), kq.chan);
+    out.push(chuoi ? `<code>${esc(chuoi)}</code>` : "<i>không lô nào dính luật</i>");
+  }
+  return out.join("\n");
+}
+
+/**
  * Báo cáo theo tháng dương lịch, ba miền, mỗi tháng đứng riêng.
  *
  * Khách yêu cầu đúng khuôn: nhận − bù − lời lỗ (%) và một câu nhận định. Câu
@@ -723,6 +749,12 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
       return withWarning("xsmt", (r) => chanDa(r, false));
     case "/chandamb":
       return withWarning("xsmb", (r) => chanDa(r, false));
+
+    case "/chanlo": {
+      const region = parseRegion(args);
+      if (!region) return (await staleWarningAll()) + (await chanLoBot(REGIONS));
+      return withWarning(region, (r) => chanLoBot([r]));
+    }
 
     case "/chanlq":
     case "/chanda": {
