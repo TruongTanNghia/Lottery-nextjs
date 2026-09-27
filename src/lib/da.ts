@@ -774,6 +774,12 @@ export const HAU_TO_CHAN_DA: Record<Region, string> = { xsmn: "dx0n", xsmt: "dx0
  */
 /** Rút gọn: con bị chặn từ ngần này trên 99 con trở lên thì chặn tròn cả con. Khách chốt "trên 90/100". */
 export const NGUONG_RUT_GON = 90;
+/** Các mức khách chọn được; càng thấp chuỗi càng ngắn nhưng chặn thêm càng nhiều. */
+export const CAC_MUC_RUT_GON = [95, 90, 85, 80, 70] as const;
+export const chuanHoaNguongGon = (raw: unknown): number => {
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 50 && n <= 99 ? Math.round(n) : NGUONG_RUT_GON;
+};
 
 /**
  * `nguong` = số con (trên 99) mà một con phải bị chặn cùng để được ghi một
@@ -815,9 +821,10 @@ export function tachConChan100(
 export function nhomChanDa(
   cap: [string, string][],
   khongLap = false,
-  rutGon = false
+  rutGon = false,
+  nguongGon = NGUONG_RUT_GON
 ): { nhom: string[][]; con100: string[]; capThem: number } {
-  const { con100, conLai, capThem } = tachConChan100(cap, 100, rutGon ? NGUONG_RUT_GON : 99);
+  const { con100, conLai, capThem } = tachConChan100(cap, 100, rutGon ? chuanHoaNguongGon(nguongGon) : 99);
   return { nhom: [...con100.map((c) => [c]), ...nhomVong(conLai, khongLap)], con100, capThem };
 }
 

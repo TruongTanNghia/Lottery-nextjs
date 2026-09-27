@@ -21,7 +21,7 @@ import { getConfigValue, query, setConfigValue } from "@/lib/db";
 import { dungKy } from "@/lib/slot-stats";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  apLuatDinh, bangMacDinh, capBiChan, chuanHoaBang, chuanHoaDanhSachO, khoKyToi, luatHaiBuoc,
+  NGUONG_RUT_GON, apLuatDinh, bangMacDinh, capBiChan, chuanHoaBang, chuanHoaDanhSachO, chuanHoaNguongGon, khoKyToi, luatHaiBuoc,
   thongKeCapTheoThang, thongKeDa,
   type BangDa, type LuatHaiBuoc, type LyDoChan,
 } from "@/lib/da";
@@ -43,9 +43,11 @@ export interface BangDaLuu {
   luatLuc: string | null;
   /** Rút gọn chuỗi: con bị chặn ≥ 90/99 thì chặn tròn cả con (chặn thêm vài cặp). */
   rutGon: boolean;
+  /** Mức rút gọn: con bị chặn từ ngần này trên 99 con thì chặn tròn. */
+  nguongGon: number;
 }
 
-const macDinh = (): BangDaLuu => ({ bang: bangMacDinh(), luuLuc: null, tuDong: true, chanLuat: [], moTay: [], luatLuc: null, rutGon: false });
+const macDinh = (): BangDaLuu => ({ bang: bangMacDinh(), luuLuc: null, tuDong: true, chanLuat: [], moTay: [], luatLuc: null, rutGon: false, nguongGon: NGUONG_RUT_GON });
 
 export async function docBangDa(region: Region): Promise<BangDaLuu> {
   const raw = await getConfigValue(khoa(region));
@@ -61,6 +63,7 @@ export async function docBangDa(region: Region): Promise<BangDaLuu> {
       moTay: chuanHoaDanhSachO(o.moTay),
       luatLuc: typeof o.luatLuc === "string" ? o.luatLuc : null,
       rutGon: o.rutGon === true,
+      nguongGon: chuanHoaNguongGon(o.nguongGon),
     };
   } catch {
     return macDinh();
@@ -77,7 +80,8 @@ export async function luuBangDa(
   tuDong: boolean,
   chanLuat: unknown,
   moTay: unknown,
-  rutGon: boolean
+  rutGon: boolean,
+  nguongGon: unknown
 ): Promise<BangDaLuu> {
   const cu = await docBangDa(region);
   const mo = new Set(chuanHoaDanhSachO(moTay));
@@ -90,6 +94,7 @@ export async function luuBangDa(
     moTay: [...mo].sort(),
     luatLuc: cu.luatLuc,
     rutGon,
+    nguongGon: chuanHoaNguongGon(nguongGon),
   };
   await ghi(region, data);
   return data;

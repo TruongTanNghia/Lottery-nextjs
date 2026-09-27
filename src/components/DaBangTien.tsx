@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
   CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, SO_O_DA, TRAN_DA, TRUNG_DA, apChanLuat, bangMacDinh, bienDa,
-  capBiChan, chiaKhoiChanDa, khoKyToi, khoaCap, nhomChanDa, soVong, thongKeCapTheoThang,
+  CAC_MUC_RUT_GON, capBiChan, chiaKhoiChanDa, khoKyToi, khoaCap, nhomChanDa, soVong, thongKeCapTheoThang,
   type BangDa, type KyDa, type LyDoChan, type OCapDayDu,
 } from "@/lib/da";
 import { provincePrefix } from "@/lib/provinces";
@@ -62,9 +62,10 @@ type Nhom = "cung" | "cheo";
  * tổng ở trên thì tính theo số đang gõ, để thấy trước rồi mới quyết.
  */
 export default function DaBangTien({
-  draws, ky, region, bang, luuLuc, tuDong, chanLuat, moTay, rutGon, lyDo, nguong, thangLuat, onLuu,
+  draws, ky, region, bang, luuLuc, tuDong, chanLuat, moTay, rutGon, nguongGon, lyDo, nguong, thangLuat, onLuu,
 }: {
   rutGon: boolean;
+  nguongGon: number;
   draws: DrawHits[];
   ky: KyDa[];
   region: Region;
@@ -85,6 +86,7 @@ export default function DaBangTien({
   const [moTayNhap, setMoTayNhap] = useState<string[]>(moTay);
   /** Rút gọn chuỗi: chặn tròn con ≥ 90/99 — lưu cùng bảng, bot đọc theo. */
   const [rutGonNhap, setRutGonNhap] = useState(rutGon);
+  const [nguongGonNhap, setNguongGonNhap] = useState(nguongGon);
   const [nhom, setNhom] = useState<Nhom>("cung");
   /** Đá chéo: đang xem ngày nào ghép với các ngày khác. -1 = mọi ô chéo. */
   const [ngay, setNgay] = useState(0);
@@ -98,6 +100,7 @@ export default function DaBangTien({
   useEffect(() => setChanLuatNhap(chanLuat), [chanLuat]);
   useEffect(() => setMoTayNhap(moTay), [moTay]);
   useEffect(() => setRutGonNhap(rutGon), [rutGon]);
+  useEffect(() => setNguongGonNhap(nguongGon), [nguongGon]);
 
   const tkt = useMemo(() => thongKeCapTheoThang(ky, region, TRAN), [ky, region]);
   const tt = useMemo(() => khoKyToi(draws), [draws]);
@@ -143,10 +146,15 @@ export default function DaBangTien({
     if (!tt) return null;
     const cap = capBiChan(tt.kho, hieuLuc, TRAN);
     // Gom vòng như bot, để chuỗi copy trên web và chuỗi bot trả là một.
-    const { nhom, con100, capThem } = nhomChanDa(cap, khongLap, rutGonNhap);
+    const { nhom, con100, capThem } = nhomChanDa(cap, khongLap, rutGonNhap, nguongGonNhap);
     const chuoi = chiaKhoiChanDa(provincePrefix(region), nhom, Number.POSITIVE_INFINITY, region)[0] ?? "";
-    return { cap, nhom, con100, capThem, soVong: nhom.filter((n) => n.length > 2).length, soLe: nhom.filter((n) => n.length === 2).length, chuoi };
-  }, [tt, hieuLuc, region, khongLap, rutGonNhap]);
+    // Xem trước từng mức, để khách thấy đổi mức thì ngắn thêm bao nhiêu và chặn thêm bao nhiêu.
+    const xemMuc = CAC_MUC_RUT_GON.map((m) => {
+      const r = nhomChanDa(cap, khongLap, true, m);
+      return { muc: m, kyTu: (chiaKhoiChanDa(provincePrefix(region), r.nhom, Number.POSITIVE_INFINITY, region)[0] ?? "").length, capThem: r.capThem, con: r.con100.length };
+    });
+    return { cap, nhom, con100, capThem, soVong: nhom.filter((n) => n.length > 2).length, soLe: nhom.filter((n) => n.length === 2).length, chuoi, xemMuc };
+  }, [tt, hieuLuc, region, khongLap, rutGonNhap, nguongGonNhap]);
 
   if (!tkt || !tong) return null;
 
@@ -156,7 +164,7 @@ export default function DaBangTien({
   const doiO = Object.keys(nhap).filter((k) => nhap[k] !== bang[k]).length;
   const doiLuat = tuDongNhap !== tuDong;
   const doiDanhSach = chanLuatNhap.join(",") !== chanLuat.join(",") || moTayNhap.join(",") !== moTay.join(",");
-  const doiGon = rutGonNhap !== rutGon;
+  const doiGon = rutGonNhap !== rutGon || nguongGonNhap !== nguongGon;
   const doi = doiO + (doiLuat ? 1 : 0) + (doiDanhSach ? 1 : 0) + (doiGon ? 1 : 0);
   const luatChan = new Set(tuDongNhap ? chanLuatNhap : []);
   const moTaySet = new Set(moTayNhap);
@@ -197,7 +205,7 @@ export default function DaBangTien({
       const r = await fetch(`/api/config/da?region=${region}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bang: nhap, tuDong: tuDongNhap, chanLuat: chanLuatNhap, moTay: moTayNhap, rutGon: rutGonNhap }),
+        body: JSON.stringify({ bang: nhap, tuDong: tuDongNhap, chanLuat: chanLuatNhap, moTay: moTayNhap, rutGon: rutGonNhap, nguongGon: nguongGonNhap }),
       });
       const d = await r.json();
       if (!r.ok || d.status !== "success") throw new Error(d.detail ?? "Lưu không được");
@@ -362,7 +370,7 @@ export default function DaBangTien({
             )}
           </span>
           <button
-            onClick={() => { setNhap(bang); setTuDongNhap(tuDong); setChanLuatNhap(chanLuat); setMoTayNhap(moTay); setRutGonNhap(rutGon); }}
+            onClick={() => { setNhap(bang); setTuDongNhap(tuDong); setChanLuatNhap(chanLuat); setMoTayNhap(moTay); setRutGonNhap(rutGon); setNguongGonNhap(nguongGon); }}
             disabled={doi === 0 || dangLuu}
             className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16] disabled:opacity-40"
           >
@@ -405,7 +413,7 @@ export default function DaBangTien({
                   rutGonNhap ? "bg-[#b45309] border-[#fbbf24] text-white" : "bg-white/[0.07] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.14]"
                 }`}
               >
-                {rutGonNhap ? "✂ Rút gọn ≥90/99: BẬT" : "✂ Rút gọn ≥90/99: tắt"}
+                {rutGonNhap ? `✂ Rút gọn ≥${nguongGonNhap}/99: BẬT` : "✂ Rút gọn: tắt"}
               </button>
               {/* Nút chứ không phải checkbox: CSS toàn cục bỏ appearance của input nên ô tick tàng hình. */}
               <button
@@ -441,6 +449,25 @@ export default function DaBangTien({
               )} Dòng
               đầu <code className="text-[#c2d4ea]">/chanloai</code> là lệnh của phần mềm ghi cược — dán nguyên cả hai dòng.
             </div>
+            {rutGonNhap && lenhChan.cap.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1" data-lenh-muc>
+                <span className="text-[0.66rem] text-[var(--text-muted)]">Mức rút gọn — con bị chặn từ N/99 con thì chặn tròn:</span>
+                {lenhChan.xemMuc.map((x) => (
+                  <button
+                    key={x.muc}
+                    onClick={() => setNguongGonNhap(x.muc)}
+                    data-lenh-nguong={x.muc}
+                    title={`${x.con} con tròn · ${so(x.kyTu)} ký tự · chặn thêm ${so(x.capThem)} cặp`}
+                    className={`px-1.5 py-1 rounded-lg text-[0.64rem] font-bold border leading-tight text-center ${
+                      nguongGonNhap === x.muc ? "bg-[#b45309] border-[#fbbf24] text-white" : "bg-white/[0.06] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.12]"
+                    }`}
+                  >
+                    ≥{x.muc}
+                    <div className="numeric font-normal opacity-90">{so(x.kyTu)} kt · +{so(x.capThem)} cặp</div>
+                  </button>
+                ))}
+              </div>
+            )}
             {lenhChan.cap.length > 0 && (
               <code className="block mt-1.5 text-[0.66rem] leading-snug text-[#c2d4ea] break-all max-h-16 overflow-hidden whitespace-pre-wrap" data-lenh-xem>
                 {lenhChan.chuoi.length > 260 ? lenhChan.chuoi.slice(0, 260) + " …" : lenhChan.chuoi}
