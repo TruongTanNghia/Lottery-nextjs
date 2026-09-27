@@ -108,6 +108,23 @@ export default function DaKyToi({
   const thu = diemCap * GIA_DA[region];
   const traTB = diemCap * chuan.p * TRUNG_DA[region];
 
+  // Khách: "con nào chặn nhiều kiểu trên 90/100, anh cho đỏ trên ô 100 số giùm
+  // em". Mỗi con đếm xem nó bị chặn với bao nhiêu trong 99 con còn lại theo
+  // bảng đang hiệu lực; từ NGUONG_DO trở lên thì tô đỏ trên bảng.
+  const NGUONG_DO = 90;
+  const soChan: Record<string, number> = {};
+  for (const lo of LOS) {
+    let n = 0;
+    for (const kia of LOS) {
+      if (kia === lo) continue;
+      const diem = bang ? bang[`${Math.min(d.bac[lo], d.bac[kia])}-${Math.max(d.bac[lo], d.bac[kia])}`] ?? 0 : 1;
+      if (diem <= 0) n++;
+    }
+    soChan[lo] = n;
+  }
+  const conDo = LOS.filter((lo) => soChan[lo] >= NGUONG_DO);
+  const conDoSet = new Set(conDo);
+
   const kyToi = (() => {
     const [y, m, n] = tt.ngayCuoi.split("-").map(Number);
     const t = new Date(Date.UTC(y, m - 1, n));
@@ -149,7 +166,8 @@ export default function DaKyToi({
   const mauO = (lo: string): React.CSSProperties => {
     const b = d.bac[lo];
     const goc = { background: `rgba(56,189,248,${(0.5 - b * (0.42 / TRAN)).toFixed(3)})`, color: "#fff", borderColor: "transparent" };
-    if (!chon) return goc;
+    // Con chặn ≥ 90/99: nền đỏ khi chưa chọn gì; đang chọn thì giữ viền đỏ để vẫn nhận ra.
+    if (!chon) return conDoSet.has(lo) ? { background: "rgba(220,38,38,0.8)", color: "#fff", borderColor: "#ff8a8a" } : goc;
     if (chon.kieu === "con") {
       if (lo === chon.lo) return { background: "#2563eb", color: "#fff", borderColor: "#fff" };
       const n = nhanVoi(chon.lo, lo);
@@ -230,15 +248,26 @@ export default function DaKyToi({
             )}
           </div>
 
+          <div className="mb-2 rounded-lg border px-2.5 py-1.5 text-[0.7rem] leading-relaxed" data-con-do
+            style={{ borderColor: "rgba(248,113,113,0.45)", background: "rgba(220,38,38,0.1)", color: "#ffd9d9" }}>
+            <b className="text-white">Chặn từ {NGUONG_DO}/99 con trở lên: {conDo.length} con</b>
+            {conDo.length > 0 ? (
+              <> — <span className="numeric font-bold">{conDo.map((lo) => `${lo}(${soChan[lo]})`).join(" ")}</span>. Trong ngoặc là số con nó bị chặn cùng; đủ 99 là chặn 100%.</>
+            ) : (
+              <> — theo bảng tiền đang hiệu lực, chưa con nào bị chặn nhiều tới mức đó.</>
+            )}
+          </div>
           <div className="grid grid-cols-10 gap-1" data-bang-con>
             {LOS.map((lo) => (
               <button
                 key={lo}
                 onClick={() => bamCon(lo)}
                 data-lo={lo}
-                title={`Con ${lo} · ${tenNgay(d.bac[lo])}`}
+                data-so-chan={soChan[lo]}
+                data-do={conDoSet.has(lo) ? "1" : "0"}
+                title={`Con ${lo} · ${tenNgay(d.bac[lo])} · chặn với ${soChan[lo]}/99 con`}
                 className="rounded-md border py-1 leading-none transition-colors"
-                style={mauO(lo)}
+                style={{ ...mauO(lo), ...(chon && conDoSet.has(lo) ? { boxShadow: "inset 0 0 0 1.5px #ff6b78" } : {}) }}
               >
                 <div className="numeric text-[0.78rem] font-extrabold">{lo}</div>
                 <div className="text-[0.5rem] mt-0.5 opacity-80">{nhanNgan(d.bac[lo])}</div>
@@ -250,11 +279,13 @@ export default function DaKyToi({
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[0.66rem] text-[var(--text-muted)]">
             {!chon && (
               <>
+                <Cham m="rgba(220,38,38,0.8)" chu={`đỏ = chặn từ ${NGUONG_DO}/99 con trở lên`} />
                 <Cham m="rgba(56,189,248,0.5)" chu="mới = vừa ra" />
                 <Cham m="rgba(56,189,248,0.25)" chu="5k = 5 kỳ chưa về" />
                 <Cham m="rgba(56,189,248,0.08)" chu={`${TRAN}+ = khô lâu`} />
               </>
             )}
+            {chon && conDo.length > 0 && <Cham m="rgba(220,38,38,0.8)" chu={`viền đỏ = chặn ≥ ${NGUONG_DO}/99`} />}
             {chon?.kieu === "con" && (
               <>
                 <Cham m="#2563eb" chu={`con đang chọn (${chon.lo})`} />
