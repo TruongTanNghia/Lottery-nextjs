@@ -21,7 +21,7 @@ import { esc } from "@/lib/telegram";
 import { baoCaoTheoThang } from "@/lib/profit-calculator";
 import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
 import { bangHieuLuc } from "@/lib/da-bang";
-import { SO_O_DA, chiaKhoiChanDa, nhomVong } from "@/lib/da";
+import { SO_O_DA, chiaKhoiChanDa, nhomChanDa } from "@/lib/da";
 
 // Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
 // list is read side by side with theirs.
@@ -406,20 +406,22 @@ export async function chanSoAll(): Promise<string> {
  */
 export async function chanDa(region: Region, khongLap = false): Promise<string> {
   const h = await bangHieuLuc(region);
-  const nhom = nhomVong(h.capChan, khongLap);
+  const { nhom, con100 } = nhomChanDa(h.capChan, khongLap);
   const khoi = chiaKhoiChanDa(provincePrefix(region), nhom, SAFE_BLOCK, region);
   const soOChan = Object.values(h.bang).filter((v) => v <= 0).length;
   const soVong = nhom.filter((n) => n.length > 2).length;
+  const soLe = nhom.filter((n) => n.length === 2).length;
   const head = [
-    `<b>${label(region)} · chặn đá</b> · ${num(h.capChan.length)} cặp · ${soOChan}/${SO_O_DA} ô · gom ${soVong} vòng + ${num(nhom.length - soVong)} cặp lẻ${
+    `<b>${label(region)} · chặn đá</b> · ${num(h.capChan.length)} cặp · ${soOChan}/${SO_O_DA} ô · ${con100.length} con chặn 100% + ${soVong} vòng + ${num(soLe)} cặp lẻ${
       khongLap ? " · không lặp" : ""
     }`,
+    con100.length > 0 ? `<i>chặn 100% (đứng đầu chuỗi, mỗi con một mẩu): ${esc(con100.join(" "))}</i>` : "",
     h.luu.tuDong
       ? `<i>luật 2 bước đang bật: chặn ${h.luu.chanLuat.length} ô (giữ nguyên tới khi đổi), ${h.luu.moTay.length} ô mở tay${
           h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""
         }</i>`
       : `<i>luật tự động đang tắt — theo bảng cài tay${h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""}</i>`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 
   if (khoi.length === 0) return `${head}\n\nKhông có cặp nào bị chặn — bảng tiền đá đang nhận mọi ô.`;
   if (khoi.length === 1) return `${head}\n\n<code>${esc(khoi[0])}</code>`;
@@ -445,12 +447,13 @@ export async function chanDaTatCa(khongLap = false): Promise<string> {
   const parts = await Promise.all(REGIONS.map(async (r) => ({ r, h: await bangHieuLuc(r) })));
   const out: string[] = [`<b>🎲 Chặn đá cả 3 miền</b>${khongLap ? " · không lặp cặp" : ""}`];
   for (const { r, h } of parts) {
-    const nhom = nhomVong(h.capChan, khongLap);
+    const { nhom, con100 } = nhomChanDa(h.capChan, khongLap);
     const khoi = chiaKhoiChanDa(provincePrefix(r), nhom, SAFE_BLOCK, r);
     const soVong = nhom.filter((n) => n.length > 2).length;
+    const soLe = nhom.filter((n) => n.length === 2).length;
     out.push(
       "",
-      `<b>${TEN_NGAN[r]}</b> · ${num(h.capChan.length)} cặp · ${soVong} vòng + ${num(nhom.length - soVong)} cặp lẻ${
+      `<b>${TEN_NGAN[r]}</b> · ${num(h.capChan.length)} cặp · ${con100.length} con 100% + ${soVong} vòng + ${num(soLe)} cặp lẻ${
         h.luu.tuDong ? "" : " · cài tay"
       }${khoi.length > 1 ? ` · ${khoi.length} phần` : ""}`
     );

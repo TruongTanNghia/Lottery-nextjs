@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
   CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, SO_O_DA, TRAN_DA, TRUNG_DA, apChanLuat, bangMacDinh, bienDa,
-  capBiChan, chiaKhoiChanDa, khoKyToi, khoaCap, nhomVong, soVong, thongKeCapTheoThang,
+  capBiChan, chiaKhoiChanDa, khoKyToi, khoaCap, nhomChanDa, soVong, thongKeCapTheoThang,
   type BangDa, type KyDa, type LyDoChan, type OCapDayDu,
 } from "@/lib/da";
 import { provincePrefix } from "@/lib/provinces";
@@ -139,9 +139,9 @@ export default function DaBangTien({
     if (!tt) return null;
     const cap = capBiChan(tt.kho, hieuLuc, TRAN);
     // Gom vòng như bot, để chuỗi copy trên web và chuỗi bot trả là một.
-    const nhom = nhomVong(cap, khongLap);
+    const { nhom, con100 } = nhomChanDa(cap, khongLap);
     const chuoi = chiaKhoiChanDa(provincePrefix(region), nhom, Number.POSITIVE_INFINITY, region)[0] ?? "";
-    return { cap, nhom, soVong: nhom.filter((n) => n.length > 2).length, chuoi };
+    return { cap, nhom, con100, soVong: nhom.filter((n) => n.length > 2).length, soLe: nhom.filter((n) => n.length === 2).length, chuoi };
   }, [tt, hieuLuc, region, khongLap]);
 
   if (!tkt || !tong) return null;
@@ -381,7 +381,10 @@ export default function DaBangTien({
               <span className="text-[0.72rem] text-[var(--text-secondary)]">
                 <b className="text-white" data-lenh-so-cap>{so(lenhChan.cap.length)} cặp</b> theo bảng đang gõ
                 {lenhChan.cap.length > 0 && (
-                  <> — gom thành <b className="text-white">{lenhChan.soVong} vòng</b> + {so(lenhChan.nhom.length - lenhChan.soVong)} cặp lẻ, {so(lenhChan.chuoi.length)} ký tự</>
+                  <>
+                    {" "}— <b className="text-white" data-lenh-con100>{lenhChan.con100.length} con chặn 100%</b> +{" "}
+                    <b className="text-white">{lenhChan.soVong} vòng</b> + {so(lenhChan.soLe)} cặp lẻ, {so(lenhChan.chuoi.length)} ký tự
+                  </>
                 )}
                 {doi > 0 && <span className="text-[#ffd24a]"> (chưa lưu — bot vẫn trả theo bản đã lưu)</span>}
               </span>
@@ -408,7 +411,15 @@ export default function DaBangTien({
             <div className="text-[0.66rem] text-[var(--text-muted)] mt-1">
               Trên Telegram gõ <code className="text-[#c2d4ea]">/chanlq {region === "xsmn" ? "mn" : region === "xsmt" ? "mt" : "mb"}</code>{" "}
               là ra đúng chuỗi này (bot tự cắt khúc nếu dài; gõ <code className="text-[#c2d4ea]">/chanlq</code> không là ra cả 3 miền).
-              Mỗi mẩu <code className="text-[#c2d4ea]">a b c{HAU_TO_CHAN_DA[region]}</code> là một vòng: chặn mọi cặp trong đó. Dòng
+              Mỗi mẩu <code className="text-[#c2d4ea]">a b c{HAU_TO_CHAN_DA[region]}</code> là một vòng: chặn mọi cặp trong đó. Mẩu{" "}
+              <b>một con</b> <code className="text-[#c2d4ea]">05{HAU_TO_CHAN_DA[region]}</code> là con chặn 100%: mọi đá dính con đó đều không nhận.
+              {lenhChan.con100.length > 0 && (
+                <> Kỳ này: <b className="text-[#ffd24a] numeric">{lenhChan.con100.join(" ")}</b>.</>
+              )} Mẩu{" "}
+              <b>một con</b> <code className="text-[#c2d4ea]">05{HAU_TO_CHAN_DA[region]}</code> là con chặn 100%: mọi đá dính con đó đều không nhận.
+              {lenhChan.con100.length > 0 && (
+                <> Kỳ này: <b className="text-[#ffd24a] numeric">{lenhChan.con100.join(" ")}</b>.</>
+              )} Dòng
               đầu <code className="text-[#c2d4ea]">/chanloai</code> là lệnh của phần mềm ghi cược — dán nguyên cả hai dòng.
             </div>
             {lenhChan.cap.length > 0 && (

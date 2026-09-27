@@ -766,6 +766,32 @@ export const HAU_TO_CHAN_DA: Record<Region, string> = { xsmn: "dx0n", xsmt: "dx0
  * MỌI cặp của nó với nhóm đều chưa gom — dài hơn, nhưng không cặp nào ghi
  * quá một lần.
  */
+/**
+ * Con chặn 100%: con bị chặn với CẢ 99 con còn lại. Khách soi thấy "bèo nhất
+ * cũng có vài số chặn 100%" và xin tách riêng để tiết kiệm ký tự: thay vì 99
+ * cặp (hay một vòng kéo cả trăm con), ghi đúng một mình con đó — "05dx0n" —
+ * nghĩa là mọi đá dính 05 đều không nhận.
+ */
+export function tachConChan100(cap: [string, string][], soCon = 100): { con100: string[]; conLai: [string, string][] } {
+  const bac = new Map<string, number>();
+  for (const [a, b] of cap) {
+    bac.set(a, (bac.get(a) ?? 0) + 1);
+    bac.set(b, (bac.get(b) ?? 0) + 1);
+  }
+  const con100 = [...bac].filter(([, n]) => n >= soCon - 1).map(([c]) => c).sort();
+  const s = new Set(con100);
+  return { con100, conLai: cap.filter(([a, b]) => !s.has(a) && !s.has(b)) };
+}
+
+/**
+ * Cả bộ: con chặn 100% đứng đầu, mỗi con một mẩu; phần còn lại gom vòng.
+ * Web và bot cùng gọi một chỗ này.
+ */
+export function nhomChanDa(cap: [string, string][], khongLap = false): { nhom: string[][]; con100: string[] } {
+  const { con100, conLai } = tachConChan100(cap);
+  return { nhom: [...con100.map((c) => [c]), ...nhomVong(conLai, khongLap)], con100 };
+}
+
 export function nhomVong(cap: [string, string][], khongLap = false): string[][] {
   const ke = new Map<string, Set<string>>();
   const noi = (a: string, b: string) => {
@@ -828,7 +854,7 @@ export function nhomVong(cap: [string, string][], khongLap = false): string[][] 
  */
 export const LENH_CHAN_LOAI = "/chanloai";
 
-/** "01 10 11dx0n" — một nhóm thành một mẩu dán được, tiền dính vào con cuối. */
+/** "01 10 11dx0n" — một nhóm thành một mẩu dán được, tiền dính vào con cuối. Nhóm 1 con = con chặn 100%. */
 export const mauNhom = (nhom: string[], region: Region) => `${nhom.join(" ")}${HAU_TO_CHAN_DA[region]}`;
 
 /**
