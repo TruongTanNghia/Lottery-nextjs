@@ -41,9 +41,11 @@ export interface BangDaLuu {
   moTay: string[];
   /** Lần gần nhất luật đóng đinh thêm ô. */
   luatLuc: string | null;
+  /** Rút gọn chuỗi: con bị chặn ≥ 90/99 thì chặn tròn cả con (chặn thêm vài cặp). */
+  rutGon: boolean;
 }
 
-const macDinh = (): BangDaLuu => ({ bang: bangMacDinh(), luuLuc: null, tuDong: true, chanLuat: [], moTay: [], luatLuc: null });
+const macDinh = (): BangDaLuu => ({ bang: bangMacDinh(), luuLuc: null, tuDong: true, chanLuat: [], moTay: [], luatLuc: null, rutGon: false });
 
 export async function docBangDa(region: Region): Promise<BangDaLuu> {
   const raw = await getConfigValue(khoa(region));
@@ -58,6 +60,7 @@ export async function docBangDa(region: Region): Promise<BangDaLuu> {
       chanLuat: chuanHoaDanhSachO(o.chanLuat),
       moTay: chuanHoaDanhSachO(o.moTay),
       luatLuc: typeof o.luatLuc === "string" ? o.luatLuc : null,
+      rutGon: o.rutGon === true,
     };
   } catch {
     return macDinh();
@@ -73,7 +76,8 @@ export async function luuBangDa(
   bang: unknown,
   tuDong: boolean,
   chanLuat: unknown,
-  moTay: unknown
+  moTay: unknown,
+  rutGon: boolean
 ): Promise<BangDaLuu> {
   const cu = await docBangDa(region);
   const mo = new Set(chuanHoaDanhSachO(moTay));
@@ -85,6 +89,7 @@ export async function luuBangDa(
     chanLuat: chuanHoaDanhSachO(chanLuat).filter((k) => !mo.has(k)),
     moTay: [...mo].sort(),
     luatLuc: cu.luatLuc,
+    rutGon,
   };
   await ghi(region, data);
   return data;

@@ -772,24 +772,53 @@ export const HAU_TO_CHAN_DA: Record<Region, string> = { xsmn: "dx0n", xsmt: "dx0
  * cặp (hay một vòng kéo cả trăm con), ghi đúng một mình con đó — "05dx0n" —
  * nghĩa là mọi đá dính 05 đều không nhận.
  */
-export function tachConChan100(cap: [string, string][], soCon = 100): { con100: string[]; conLai: [string, string][] } {
+/** Rút gọn: con bị chặn từ ngần này trên 99 con trở lên thì chặn tròn cả con. Khách chốt "trên 90/100". */
+export const NGUONG_RUT_GON = 90;
+
+/**
+ * `nguong` = số con (trên 99) mà một con phải bị chặn cùng để được ghi một
+ * mình. 99 là đúng nghĩa 100%; NGUONG_RUT_GON (90) là "rút gọn": chấp nhận
+ * chặn thêm vài cặp lẽ ra nhận để chuỗi ngắn hẳn — `capThem` đếm đúng số đó.
+ */
+export function tachConChan100(
+  cap: [string, string][],
+  soCon = 100,
+  nguong = soCon - 1
+): { con100: string[]; conLai: [string, string][]; capThem: number } {
   const bac = new Map<string, number>();
   for (const [a, b] of cap) {
     bac.set(a, (bac.get(a) ?? 0) + 1);
     bac.set(b, (bac.get(b) ?? 0) + 1);
   }
-  const con100 = [...bac].filter(([, n]) => n >= soCon - 1).map(([c]) => c).sort();
+  const con100 = [...bac].filter(([, n]) => n >= nguong).map(([c]) => c).sort();
   const s = new Set(con100);
-  return { con100, conLai: cap.filter(([a, b]) => !s.has(a) && !s.has(b)) };
+  // Cặp lẽ ra nhận mà giờ bị chặn theo: với mỗi con tròn, mọi con nó CHƯA bị
+  // chặn cùng. Đếm bằng tập hợp vì cặp giữa hai con tròn cùng hở sẽ hiện ở cả
+  // hai phía — mà chỉ là một cặp.
+  const daChan = new Set(cap.map(([a, b]) => (a < b ? `${a}-${b}` : `${b}-${a}`)));
+  const them = new Set<string>();
+  for (const c of con100) {
+    for (let q = 0; q < soCon; q++) {
+      const y = String(q).padStart(2, "0");
+      if (y === c) continue;
+      const k = c < y ? `${c}-${y}` : `${y}-${c}`;
+      if (!daChan.has(k)) them.add(k);
+    }
+  }
+  return { con100, conLai: cap.filter(([a, b]) => !s.has(a) && !s.has(b)), capThem: them.size };
 }
 
 /**
  * Cả bộ: con chặn 100% đứng đầu, mỗi con một mẩu; phần còn lại gom vòng.
  * Web và bot cùng gọi một chỗ này.
  */
-export function nhomChanDa(cap: [string, string][], khongLap = false): { nhom: string[][]; con100: string[] } {
-  const { con100, conLai } = tachConChan100(cap);
-  return { nhom: [...con100.map((c) => [c]), ...nhomVong(conLai, khongLap)], con100 };
+export function nhomChanDa(
+  cap: [string, string][],
+  khongLap = false,
+  rutGon = false
+): { nhom: string[][]; con100: string[]; capThem: number } {
+  const { con100, conLai, capThem } = tachConChan100(cap, 100, rutGon ? NGUONG_RUT_GON : 99);
+  return { nhom: [...con100.map((c) => [c]), ...nhomVong(conLai, khongLap)], con100, capThem };
 }
 
 export function nhomVong(cap: [string, string][], khongLap = false): string[][] {

@@ -64,6 +64,7 @@ export default function SoDaPage({ region }: { region: Region }) {
   const [lyDo, setLyDo] = useState<Record<string, LyDoChan>>({});
   const [nguong, setNguong] = useState<number | null>(null);
   const [thangLuat, setThangLuat] = useState<string | null>(null);
+  const [rutGon, setRutGon] = useState(false);
   // Tăng mỗi lần lưu, để Báo Cáo Tháng (tự tải bảng của cả ba miền) biết mà tải lại.
   const [phienBan, setPhienBan] = useState(0);
 
@@ -83,6 +84,7 @@ export default function SoDaPage({ region }: { region: Region }) {
         setLyDo(d?.data?.lyDo && typeof d.data.lyDo === "object" ? d.data.lyDo : {});
         setNguong(typeof d?.data?.nguong === "number" ? d.data.nguong : null);
         setThangLuat(typeof d?.data?.thangLuat === "string" ? d.data.thangLuat : null);
+        setRutGon(d?.data?.rutGon === true);
       })
       // Không đọc được bảng thì chạy bảng mặc định, chứ không để cả tab trắng.
       .catch(() => !huy && setBang(bangMacDinh()));
@@ -134,6 +136,7 @@ export default function SoDaPage({ region }: { region: Region }) {
             tuDong={tuDong}
             chanLuat={chanLuat}
             moTay={moTay}
+            rutGon={rutGon}
             lyDo={lyDo}
             nguong={nguong}
             thangLuat={thangLuat}
@@ -146,6 +149,7 @@ export default function SoDaPage({ region }: { region: Region }) {
               setLyDo(d.lyDo && typeof d.lyDo === "object" ? (d.lyDo as Record<string, LyDoChan>) : {});
               setNguong(typeof d.nguong === "number" ? d.nguong : null);
               setThangLuat(typeof d.thangLuat === "string" ? d.thangLuat : null);
+              setRutGon(d.rutGon === true);
               setPhienBan((v) => v + 1);
             }}
           />

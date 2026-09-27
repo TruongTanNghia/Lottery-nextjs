@@ -62,8 +62,9 @@ type Nhom = "cung" | "cheo";
  * tổng ở trên thì tính theo số đang gõ, để thấy trước rồi mới quyết.
  */
 export default function DaBangTien({
-  draws, ky, region, bang, luuLuc, tuDong, chanLuat, moTay, lyDo, nguong, thangLuat, onLuu,
+  draws, ky, region, bang, luuLuc, tuDong, chanLuat, moTay, rutGon, lyDo, nguong, thangLuat, onLuu,
 }: {
+  rutGon: boolean;
   draws: DrawHits[];
   ky: KyDa[];
   region: Region;
@@ -82,6 +83,8 @@ export default function DaBangTien({
   const [tuDongNhap, setTuDongNhap] = useState(tuDong);
   const [chanLuatNhap, setChanLuatNhap] = useState<string[]>(chanLuat);
   const [moTayNhap, setMoTayNhap] = useState<string[]>(moTay);
+  /** Rút gọn chuỗi: chặn tròn con ≥ 90/99 — lưu cùng bảng, bot đọc theo. */
+  const [rutGonNhap, setRutGonNhap] = useState(rutGon);
   const [nhom, setNhom] = useState<Nhom>("cung");
   /** Đá chéo: đang xem ngày nào ghép với các ngày khác. -1 = mọi ô chéo. */
   const [ngay, setNgay] = useState(0);
@@ -94,6 +97,7 @@ export default function DaBangTien({
   useEffect(() => setTuDongNhap(tuDong), [tuDong]);
   useEffect(() => setChanLuatNhap(chanLuat), [chanLuat]);
   useEffect(() => setMoTayNhap(moTay), [moTay]);
+  useEffect(() => setRutGonNhap(rutGon), [rutGon]);
 
   const tkt = useMemo(() => thongKeCapTheoThang(ky, region, TRAN), [ky, region]);
   const tt = useMemo(() => khoKyToi(draws), [draws]);
@@ -139,10 +143,10 @@ export default function DaBangTien({
     if (!tt) return null;
     const cap = capBiChan(tt.kho, hieuLuc, TRAN);
     // Gom vòng như bot, để chuỗi copy trên web và chuỗi bot trả là một.
-    const { nhom, con100 } = nhomChanDa(cap, khongLap);
+    const { nhom, con100, capThem } = nhomChanDa(cap, khongLap, rutGonNhap);
     const chuoi = chiaKhoiChanDa(provincePrefix(region), nhom, Number.POSITIVE_INFINITY, region)[0] ?? "";
-    return { cap, nhom, con100, soVong: nhom.filter((n) => n.length > 2).length, soLe: nhom.filter((n) => n.length === 2).length, chuoi };
-  }, [tt, hieuLuc, region, khongLap]);
+    return { cap, nhom, con100, capThem, soVong: nhom.filter((n) => n.length > 2).length, soLe: nhom.filter((n) => n.length === 2).length, chuoi };
+  }, [tt, hieuLuc, region, khongLap, rutGonNhap]);
 
   if (!tkt || !tong) return null;
 
@@ -152,7 +156,8 @@ export default function DaBangTien({
   const doiO = Object.keys(nhap).filter((k) => nhap[k] !== bang[k]).length;
   const doiLuat = tuDongNhap !== tuDong;
   const doiDanhSach = chanLuatNhap.join(",") !== chanLuat.join(",") || moTayNhap.join(",") !== moTay.join(",");
-  const doi = doiO + (doiLuat ? 1 : 0) + (doiDanhSach ? 1 : 0);
+  const doiGon = rutGonNhap !== rutGon;
+  const doi = doiO + (doiLuat ? 1 : 0) + (doiDanhSach ? 1 : 0) + (doiGon ? 1 : 0);
   const luatChan = new Set(tuDongNhap ? chanLuatNhap : []);
   const moTaySet = new Set(moTayNhap);
   const demLyDo = { tong: 0, thang: 0, cahai: 0 };
@@ -192,7 +197,7 @@ export default function DaBangTien({
       const r = await fetch(`/api/config/da?region=${region}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bang: nhap, tuDong: tuDongNhap, chanLuat: chanLuatNhap, moTay: moTayNhap }),
+        body: JSON.stringify({ bang: nhap, tuDong: tuDongNhap, chanLuat: chanLuatNhap, moTay: moTayNhap, rutGon: rutGonNhap }),
       });
       const d = await r.json();
       if (!r.ok || d.status !== "success") throw new Error(d.detail ?? "Lưu không được");
@@ -357,7 +362,7 @@ export default function DaBangTien({
             )}
           </span>
           <button
-            onClick={() => { setNhap(bang); setTuDongNhap(tuDong); }}
+            onClick={() => { setNhap(bang); setTuDongNhap(tuDong); setChanLuatNhap(chanLuat); setMoTayNhap(moTay); setRutGonNhap(rutGon); }}
             disabled={doi === 0 || dangLuu}
             className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16] disabled:opacity-40"
           >
@@ -382,12 +387,26 @@ export default function DaBangTien({
                 <b className="text-white" data-lenh-so-cap>{so(lenhChan.cap.length)} cặp</b> theo bảng đang gõ
                 {lenhChan.cap.length > 0 && (
                   <>
-                    {" "}— <b className="text-white" data-lenh-con100>{lenhChan.con100.length} con chặn 100%</b> +{" "}
-                    <b className="text-white">{lenhChan.soVong} vòng</b> + {so(lenhChan.soLe)} cặp lẻ, {so(lenhChan.chuoi.length)} ký tự
+                    {" "}— <b className="text-white" data-lenh-con100>{lenhChan.con100.length} con chặn {rutGonNhap ? "tròn" : "100%"}</b> +{" "}
+                    <b className="text-white">{lenhChan.soVong} vòng</b> + {so(lenhChan.soLe)} cặp lẻ,{" "}
+                    <b className="text-white" data-lenh-ky-tu>{so(lenhChan.chuoi.length)} ký tự</b>
+                    {rutGonNhap && lenhChan.capThem > 0 && (
+                      <span className="text-[#ffd24a]"> · chặn thêm <b data-lenh-cap-them>{so(lenhChan.capThem)}</b> cặp lẽ ra nhận</span>
+                    )}
                   </>
                 )}
                 {doi > 0 && <span className="text-[#ffd24a]"> (chưa lưu — bot vẫn trả theo bản đã lưu)</span>}
               </span>
+              <button
+                onClick={() => setRutGonNhap((v) => !v)}
+                data-lenh-rut-gon
+                title="Con bị chặn từ 90/99 con trở lên thì chặn tròn cả con — chuỗi ngắn hẳn, đổi lại chặn thêm vài cặp lẽ ra nhận. Lưu cùng bảng, bot đọc theo."
+                className={`px-2 py-1 rounded-lg text-[0.7rem] font-bold border transition-colors ${
+                  rutGonNhap ? "bg-[#b45309] border-[#fbbf24] text-white" : "bg-white/[0.07] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.14]"
+                }`}
+              >
+                {rutGonNhap ? "✂ Rút gọn ≥90/99: BẬT" : "✂ Rút gọn ≥90/99: tắt"}
+              </button>
               {/* Nút chứ không phải checkbox: CSS toàn cục bỏ appearance của input nên ô tick tàng hình. */}
               <button
                 onClick={() => setKhongLap((v) => !v)}
