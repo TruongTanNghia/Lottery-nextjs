@@ -17,6 +17,7 @@
 import type { DrawHits } from "./backtest";
 import { STAKE_PRICE, WIN_PER_POINT, hitsPerDraw } from "./exposure";
 import type { Schedule } from "./limit-engine";
+import { CA_HAI_BUOC_LO, type CongTacBuocLo } from "./chan-lo";
 import { dungKy, moiBac, tenBac, type BacKey } from "./slot-stats";
 import type { Region } from "./types";
 
@@ -77,7 +78,7 @@ const bienBac = (nhay: number, mau: number, region: Region): number => {
   return mau > 0 ? ((gia - (nhay / mau) * WIN_PER_POINT) / gia) * 100 : 0;
 };
 
-export function luatChanNgay(draws: DrawHits[], region: Region): KetQuaChanNgay {
+export function luatChanNgay(draws: DrawHits[], region: Region, buoc: CongTacBuocLo = CA_HAI_BUOC_LO): KetQuaChanNgay {
   const ky = dungKy(draws);
   const cacThang = [...new Set(ky.map((k) => k.date.slice(0, 7)))].sort();
   const thang2 = cacThang.slice(-2);
@@ -108,8 +109,8 @@ export function luatChanNgay(draws: DrawHits[], region: Region): KetQuaChanNgay 
     const tyLe2 = a.mau2 ? a.nhay2 / a.mau2 : 0;
     const bien = bienBac(a.nhay, a.mau, region);
     const bien2 = bienBac(a.nhay2, a.mau2, region);
-    const b1 = a.mau >= MAU_TOI_THIEU_NGAY && tyLe > mucChung;
-    const b2 = a.mau2 >= MAU_TOI_THIEU_NGAY && bien2 < 0;
+    const b1 = buoc.buoc1 && a.mau >= MAU_TOI_THIEU_NGAY && tyLe > mucChung;
+    const b2 = buoc.buoc2 && a.mau2 >= MAU_TOI_THIEU_NGAY && bien2 < 0;
     const lyDo: LyDoChanNgay | null = b1 && b2 ? "cahai" : b1 ? "tong" : b2 ? "thang" : null;
     if (lyDo) dem[lyDo]++;
     return { key, ten: tenBac(key), viTri: viTriCua(key), mau: a.mau, nhay: a.nhay, tyLe, bien, mau2: a.mau2, nhay2: a.nhay2, tyLe2, bien2, b1, b2, lyDo };

@@ -21,7 +21,7 @@ import { getConfigValue, query, setConfigValue } from "@/lib/db";
 import { dungKy } from "@/lib/slot-stats";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  NGUONG_RUT_GON, apLuatDinh, bangMacDinh, capBiChan, chuanHoaBang, chuanHoaDanhSachO, chuanHoaNguongGon, khoKyToi, luatHaiBuoc,
+  NGUONG_RUT_GON, apLuatDinh, bangMacDinh, capBiChan, chuanHoaBang, chuanHoaBuoc, chuanHoaDanhSachO, chuanHoaNguongGon, khoKyToi, luatHaiBuoc,
   thongKeCapTheoThang, thongKeDa,
   type BangDa, type LuatHaiBuoc, type LyDoChan,
 } from "@/lib/da";
@@ -33,8 +33,11 @@ export interface BangDaLuu {
   bang: BangDa;
   /** null = chưa ai lưu lần nào, đang là bảng mặc định 1 điểm mỗi ô. */
   luuLuc: string | null;
-  /** Công tắc luật hai bước. Khách xin bật sẵn, nên mặc định là bật. */
+  /** Luật đang bật (= ít nhất một trong hai bước bật). Giữ tên cũ để bản lưu cũ đọc được. */
   tuDong: boolean;
+  /** Hai công tắc riêng: bước 1 (quá mức chung) và bước 2 (lỗ 2 tháng gần). */
+  buoc1: boolean;
+  buoc2: boolean;
   /** Ô luật đã chặn — giữ nguyên tới khi khách mở tay. */
   chanLuat: string[];
   /** Ô khách đã mở tay — luật không đụng lại. */
@@ -47,7 +50,7 @@ export interface BangDaLuu {
   nguongGon: number;
 }
 
-const macDinh = (): BangDaLuu => ({ bang: bangMacDinh(), luuLuc: null, tuDong: true, chanLuat: [], moTay: [], luatLuc: null, rutGon: false, nguongGon: NGUONG_RUT_GON });
+const macDinh = (): BangDaLuu => ({ bang: bangMacDinh(), luuLuc: null, tuDong: true, chanLuat: [], moTay: [], luatLuc: null, rutGon: false, nguongGon: NGUONG_RUT_GON, buoc1: true, buoc2: true });
 
 export async function docBangDa(region: Region): Promise<BangDaLuu> {
   const raw = await getConfigValue(khoa(region));
@@ -58,7 +61,9 @@ export async function docBangDa(region: Region): Promise<BangDaLuu> {
       bang: chuanHoaBang(o.bang),
       luuLuc: typeof o.luuLuc === "string" ? o.luuLuc : null,
       // Bản lưu từ trước khi có công tắc thì coi như bật — đó là ý khách.
-      tuDong: o.tuDong !== false,
+      tuDong: o.tuDong !== false && (o.buoc1 !== false || o.buoc2 !== false),
+      buoc1: o.buoc1 !== false,
+      buoc2: o.buoc2 !== false,
       chanLuat: chuanHoaDanhSachO(o.chanLuat),
       moTay: chuanHoaDanhSachO(o.moTay),
       luatLuc: typeof o.luatLuc === "string" ? o.luatLuc : null,
@@ -81,14 +86,18 @@ export async function luuBangDa(
   chanLuat: unknown,
   moTay: unknown,
   rutGon: boolean,
-  nguongGon: unknown
+  nguongGon: unknown,
+  buoc: unknown
 ): Promise<BangDaLuu> {
+  const b = chuanHoaBuoc(buoc);
   const cu = await docBangDa(region);
   const mo = new Set(chuanHoaDanhSachO(moTay));
   const data: BangDaLuu = {
     bang: chuanHoaBang(bang),
     luuLuc: new Date().toISOString(),
-    tuDong,
+    tuDong: tuDong && (b.buoc1 || b.buoc2),
+    buoc1: b.buoc1,
+    buoc2: b.buoc2,
     // Ô đã mở tay thì không thể đồng thời nằm trong danh sách luật chặn.
     chanLuat: chuanHoaDanhSachO(chanLuat).filter((k) => !mo.has(k)),
     moTay: [...mo].sort(),
@@ -141,7 +150,7 @@ export async function bangHieuLuc(region: Region): Promise<BangHieuLuc> {
   const ky = dungKy(draws);
   const tk = thongKeDa(ky, region);
   const tkt = thongKeCapTheoThang(ky, region);
-  const luat = luu0.tuDong ? luatHaiBuoc(tk, tkt) : null;
+  const luat = luu0.tuDong ? luatHaiBuoc(tk, tkt, { buoc1: luu0.buoc1, buoc2: luu0.buoc2 }) : null;
   const ap = apLuatDinh(luu0.bang, luat, luu0);
 
   let luu = luu0;

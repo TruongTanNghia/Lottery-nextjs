@@ -66,6 +66,8 @@ export default function SoDaPage({ region }: { region: Region }) {
   const [thangLuat, setThangLuat] = useState<string | null>(null);
   const [rutGon, setRutGon] = useState(false);
   const [nguongGon, setNguongGon] = useState(90);
+  const [buoc1, setBuoc1] = useState(true);
+  const [buoc2, setBuoc2] = useState(true);
   // Tăng mỗi lần lưu, để Báo Cáo Tháng (tự tải bảng của cả ba miền) biết mà tải lại.
   const [phienBan, setPhienBan] = useState(0);
 
@@ -87,6 +89,8 @@ export default function SoDaPage({ region }: { region: Region }) {
         setThangLuat(typeof d?.data?.thangLuat === "string" ? d.data.thangLuat : null);
         setRutGon(d?.data?.rutGon === true);
         setNguongGon(typeof d?.data?.nguongGon === "number" ? d.data.nguongGon : 90);
+        setBuoc1(d?.data?.buoc1 !== false);
+        setBuoc2(d?.data?.buoc2 !== false);
       })
       // Không đọc được bảng thì chạy bảng mặc định, chứ không để cả tab trắng.
       .catch(() => !huy && setBang(bangMacDinh()));
@@ -140,6 +144,8 @@ export default function SoDaPage({ region }: { region: Region }) {
             moTay={moTay}
             rutGon={rutGon}
             nguongGon={nguongGon}
+            buoc1={buoc1}
+            buoc2={buoc2}
             lyDo={lyDo}
             nguong={nguong}
             thangLuat={thangLuat}
@@ -154,6 +160,8 @@ export default function SoDaPage({ region }: { region: Region }) {
               setThangLuat(typeof d.thangLuat === "string" ? d.thangLuat : null);
               setRutGon(d.rutGon === true);
               setNguongGon(typeof d.nguongGon === "number" ? d.nguongGon : 90);
+              setBuoc1(d.buoc1 !== false);
+              setBuoc2(d.buoc2 !== false);
               setPhienBan((v) => v + 1);
             }}
           />

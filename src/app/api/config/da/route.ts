@@ -51,7 +51,7 @@ export async function PUT(req: Request) {
     if (!body || typeof body !== "object" || !body.bang || typeof body.bang !== "object") {
       throw new ApiError(400, "Body must be JSON with a 'bang' object");
     }
-    await luuBangDa(region, body.bang, body.tuDong !== false, body.chanLuat, body.moTay, body.rutGon === true, body.nguongGon);
+    await luuBangDa(region, body.bang, body.tuDong !== false, body.chanLuat, body.moTay, body.rutGon === true, body.nguongGon, { buoc1: body.buoc1, buoc2: body.buoc2 });
     return await traLoi(region);
   } catch (err) {
     return jsonError(err);

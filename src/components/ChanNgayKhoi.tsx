@@ -15,6 +15,7 @@ const LY_DO: Record<string, string> = { tong: "bước 1 · tổng thể", thang
 
 interface TrangThai {
   auto: boolean;
+  buoc: { buoc1: boolean; buoc2: boolean };
   kq: KetQuaChanNgay;
   lichHienTai: Schedule;
   lichSau: Schedule;
@@ -31,7 +32,7 @@ interface TrangThai {
  * ngay và công tắc tự áp sau mỗi kỳ cào kết quả. Cả hai đều ghi thật vào
  * lịch (như khách bấm Lưu trên bảng), nên mặc định tự áp là TẮT.
  */
-export default function ChanNgayKhoi({ region }: { region: Region }) {
+export default function ChanNgayKhoi({ region, phienBan = 0 }: { region: Region; phienBan?: number }) {
   const toast = useToast();
   const [tt, setTt] = useState<TrangThai | null>(null);
   const [loi, setLoi] = useState<string | null>(null);
@@ -51,7 +52,7 @@ export default function ChanNgayKhoi({ region }: { region: Region }) {
     tai(huy).catch(() => !huy.v && setLoi("Không tải được luật theo ngày"));
     return () => { huy.v = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [region]);
+  }, [region, phienBan]);
 
   const apNgay = async () => {
     if (!tt || tt.doi.length === 0) return;
@@ -123,7 +124,7 @@ export default function ChanNgayKhoi({ region }: { region: Region }) {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2" data-chan-ngay-tong>
-          <O nhan="Bậc bị chặn" gt={`${kq.chan.length}/${kq.bang.length}`} phu={`bước 1: ${kq.dem.tong + kq.dem.cahai} · bước 2: ${kq.dem.thang + kq.dem.cahai}`} m="#ff6b78" />
+          <O nhan="Bậc bị chặn" gt={`${kq.chan.length}/${kq.bang.length}`} phu={`bước 1 ${tt.buoc.buoc1 ? "bật" : "tắt"}: ${kq.dem.tong + kq.dem.cahai} · bước 2 ${tt.buoc.buoc2 ? "bật" : "tắt"}: ${kq.dem.thang + kq.dem.cahai}`} m="#ff6b78" />
           <O nhan="Ô sẽ đổi" gt={String(tt.doi.length)} phu={tt.doi.length ? tt.doi.map((d) => d.o).join(", ") : "lịch đã khớp luật"} m={tt.doi.length ? "#ffd24a" : "#7ff0c0"} />
           <O nhan="Tự áp mỗi kỳ" gt={tt.auto ? "BẬT" : "tắt"} phu={tt.auto ? "sau mỗi lần cào kết quả" : "chỉ áp khi bấm nút"} m={tt.auto ? "#7ff0c0" : "#cbd5e1"} />
           <O nhan="Áp lần cuối" gt={tt.apLuc ? new Date(tt.apLuc).toLocaleDateString("vi-VN") : "—"} phu={tt.apLuc ? new Date(tt.apLuc).toLocaleTimeString("vi-VN") : "chưa áp lần nào"} m="#8fd0ff" />

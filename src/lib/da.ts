@@ -639,7 +639,18 @@ export interface LuatHaiBuoc {
  * Ô ít hơn CAP_TOI_THIEU_LUAT cặp (cả quãng, hoặc trong tháng) thì bước đó
  * không chấm — con số còn là may rủi. Hàm thuần, web và bot cùng gọi.
  */
-export function luatHaiBuoc(tk: ThongKeDa | null, tkt: ThongKeCapThang | null): LuatHaiBuoc | null {
+/** Hai công tắc riêng — khách: "chặn quá mức chung / chặn lỗ 2 tháng gần nhất, cả lô cả đá". */
+export interface CongTacBuoc {
+  buoc1: boolean;
+  buoc2: boolean;
+}
+export const CA_HAI_BUOC: CongTacBuoc = { buoc1: true, buoc2: true };
+export const chuanHoaBuoc = (raw: unknown): CongTacBuoc => {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  return { buoc1: o.buoc1 !== false, buoc2: o.buoc2 !== false };
+};
+
+export function luatHaiBuoc(tk: ThongKeDa | null, tkt: ThongKeCapThang | null, buoc: CongTacBuoc = CA_HAI_BUOC): LuatHaiBuoc | null {
   if (!tk) return null;
   const nguong = tk.chuan.bien;
   const thang = tkt?.thangDangChay ?? "";
@@ -648,9 +659,9 @@ export function luatHaiBuoc(tk: ThongKeDa | null, tkt: ThongKeCapThang | null): 
   const chan = new Map<string, LyDoChan>();
   for (const o of tk.bang) {
     const k = khoaCap(o.i, o.j);
-    const b1 = o.dip >= CAP_TOI_THIEU_LUAT && o.tyLe > tk.chuan.p;
+    const b1 = buoc.buoc1 && o.dip >= CAP_TOI_THIEU_LUAT && o.tyLe > tk.chuan.p;
     const t = theoThang.get(k);
-    const b2 = !!t && t.bien != null && t.bien <= nguong;
+    const b2 = buoc.buoc2 && !!t && t.bien != null && t.bien <= nguong;
     if (b1 && b2) chan.set(k, "cahai");
     else if (b1) chan.set(k, "tong");
     else if (b2) chan.set(k, "thang");

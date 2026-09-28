@@ -143,12 +143,25 @@ export default function DaKyToi({
     return d.nhanO.get(`${Math.min(a, b)}-${Math.max(a, b)}`)?.nhan ?? "chua";
   };
 
+  /** Cặp (lo, kia) đang bị chặn theo Bảng Tiền (điểm 0) — khách: "chặn rồi thì ấn số đó máy chỉ hiện số đang nhận thôi". */
+  const chanVoi = (lo: string, kia: string): boolean => {
+    if (!bang) return false;
+    const a = d.bac[lo], b = d.bac[kia];
+    return (bang[`${Math.min(a, b)}-${Math.max(a, b)}`] ?? 0) <= 0;
+  };
+
   const conChon = chon?.kieu === "con" ? chon.lo : null;
   const ban = conChon
-    ? {
-        om: LOS.filter((l) => l !== conChon && nhanVoi(conChon, l) === "om"),
-        ne: LOS.filter((l) => l !== conChon && nhanVoi(conChon, l) === "ne"),
-      }
+    ? (() => {
+        const chan = LOS.filter((l) => l !== conChon && chanVoi(conChon, l));
+        const nhan = LOS.filter((l) => l !== conChon && !chanVoi(conChon, l));
+        return {
+          chan,
+          nhan,
+          om: nhan.filter((l) => nhanVoi(conChon, l) === "om"),
+          ne: nhan.filter((l) => nhanVoi(conChon, l) === "ne"),
+        };
+      })()
     : null;
 
   const copy = async (chu: string, bao: string) => {
@@ -170,6 +183,8 @@ export default function DaKyToi({
     if (!chon) return conDoSet.has(lo) ? { background: "rgba(220,38,38,0.8)", color: "#fff", borderColor: "#ff8a8a" } : goc;
     if (chon.kieu === "con") {
       if (lo === chon.lo) return { background: "#2563eb", color: "#fff", borderColor: "#fff" };
+      // Cặp đã chặn: gần như biến mất — chỉ còn thấy những con đang nhận.
+      if (chanVoi(chon.lo, lo)) return { background: "rgba(0,0,0,0.35)", color: "rgba(255,255,255,0.18)", borderColor: "transparent", textDecoration: "line-through" };
       const n = nhanVoi(chon.lo, lo);
       if (n === "om") return { background: XANH.nen, color: XANH.chu, borderColor: XANH.vien };
       if (n === "ne") return { background: DO.nen, color: DO.chu, borderColor: DO.vien };
@@ -265,6 +280,7 @@ export default function DaKyToi({
                 data-lo={lo}
                 data-so-chan={soChan[lo]}
                 data-do={conDoSet.has(lo) ? "1" : "0"}
+                data-chan-voi={conChon && lo !== conChon && chanVoi(conChon, lo) ? "1" : "0"}
                 title={`Con ${lo} · ${tenNgay(d.bac[lo])} · chặn với ${soChan[lo]}/99 con`}
                 className="rounded-md border py-1 leading-none transition-colors"
                 style={{ ...mauO(lo), ...(chon && conDoSet.has(lo) ? { boxShadow: "inset 0 0 0 1.5px #ff6b78" } : {}) }}
@@ -292,6 +308,7 @@ export default function DaKyToi({
                 <Cham m={XANH.nen} chu="đá với nó: nên ôm" />
                 <Cham m={DO.nen} chu="đá với nó: nên né" />
                 <Cham m="rgba(255,255,255,0.12)" chu="bình thường" />
+                <Cham m="rgba(0,0,0,0.35)" chu="mờ, gạch = đã chặn theo Bảng Tiền" />
               </>
             )}
             {chon?.kieu === "o" && (
@@ -310,19 +327,27 @@ export default function DaKyToi({
             <div className="flex items-baseline gap-2">
               <span className="numeric text-2xl font-extrabold text-white leading-none">{conChon}</span>
               <span className="text-[0.78rem] text-[var(--text-secondary)]">
-                đang ở ngày <b className="text-white">{tenNgay(d.bac[conChon])}</b>
+                đang ở ngày <b className="text-white">{tenNgay(d.bac[conChon])}</b> · đang nhận đá với{" "}
+                <b className="text-[#7ff0c0]" data-so-nhan>{ban.nhan.length} con</b>
+                {ban.chan.length > 0 && (
+                  <>
+                    , <b className="text-[#ff9d9d]" data-so-chan-voi>{ban.chan.length} con</b> đã chặn theo Bảng Tiền (mờ trên bảng)
+                  </>
+                )}
               </span>
             </div>
-            {ban.om.length === 0 && ban.ne.length === 0 ? (
+            {ban.nhan.length === 0 ? (
+              <div className="text-[0.76rem] text-[#ff9d9d]">Con này đang bị chặn với mọi con — không nhận đá nào dính nó.</div>
+            ) : ban.om.length === 0 && ban.ne.length === 0 ? (
               <div className="text-[0.76rem] text-[var(--text-secondary)]">
-                Con này đá với con nào cũng <b className="text-white">bình thường</b> — cứ nhận như mọi cặp khác.
+                {ban.nhan.length} con đang nhận đều <b className="text-white">bình thường</b> — cứ nhận như mọi cặp khác.
               </div>
             ) : (
               <>
                 <HangVien tieuDe={`Đá với ${ban.om.length} con này thì NÊN ÔM`} ds={ban.om} kieu="om" bam={bamCon} />
                 <HangVien tieuDe={`Đá với ${ban.ne.length} con này thì NÊN NÉ`} ds={ban.ne} kieu="ne" bam={bamCon} />
                 <div className="text-[0.68rem] text-[var(--text-muted)]">
-                  {99 - ban.om.length - ban.ne.length} con còn lại: bình thường.
+                  {ban.nhan.length - ban.om.length - ban.ne.length} con đang nhận còn lại: bình thường.
                 </div>
               </>
             )}

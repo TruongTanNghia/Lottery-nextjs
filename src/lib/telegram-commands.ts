@@ -22,7 +22,7 @@ import { baoCaoTheoThang } from "@/lib/profit-calculator";
 import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
 import { bangHieuLuc, taiKyDaXo } from "@/lib/da-bang";
 import { chuoiChanLo, luatChanLo } from "@/lib/chan-lo";
-import { trangThaiChanNgay } from "@/lib/chan-ngay-server";
+import { docBuoc, trangThaiChanNgay } from "@/lib/chan-ngay-server";
 import { SO_O_DA, chiaKhoiChanDa, nhomChanDa } from "@/lib/da";
 
 // Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
@@ -430,7 +430,7 @@ export async function chanDa(region: Region, khongLap = false, epGon = false, ep
       : "",
     con100.length > 0 ? `<i>chặn ${rutGon ? "tròn" : "100%"} (đứng đầu chuỗi, mỗi con một mẩu): ${esc(con100.join(" "))}</i>` : "",
     h.luu.tuDong
-      ? `<i>luật 2 bước đang bật: chặn ${h.luu.chanLuat.length} ô (giữ nguyên tới khi đổi), ${h.luu.moTay.length} ô mở tay${
+      ? `<i>luật đang bật (bước 1 ${h.luu.buoc1 ? "BẬT" : "tắt"} · bước 2 ${h.luu.buoc2 ? "BẬT" : "tắt"}): chặn ${h.luu.chanLuat.length} ô (giữ nguyên tới khi đổi), ${h.luu.moTay.length} ô mở tay${
           h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""
         }</i>`
       : `<i>luật tự động đang tắt — theo bảng cài tay${h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""}</i>`,
@@ -483,7 +483,7 @@ export async function chanDaTatCa(khongLap = false, epGon = false, epNguong: num
  * 17b0n …" — cùng cú pháp lô của phần mềm ghi cược. Không đổi hạn mức.
  */
 export async function chanLoBot(regions: Region[]): Promise<string> {
-  const parts = await Promise.all(regions.map(async (r) => ({ r, kq: luatChanLo(await taiKyDaXo(r), r) })));
+  const parts = await Promise.all(regions.map(async (r) => ({ r, kq: luatChanLo(await taiKyDaXo(r), r, await docBuoc(r)) })));
   const out: string[] = [regions.length > 1 ? "<b>🚫 Chặn lô 2 bước — cả 3 miền</b>" : `<b>🚫 Chặn lô 2 bước — ${label(regions[0])}</b>`];
   for (const { r, kq } of parts) {
     const thang = kq.thang2.map((t) => `T${Number(t.slice(5))}`).join("+");
@@ -511,7 +511,7 @@ export async function chanNgayBot(regions: Region[]): Promise<string> {
     const thang = tt.kq.thang2.map((t) => `T${Number(t.slice(5))}`).join("+");
     out.push(
       "",
-      `<b>${TEN_NGAN[r]}</b> · ${tt.kq.chan.length}/${tt.kq.bang.length} bậc dính luật (bước 1: ${tt.kq.dem.tong + tt.kq.dem.cahai} · bước 2 ${thang}: ${tt.kq.dem.thang + tt.kq.dem.cahai}) · tự áp ${tt.auto ? "BẬT" : "tắt"}`,
+      `<b>${TEN_NGAN[r]}</b> · ${tt.kq.chan.length}/${tt.kq.bang.length} bậc dính luật (bước 1 ${tt.buoc.buoc1 ? "BẬT" : "tắt"}: ${tt.kq.dem.tong + tt.kq.dem.cahai} · bước 2 ${thang} ${tt.buoc.buoc2 ? "BẬT" : "tắt"}: ${tt.kq.dem.thang + tt.kq.dem.cahai}) · tự áp ${tt.auto ? "BẬT" : "tắt"}`,
       tt.kq.chan.length ? `chặn: ${esc(tt.kq.bang.filter((x) => x.lyDo).map((x) => x.ten).join(", "))}` : "<i>không bậc nào dính luật</i>",
       tt.doi.length ? `<i>lịch còn ${tt.doi.length} ô chưa về 0: ${esc(tt.doi.map((d) => `${d.o} (${d.tu})`).join(", "))} — áp trên web</i>` : "<i>lịch đã khớp luật</i>"
     );

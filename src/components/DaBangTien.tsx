@@ -62,10 +62,12 @@ type Nhom = "cung" | "cheo";
  * tổng ở trên thì tính theo số đang gõ, để thấy trước rồi mới quyết.
  */
 export default function DaBangTien({
-  draws, ky, region, bang, luuLuc, tuDong, chanLuat, moTay, rutGon, nguongGon, lyDo, nguong, thangLuat, onLuu,
+  draws, ky, region, bang, luuLuc, tuDong, chanLuat, moTay, rutGon, nguongGon, buoc1, buoc2, lyDo, nguong, thangLuat, onLuu,
 }: {
   rutGon: boolean;
   nguongGon: number;
+  buoc1: boolean;
+  buoc2: boolean;
   draws: DrawHits[];
   ky: KyDa[];
   region: Region;
@@ -81,7 +83,10 @@ export default function DaBangTien({
 }) {
   const toast = useToast();
   const [nhap, setNhap] = useState<BangDa>(bang);
-  const [tuDongNhap, setTuDongNhap] = useState(tuDong);
+  // Hai công tắc riêng (khách: "chặn quá mức chung / chặn lỗ 2 tháng gần nhất"); luật bật khi ít nhất một cái bật.
+  const [buoc1Nhap, setBuoc1Nhap] = useState(buoc1);
+  const [buoc2Nhap, setBuoc2Nhap] = useState(buoc2);
+  const tuDongNhap = buoc1Nhap || buoc2Nhap;
   const [chanLuatNhap, setChanLuatNhap] = useState<string[]>(chanLuat);
   const [moTayNhap, setMoTayNhap] = useState<string[]>(moTay);
   /** Rút gọn chuỗi: chặn tròn con ≥ 90/99 — lưu cùng bảng, bot đọc theo. */
@@ -96,7 +101,8 @@ export default function DaBangTien({
   const [dangLuu, setDangLuu] = useState(false);
 
   useEffect(() => setNhap(bang), [bang]);
-  useEffect(() => setTuDongNhap(tuDong), [tuDong]);
+  useEffect(() => setBuoc1Nhap(buoc1), [buoc1]);
+  useEffect(() => setBuoc2Nhap(buoc2), [buoc2]);
   useEffect(() => setChanLuatNhap(chanLuat), [chanLuat]);
   useEffect(() => setMoTayNhap(moTay), [moTay]);
   useEffect(() => setRutGonNhap(rutGon), [rutGon]);
@@ -162,7 +168,7 @@ export default function DaBangTien({
   const chuan = bienDa(region);
   const soKy = ky.length;
   const doiO = Object.keys(nhap).filter((k) => nhap[k] !== bang[k]).length;
-  const doiLuat = tuDongNhap !== tuDong;
+  const doiLuat = tuDongNhap !== tuDong || buoc1Nhap !== buoc1 || buoc2Nhap !== buoc2;
   const doiDanhSach = chanLuatNhap.join(",") !== chanLuat.join(",") || moTayNhap.join(",") !== moTay.join(",");
   const doiGon = rutGonNhap !== rutGon || nguongGonNhap !== nguongGon;
   const doi = doiO + (doiLuat ? 1 : 0) + (doiDanhSach ? 1 : 0) + (doiGon ? 1 : 0);
@@ -205,7 +211,7 @@ export default function DaBangTien({
       const r = await fetch(`/api/config/da?region=${region}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bang: nhap, tuDong: tuDongNhap, chanLuat: chanLuatNhap, moTay: moTayNhap, rutGon: rutGonNhap, nguongGon: nguongGonNhap }),
+        body: JSON.stringify({ bang: nhap, tuDong: tuDongNhap, chanLuat: chanLuatNhap, moTay: moTayNhap, rutGon: rutGonNhap, nguongGon: nguongGonNhap, buoc1: buoc1Nhap, buoc2: buoc2Nhap }),
       });
       const d = await r.json();
       if (!r.ok || d.status !== "success") throw new Error(d.detail ?? "Lưu không được");
@@ -261,15 +267,22 @@ export default function DaBangTien({
         >
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setTuDongNhap((v) => !v)}
-              data-bat-luat
+              onClick={() => setBuoc1Nhap((v) => !v)}
+              data-buoc1
               className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border transition-colors ${
-                tuDongNhap
-                  ? "bg-[#059669] border-[#34e6a8] text-white"
-                  : "bg-white/[0.07] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.14]"
+                buoc1Nhap ? "bg-[#059669] border-[#34e6a8] text-white" : "bg-white/[0.07] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.14]"
               }`}
             >
-              {tuDongNhap ? "✅ Luật chặn 2 bước: ĐANG BẬT" : "⭕ Luật chặn 2 bước: ĐANG TẮT"}
+              {buoc1Nhap ? "✅ Chặn quá mức chung: BẬT" : "⭕ Chặn quá mức chung: tắt"}
+            </button>
+            <button
+              onClick={() => setBuoc2Nhap((v) => !v)}
+              data-buoc2
+              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border transition-colors ${
+                buoc2Nhap ? "bg-[#059669] border-[#34e6a8] text-white" : "bg-white/[0.07] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.14]"
+              }`}
+            >
+              {buoc2Nhap ? "✅ Chặn lỗ 2 tháng gần: BẬT" : "⭕ Chặn lỗ 2 tháng gần: tắt"}
             </button>
             <span className="text-[0.74rem] text-[var(--text-secondary)]">
               ngưỡng <b className="text-white">{chuNguong}</b> = phần ăn theo giá của {REGION_LABELS[region]}
@@ -306,7 +319,7 @@ export default function DaBangTien({
                 . Muốn mở một ô: bấm <b className="text-white">Mở lại</b> ở dòng ô đó rồi Lưu.
               </>
             ) : (
-              <>Đang tắt — bảng chạy đúng số cài tay từng ô bên dưới, không tự chặn gì. Danh sách ô luật đã chặn vẫn được giữ để lúc bật lại dùng tiếp.</>
+              <>Cả hai công tắc đang tắt — bảng chạy đúng số cài tay từng ô bên dưới, không tự chặn gì. Danh sách ô luật đã chặn vẫn được giữ để lúc bật lại dùng tiếp.</>
             )}
           </div>
           {moTayNhap.length > 0 && tuDongNhap && (
@@ -370,7 +383,7 @@ export default function DaBangTien({
             )}
           </span>
           <button
-            onClick={() => { setNhap(bang); setTuDongNhap(tuDong); setChanLuatNhap(chanLuat); setMoTayNhap(moTay); setRutGonNhap(rutGon); setNguongGonNhap(nguongGon); }}
+            onClick={() => { setNhap(bang); setBuoc1Nhap(buoc1); setBuoc2Nhap(buoc2); setChanLuatNhap(chanLuat); setMoTayNhap(moTay); setRutGonNhap(rutGon); setNguongGonNhap(nguongGon); }}
             disabled={doi === 0 || dangLuu}
             className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16] disabled:opacity-40"
           >

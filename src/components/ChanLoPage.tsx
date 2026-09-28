@@ -28,6 +28,10 @@ export default function ChanLoPage({ region }: { region: Region }) {
   const [draws, setDraws] = useState<DrawHits[] | null>(null);
   const [loi, setLoi] = useState<string | null>(null);
   const [chon, setChon] = useState<string | null>(null);
+  // Hai công tắc của luật lô — lưu ở máy chủ, dùng chung cho danh sách lô và khối theo bậc.
+  const [buoc, setBuoc] = useState<{ buoc1: boolean; buoc2: boolean }>({ buoc1: true, buoc2: true });
+  const [phienBan, setPhienBan] = useState(0);
+  const [banBuoc, setBanBuoc] = useState(false);
 
   useEffect(() => {
     let huy = false;
@@ -38,10 +42,35 @@ export default function ChanLoPage({ region }: { region: Region }) {
       .then((r) => r.json())
       .then((d) => !huy && setDraws((d.draws ?? []) as DrawHits[]))
       .catch(() => !huy && setLoi("Không tải được dữ liệu"));
+    fetch(`/api/config/chan-ngay?region=${region}`)
+      .then((r) => r.json())
+      .then((d) => !huy && d?.data?.buoc && setBuoc({ buoc1: d.data.buoc.buoc1 !== false, buoc2: d.data.buoc.buoc2 !== false }))
+      .catch(() => {});
     return () => { huy = true; };
   }, [region]);
 
-  const kq = useMemo(() => (draws ? luatChanLo(draws, region) : null), [draws, region]);
+  const kq = useMemo(() => (draws ? luatChanLo(draws, region, buoc) : null), [draws, region, buoc]);
+
+  const doiBuoc = async (k: "buoc1" | "buoc2") => {
+    const moi = { ...buoc, [k]: !buoc[k] };
+    setBanBuoc(true);
+    try {
+      const r = await fetch(`/api/config/chan-ngay?region=${region}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(moi),
+      });
+      const d = await r.json();
+      if (!r.ok || d.status !== "success") throw new Error(d.detail ?? "Lưu không được");
+      setBuoc({ buoc1: d.data.buoc.buoc1 !== false, buoc2: d.data.buoc.buoc2 !== false });
+      setPhienBan((v) => v + 1);
+      toast.show("success", `Đã ${moi[k] ? "bật" : "tắt"} ${k === "buoc1" ? "chặn quá mức chung" : "chặn lỗ 2 tháng gần"} cho ${REGION_LABELS[region]} — bot và khối theo ngày đọc theo`);
+    } catch (e) {
+      toast.show("error", e instanceof Error ? e.message : "Lưu không được");
+    } finally {
+      setBanBuoc(false);
+    }
+  };
 
   if (loi) return <p className="text-sm text-[#ff9d9d]">{loi}</p>;
   if (!kq) return <section className="plate rise rise-1"><div className="p-4 text-sm text-[var(--text-muted)]">Đang tính…</div></section>;
@@ -75,6 +104,26 @@ export default function ChanLoPage({ region }: { region: Region }) {
         </div>
 
         <div className="p-3 md:p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2" data-chan-lo-cong-tac>
+            <button
+              onClick={() => doiBuoc("buoc1")}
+              disabled={banBuoc}
+              data-lo-buoc1
+              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border ${buoc.buoc1 ? "bg-[#059669] border-[#34e6a8] text-white" : "bg-white/[0.07] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.14]"} disabled:opacity-40`}
+            >
+              {buoc.buoc1 ? "✅ Chặn quá mức chung: BẬT" : "⭕ Chặn quá mức chung: tắt"}
+            </button>
+            <button
+              onClick={() => doiBuoc("buoc2")}
+              disabled={banBuoc}
+              data-lo-buoc2
+              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border ${buoc.buoc2 ? "bg-[#059669] border-[#34e6a8] text-white" : "bg-white/[0.07] border-[var(--hairline)] text-[#c2d4ea] hover:bg-white/[0.14]"} disabled:opacity-40`}
+            >
+              {buoc.buoc2 ? "✅ Chặn lỗ 2 tháng gần: BẬT" : "⭕ Chặn lỗ 2 tháng gần: tắt"}
+            </button>
+            <span className="text-[0.68rem] text-[var(--text-muted)]">lưu ngay, dùng chung cho danh sách lô, khối theo ngày và bot</span>
+          </div>
+
           <ul className="rounded-lg border border-[var(--hairline)] bg-white/[0.04] px-3 py-2.5 text-[0.74rem] leading-relaxed text-[var(--text-secondary)] space-y-0.5">
             <li>
               <b className="text-white">Bước 1 — tổng thể {kq.soKy} kỳ:</b> lô nào về <b>cao hơn</b> mức chung{" "}
@@ -196,7 +245,7 @@ export default function ChanLoPage({ region }: { region: Region }) {
       </section>
 
       {/* Khách: "mình áp dụng theo ngày á — theo từng kỳ": cùng luật, đơn vị là bậc ngày, ghi vào lịch hạn mức. */}
-      <ChanNgayKhoi region={region} />
+      <ChanNgayKhoi region={region} phienBan={phienBan} />
     </div>
   );
 }

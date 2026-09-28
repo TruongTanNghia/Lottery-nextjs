@@ -66,7 +66,14 @@ const bienLo = (nhay: number, ky: number, region: Region): number => {
   return thu > 0 ? ((thu - nhay * WIN_PER_POINT) / thu) * 100 : 0;
 };
 
-export function luatChanLo(draws: DrawHits[], region: Region): KetQuaChanLo {
+/** Hai công tắc riêng, cùng khách chốt cho cả lô lẫn đá. */
+export interface CongTacBuocLo {
+  buoc1: boolean;
+  buoc2: boolean;
+}
+export const CA_HAI_BUOC_LO: CongTacBuocLo = { buoc1: true, buoc2: true };
+
+export function luatChanLo(draws: DrawHits[], region: Region, buoc: CongTacBuocLo = CA_HAI_BUOC_LO): KetQuaChanLo {
   const sap = [...draws].sort((a, b) => a.date.localeCompare(b.date));
   const cacThang = [...new Set(sap.map((d) => d.date.slice(0, 7)))].sort();
   const thang2 = cacThang.slice(-2);
@@ -95,8 +102,8 @@ export function luatChanLo(draws: DrawHits[], region: Region): KetQuaChanLo {
     const tyLe2 = soKy2 > 0 ? nhay2[lo] / soKy2 : 0;
     const bien = bienLo(nhay[lo], soKy, region);
     const bien2 = bienLo(nhay2[lo], soKy2, region);
-    const b1 = soKy >= KY_TOI_THIEU_LO && tyLe > mucChung;
-    const b2 = soKy2 >= KY_TOI_THIEU_LO && bien2 < 0;
+    const b1 = buoc.buoc1 && soKy >= KY_TOI_THIEU_LO && tyLe > mucChung;
+    const b2 = buoc.buoc2 && soKy2 >= KY_TOI_THIEU_LO && bien2 < 0;
     const lyDo: LyDoChanLo | null = b1 && b2 ? "cahai" : b1 ? "tong" : b2 ? "thang" : null;
     if (lyDo) dem[lyDo]++;
     return { lo, nhay: nhay[lo], ky: soKy, tyLe, bien, nhay2: nhay2[lo], ky2: soKy2, tyLe2, bien2, b1, b2, lyDo };
