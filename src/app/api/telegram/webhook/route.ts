@@ -22,6 +22,7 @@ import {
 } from "@/lib/telegram";
 import { answer } from "@/lib/telegram-commands";
 import { adminIds, canUse, isAdmin, requestAccess, setStatus } from "@/lib/telegram-users";
+import { docBotGui, luuBotGui } from "@/lib/bot-gui";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,6 +75,21 @@ async function handleMessage(msg: TelegramMessage, text: string) {
     // vào nhóm có "bot nhận" của phần mềm ghi cược, và dặn thử trước: "xem con
     // bot nó gửi tin con kia có hiểu không đã — 2 con không khớp thì vô dụng".
     // Đây là phép thử đó: gõ trong nhóm, xem bot nhận có phản ứng không.
+    // /nhomgui: chọn CHÍNH nhóm này làm nơi bot gửi lệnh tự động. Phải xét người
+    // gõ chứ không xét chat: trong nhóm, chat id là id nhóm nên không bao giờ là
+    // quản trị — mà chọn nhóm nhận lệnh thì chỉ quản trị mới được làm.
+    if (/^\/nhomgui(?:@\w+)?\s*$/i.test(text)) {
+      if (!msg.from || !isAdmin(msg.from.id)) {
+        await sendMessage(chatId, "Chỉ quản trị mới chọn được nhóm nhận lệnh.", { replyTo: msg.message_id });
+        return;
+      }
+      const cfg = await docBotGui();
+      cfg.nhom = chatId;
+      cfg.tenNhom = msg.chat.title ?? (msg.chat.type === "private" ? "chat riêng" : null);
+      await luuBotGui(cfg);
+      await sendMessage(chatId, `✅ Đã chọn ${msg.chat.type === "private" ? "chat này" : "nhóm này"} làm nơi bot gửi lệnh tự động. Xem lịch: /lichgui`, { replyTo: msg.message_id });
+      return;
+    }
     const thu = text.match(/^\/guithu(?:@\w+)?\s+([\s\S]+)$/i);
     if (thu) {
       await sendMessage(chatId, esc(thu[1].trim()));

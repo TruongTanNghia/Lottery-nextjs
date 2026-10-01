@@ -112,7 +112,7 @@ export async function sendMessage(
 /** The shape of the one update field we care about. */
 export interface TelegramMessage {
   message_id: number;
-  chat: { id: number; type: string };
+  chat: { id: number; type: string; title?: string };
   from?: { id: number; first_name?: string; username?: string };
   text?: string;
 }
