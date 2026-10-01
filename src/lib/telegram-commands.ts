@@ -136,7 +136,7 @@ export function helpText(isAdmin = false): string {
     "<code>/chandamn</code> <code>/chandamt</code> <code>/chandamb</code> — cặp đá không nhận, dán vào phần mềm",
     "<code>/chanda</code> — cả 3 miền một lượt · <code>/chanda mn kl</code> — bản không lặp cặp",
     "<code>/chanda mn gon</code> — rút gọn theo mức đã cài · <code>gon80</code> = mức 80/99",
-    "<code>/chanlq</code> — các con đá bị chặn tròn, cả 3 miền một tin",
+    "<code>/chanlq</code> — số đá bị chặn 100% (chặn tròn), cả 3 miền một tin — lệnh riêng, dán kèm các lệnh chặn đá ở trên",
     "",
     "<b>Thử bot gửi</b>",
     "<code>/guithu 2d16b100, 15b50</code> — bot nói lại nguyên văn chuỗi đó (thử xem bot nhận có hiểu không)",
@@ -425,8 +425,13 @@ export async function chanSoAll(): Promise<string> {
  *
  * Mỗi khối <code> là hai dòng: "/chanloai" rồi dòng đài — đúng mẫu tin khách
  * vẽ, dán nguyên cả hai. Bộ cắt tin coi cả khối là một dòng nên không đứt.
- * Có con chặn tròn thì khối ĐẦU là "/chanlq" (xem chanLqBot): các cặp dính
- * con tròn không nằm trong /chanloai nữa, nên phải dán cả hai.
+ *
+ * Lệnh này CHỈ trả cặp và vòng. Con chặn tròn (chặn 100%) nằm ở lệnh riêng
+ * /chanlq (xem chanLqBot) — khách: "phần chặn lq gom 3 miền về làm 1 tin… cho
+ * nó là 1 lệnh riêng biệt". Có một thời gian khối /chanlq của từng miền đứng
+ * đầu tin này, nên lấy ba miền là phải dán ba khối /chanlq; giờ tin này chỉ
+ * nhắc một dòng là còn lệnh kia. Cặp dính con tròn không nằm trong /chanloai,
+ * nên phải dán cả hai lệnh mới chặn đủ.
  *
  * Khách dặn "3 lệnh riêng biệt nha a, e sợ Tele hạn chế ký tự", rồi chốt dạng
  * gọn: "số nào xếp vòng vào được với nhau thì cho theo vòng — các số không
@@ -444,8 +449,7 @@ export async function chanDa(region: Region, khongLap = false, epGon = false, ep
   const rutGon = epGon || h.luu.rutGon;
   const nguongGon = epNguong ?? h.luu.nguongGon;
   const { nhom, con100, capThem } = nhomChanDa(h.capChan, khongLap, rutGon, nguongGon);
-  const lq = con100.length > 0 ? khoiChanLq([dongChanLq(provincePrefix(region), con100, region)]) : "";
-  const khoi = [...(lq ? [lq] : []), ...chiaKhoiChanDa(provincePrefix(region), nhom, SAFE_BLOCK, region)];
+  const khoi = chiaKhoiChanDa(provincePrefix(region), nhom, SAFE_BLOCK, region);
   const soOChan = Object.values(h.bang).filter((v) => v <= 0).length;
   const soVong = nhom.filter((n) => n.length > 2).length;
   const soLe = nhom.filter((n) => n.length === 2).length;
@@ -457,7 +461,7 @@ export async function chanDa(region: Region, khongLap = false, epGon = false, ep
       ? `<i>RÚT GỌN đang bật: con bị chặn từ ${nguongGon}/99 con trở lên thì chặn tròn cả con — chặn thêm ${num(capThem)} cặp lẽ ra nhận</i>`
       : "",
     con100.length > 0
-      ? `<i>${con100.length} con chặn ${rutGon ? "tròn" : "100%"} đi lệnh <b>/chanlq</b> (khối đầu), cặp còn lại đi <b>/chanloai</b> — hai lệnh không chồng nhau, dán CẢ HAI mới chặn đủ</i>`
+      ? `<i>${con100.length} con chặn ${rutGon ? "tròn" : "100%"} KHÔNG nằm trong chuỗi dưới — lấy bằng lệnh riêng <b>/chanlq</b> (cả 3 miền một tin). Dán CẢ HAI lệnh mới chặn đủ</i>`
       : "",
     h.luu.tuDong
       ? `<i>luật đang bật (bước 1 ${h.luu.buoc1 ? "BẬT" : "tắt"} · bước 2 ${h.luu.buoc2 ? "BẬT" : "tắt"}): chặn ${h.luu.chanLuat.length} ô (giữ nguyên tới khi đổi), ${h.luu.moTay.length} ô mở tay${
@@ -466,21 +470,25 @@ export async function chanDa(region: Region, khongLap = false, epGon = false, ep
       : `<i>luật tự động đang tắt — theo bảng cài tay${h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""}</i>`,
   ].filter(Boolean).join("\n");
 
-  if (khoi.length === 0) return `${head}\n\nKhông có cặp nào bị chặn — bảng tiền đá đang nhận mọi ô.`;
+  if (khoi.length === 0) {
+    return con100.length > 0
+      ? `${head}\n\nKhông còn cặp lẻ nào — mọi cặp bị chặn đều dính con chặn tròn. Gõ /chanlq để lấy.`
+      : `${head}\n\nKhông có cặp nào bị chặn — bảng tiền đá đang nhận mọi ô.`;
+  }
   if (khoi.length === 1) return `${head}\n\n<code>${esc(khoi[0])}</code>`;
 
   // Mỗi khối một dòng nhãn + một <code>. Bộ chia tin nhắn cắt theo dòng, và
   // một khối luôn dưới mức cắt, nên không bao giờ đứt giữa thẻ <code>.
   return [
     head,
-    `<i>${khoi.length} phần — dán lần lượt cả ${khoi.length}.</i>`,
+    `<i>Dài quá một tin — chia ${khoi.length} phần, dán lần lượt cả ${khoi.length}.</i>`,
     ...khoi.map((k, i) => `\n<i>phần ${i + 1}/${khoi.length}</i>\n<code>${esc(k)}</code>`),
   ].join("\n");
 }
 
 /**
- * /chanda không có miền: cả ba miền một lượt, Nam → Trung → Bắc. Đứng đầu là
- * MỘT khối /chanlq gom con chặn tròn của cả ba miền, rồi tới /chanloai từng miền.
+ * /chanda không có miền: cả ba miền một lượt, Nam → Trung → Bắc — chỉ cặp và
+ * vòng (/chanloai). Con chặn tròn nằm ở lệnh riêng /chanlq, tin này chỉ nhắc.
  *
  * Khách đổi ý so với "3 lệnh riêng": "giờ a chia ra kiểu /chanlq, mn… mt…
  * mb…, chia thành nhiều tin, mỗi tin tối đa 4000 ký tự". Mỗi miền một dòng
@@ -494,9 +502,11 @@ export async function chanDaTatCa(khongLap = false, epGon = false, epNguong: num
     const rutGon = epGon || h.luu.rutGon;
     return { r, h, rutGon, ...nhomChanDa(h.capChan, khongLap, rutGon, epNguong ?? h.luu.nguongGon) };
   });
-  const lq = khoiChanLq(tinh.filter((t) => t.con100.length > 0).map((t) => dongChanLq(provincePrefix(t.r), t.con100, t.r)));
-  if (lq) {
-    out.push("", "<b>Con chặn tròn</b> — lệnh /chanlq. Cặp dính các con này KHÔNG nằm trong /chanloai bên dưới, dán cả hai:", `<code>${esc(lq)}</code>`);
+  const coTron = tinh.filter((t) => t.con100.length > 0);
+  if (coTron.length > 0) {
+    out.push(
+      `<i>Con chặn tròn (${coTron.map((t) => `${TEN_NGAN[t.r]} ${t.con100.length}`).join(" · ")}) KHÔNG nằm trong các chuỗi dưới — lấy bằng lệnh riêng <b>/chanlq</b> (cả 3 miền một tin). Dán CẢ HAI lệnh mới chặn đủ.</i>`
+    );
   }
   for (const { r, h, rutGon, nhom, con100, capThem } of tinh) {
     const khoi = chiaKhoiChanDa(provincePrefix(r), nhom, SAFE_BLOCK, r);
@@ -508,20 +518,26 @@ export async function chanDaTatCa(khongLap = false, epGon = false, epNguong: num
         h.luu.tuDong ? "" : " · cài tay"
       }${khoi.length > 1 ? ` · ${khoi.length} phần` : ""}`
     );
-    if (khoi.length === 0) out.push(con100.length > 0 ? "<i>không còn cặp lẻ nào — đã nằm hết trong /chanlq ở trên</i>" : "<i>không chặn cặp nào</i>");
+    if (khoi.length === 0) out.push(con100.length > 0 ? "<i>không còn cặp lẻ nào — mọi cặp bị chặn đều dính con chặn tròn (/chanlq)</i>" : "<i>không chặn cặp nào</i>");
     else out.push(...khoi.map((k) => `<code>${esc(k)}</code>`));
   }
   return out.join("\n");
 }
 
 /**
- * /chanlq [miền] — CHỈ các con đá bị chặn tròn, mọi miền trong MỘT khối, đúng
- * mẫu khách vẽ ("Khi e gõ /chanlq bot trả lại là: /chanlq ⏎ st tv …: 07 12 …
- * dx0n . ⏎ dnang …: … dx0n . ⏎ mb: … da0n ." — "dành cho các số đá bị chặn 100%").
+ * /chanlq [miền] — lệnh RIÊNG cho các con đá bị chặn tròn (chặn 100%), mọi
+ * miền trong MỘT tin. Khách vẽ mẫu hai lần; lần sau chốt: "phần chặn lq gom 3
+ * miền về làm 1 tin… cho nó là 1 lệnh riêng biệt — lệnh /chanlq, bot trả:
+ * /chanlq ⏎ tên đài mn … số … dx0n ⏎ tên đài mt … ⏎ mb … da0n".
+ *
+ * Tin trả về CHỈ có đúng khối đó — không tiêu đề, không số đếm. Cùng lý do với
+ * /chanso: khách chép hoặc chuyển nguyên tin cho người ghi cược, chữ nào thừa
+ * là chữ họ phải ngồi xoá. Miền không có con nào thì không có dòng trong khối,
+ * và được nhắc bằng một dòng nghiêng NGOÀI khối để người đọc khỏi tưởng bot
+ * sót; cả ba trống thì nói rõ vì sao.
  *
  * "Chặn tròn" theo đúng cài đặt đã lưu của từng miền: Rút gọn TẮT thì phải đủ
  * 99/99 con; BẬT thì từ mức đã chọn (vd 90/99) trở lên. "gon"/"gon80" ép mức.
- * Miền không có con nào thì không có dòng; cả ba trống thì nói rõ vì sao.
  */
 export async function chanLqBot(regions: Region[], epGon = false, epNguong: number | null = null): Promise<string> {
   const tinh = await Promise.all(
@@ -529,24 +545,22 @@ export async function chanLqBot(regions: Region[], epGon = false, epNguong: numb
       const h = await bangHieuLuc(r);
       const rutGon = epGon || h.luu.rutGon;
       const nguong = rutGon ? (epNguong ?? h.luu.nguongGon) : 99;
-      const { con100, capThem } = nhomChanDa(h.capChan, false, rutGon, nguong);
-      return { r, con100, capThem, rutGon, nguong };
+      const { con100 } = nhomChanDa(h.capChan, false, rutGon, nguong);
+      return { r, con100, rutGon, nguong };
     })
   );
-  const moTa = tinh
-    .map((t) => `${TEN_NGAN[t.r]} ${t.con100.length} con (${t.rutGon ? `từ ${t.nguong}/99${t.capThem > 0 ? `, chặn thêm ${num(t.capThem)} cặp` : ""}` : "đủ 99/99"})`)
-    .join(" · ");
-  const lq = khoiChanLq(tinh.filter((t) => t.con100.length > 0).map((t) => dongChanLq(provincePrefix(t.r), t.con100, t.r)));
-  if (!lq) {
+  const viSaoTrong = (t: (typeof tinh)[number]) =>
+    `${TEN_NGAN[t.r]}: ${t.rutGon ? `không con nào bị chặn từ ${t.nguong}/99 con trở lên` : "Rút gọn đang tắt nên một con phải bị chặn đủ 99/99 con mới tính"}`;
+  const co = tinh.filter((t) => t.con100.length > 0);
+  if (co.length === 0) {
     return [
-      "<b>🎯 Con đá chặn tròn</b>",
-      `<i>${moTa}</i>`,
-      "",
-      "Chưa có con nào bị chặn tròn. Rút gọn đang tắt thì một con phải bị chặn với đủ 99/99 con mới tính.",
+      "Chưa có con đá nào bị chặn tròn.",
+      ...tinh.map((t) => `<i>${viSaoTrong(t)}</i>`),
       "Muốn tính cả con bị chặn gần hết: gõ <code>/chanlq gon90</code> (từ 90/99 con), hoặc bật ✂ Rút gọn ở Bảng Tiền Đá trên web.",
     ].join("\n");
   }
-  return ["<b>🎯 Con đá chặn tròn</b>", `<i>${moTa}</i>`, "", `<code>${esc(lq)}</code>`].join("\n");
+  const lq = khoiChanLq(co.map((t) => dongChanLq(provincePrefix(t.r), t.con100, t.r)));
+  return [`<code>${esc(lq)}</code>`, ...tinh.filter((t) => t.con100.length === 0).map((t) => `<i>${viSaoTrong(t)}</i>`)].join("\n");
 }
 
 /**

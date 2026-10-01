@@ -80,6 +80,9 @@ const cmds = await api("setMyCommands", {
     { command: "chandamn", description: "Chặn đá Miền Nam — dán vào phần mềm" },
     { command: "chandamt", description: "Chặn đá Miền Trung — dán vào phần mềm" },
     { command: "chandamb", description: "Chặn đá Miền Bắc — dán vào phần mềm" },
+    // Số đá bị chặn 100% là một lệnh riêng, cả 3 miền một tin — khách: "cho nó
+    // là 1 lệnh riêng biệt". Ba lệnh trên chỉ còn cặp và vòng.
+    { command: "chanlq", description: "Số đá chặn 100% — cả 3 miền một tin" },
     { command: "kq", description: "Kết quả kỳ mới nhất — /kq mn" },
     { command: "help", description: "Hướng dẫn" },
     { command: "ai", description: "Ai đang dùng bot (quản trị)" },

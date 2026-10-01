@@ -464,7 +464,7 @@ export default function DaBangTien({
             </div>
             <div className="text-[0.66rem] text-[var(--text-muted)] mt-1">
               Trên Telegram gõ <code className="text-[#c2d4ea]">/chanda {region === "xsmn" ? "mn" : region === "xsmt" ? "mt" : "mb"}</code>{" "}
-              là ra đúng các chuỗi này (bot tự cắt khúc nếu dài; gõ <code className="text-[#c2d4ea]">/chanda</code> không là ra cả 3 miền).
+              là ra đúng chuỗi /chanloai này (bot tự cắt khúc nếu dài; gõ <code className="text-[#c2d4ea]">/chanda</code> không là ra cả 3 miền).
               Mỗi mẩu <code className="text-[#c2d4ea]">a b c{HAU_TO_CHAN_DA[region]}</code> là một vòng: chặn mọi cặp trong đó. Dòng
               đầu <code className="text-[#c2d4ea]">/chanloai</code> là lệnh của phần mềm ghi cược — dán nguyên cả hai dòng.
             </div>
@@ -487,7 +487,7 @@ export default function DaBangTien({
                 </code>
                 <div className="text-[0.66rem] text-[var(--text-muted)] mt-1">
                   Mọi đá dính các con này đều không nhận. Các cặp đó <b>không</b> nằm trong chuỗi /chanloai nữa — dán <b>cả hai</b> lệnh mới chặn đủ.
-                  Trên Telegram gõ <code className="text-[#c2d4ea]">/chanlq</code> là ra các con này của cả 3 miền trong một tin.
+                  Trên Telegram đây là lệnh riêng: gõ <code className="text-[#c2d4ea]">/chanlq</code> là ra các con này của cả 3 miền trong một tin.
                 </div>
               </div>
             )}
