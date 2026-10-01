@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import type { DrawHits } from "@/lib/backtest";
 import {
   CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, SO_O_DA, TRAN_DA, TRUNG_DA, apChanLuat, bangMacDinh, bienDa,
@@ -545,7 +546,11 @@ export default function DaBangTien({
             className="w-16 bg-black/30 border border-[var(--hairline)] rounded-lg px-2 py-1 text-white numeric text-sm text-center"
           />
           <button
-            onClick={() => datHetOk && datNhieu(hien, vDatHet)}
+            onClick={() => {
+              if (!datHetOk) return;
+              datNhieu(hien, vDatHet);
+              toast.show("info", `Đã đặt ${hien.length} ô = ${so(vDatHet)} điểm trên màn hình — CHƯA lưu. Bấm 💾 Lưu ở thanh dưới cùng.`);
+            }}
             disabled={!datHetOk}
             data-bang-dat-het
             className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16] disabled:opacity-40"
@@ -553,14 +558,20 @@ export default function DaBangTien({
             Đặt hết = {datHetOk ? so(vDatHet) : "?"} điểm
           </button>
           <button
-            onClick={() => datNhieu(tkt.bang.filter((o) => o.nhan === "ne"), 0)}
+            onClick={() => {
+              datNhieu(tkt.bang.filter((o) => o.nhan === "ne"), 0);
+              toast.show("info", `Đã chặn ${tkt.soNe} ô NÉ RA trên màn hình — CHƯA lưu. Bấm 💾 Lưu ở thanh dưới cùng.`);
+            }}
             disabled={tkt.soNe === 0}
             className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[rgba(220,38,38,0.15)] text-[#ff9d9d] hover:bg-[rgba(220,38,38,0.25)] disabled:opacity-40"
           >
             Chặn {tkt.soNe} ô NÉ RA
           </button>
           <button
-            onClick={() => setNhap(bangMacDinh(TRAN))}
+            onClick={() => {
+              setNhap(bangMacDinh(TRAN));
+              toast.show("info", `Đã đưa cả ${SO_O_DA} ô về 1 điểm trên màn hình — CHƯA lưu. Bấm 💾 Lưu ở thanh dưới cùng.`);
+            }}
             className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16]"
           >
             Cả {SO_O_DA} ô về 1 điểm
@@ -610,6 +621,46 @@ export default function DaBangTien({
           con số ở đây là dò lại theo kết quả xổ, chưa phải tiền trong túi.
         </div>
       </div>
+
+      {/* Thanh Lưu nổi. Nút Lưu thật nằm tít phía trên; khách cài nhanh ở giữa
+          bảng, bấm "Đặt hết" rồi tưởng đã lưu ("e lưu rồi mà nó không lưu").
+          Có thay đổi chưa lưu thì thanh này dính đáy màn hình cho tới khi lưu
+          hoặc bỏ — không thể cuộn đi mất. */}
+      {doi > 0 && typeof document !== "undefined" && createPortal(
+        <div
+          data-luu-noi
+          className="fixed left-3 right-3 z-[60] flex items-center gap-2 rounded-xl border px-3 py-2 shadow-2xl"
+          style={{
+            bottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+            borderColor: "rgba(251,191,36,0.75)",
+            background: "rgba(40,28,6,0.96)",
+            backdropFilter: "blur(6px)",
+          }}
+        >
+          <span className="flex-1 text-[0.74rem] font-bold text-[#ffd24a] leading-snug">
+            ⚠ Chưa lưu: {[doiO > 0 ? `${doiO} ô` : "", doiLuat ? "công tắc luật" : "", doiDanhSach ? "ô luật/mở tay" : "", doiGon ? "cách rút gọn" : ""].filter(Boolean).join(", ")}
+          </span>
+          <button
+            onClick={() => { setNhap(bang); setBuoc1Nhap(buoc1); setBuoc2Nhap(buoc2); setChanLuatNhap(chanLuat); setMoTayNhap(moTay); setRutGonNhap(rutGon); setNguongGonNhap(nguongGon); }}
+            disabled={dangLuu}
+            data-luu-noi-bo
+            className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-white/[0.12] text-[#e6edf7] disabled:opacity-40"
+          >
+            Bỏ
+          </button>
+          <button
+            onClick={luu}
+            disabled={dangLuu}
+            data-luu-noi-luu
+            className="px-4 py-1.5 rounded-lg text-xs font-extrabold bg-[#059669] text-white disabled:opacity-40"
+          >
+            {dangLuu ? "Đang lưu…" : "💾 Lưu"}
+          </button>
+        </div>,
+        // Ra hẳn document.body: khối .plate có hiệu ứng transform, mà phần tử fixed
+        // nằm trong tổ tiên có transform thì bám theo tổ tiên chứ không bám màn hình.
+        document.body
+      )}
     </section>
   );
 }

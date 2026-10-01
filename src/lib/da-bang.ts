@@ -21,7 +21,7 @@ import { getConfigValue, query, setConfigValue } from "@/lib/db";
 import { dungKy } from "@/lib/slot-stats";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  NGUONG_RUT_GON, apLuatDinh, bangMacDinh, capBiChan, chuanHoaBang, chuanHoaBuoc, chuanHoaDanhSachO, chuanHoaNguongGon, khoKyToi, luatHaiBuoc,
+  NGUONG_RUT_GON, apChanLuat, apLuatDinh, bangMacDinh, capBiChan, chuanHoaBang, chuanHoaBuoc, chuanHoaDanhSachO, chuanHoaNguongGon, khoKyToi, luatHaiBuoc,
   thongKeCapTheoThang, thongKeDa,
   type BangDa, type LuatHaiBuoc, type LyDoChan,
 } from "@/lib/da";
@@ -155,11 +155,19 @@ export async function bangHieuLuc(region: Region): Promise<BangHieuLuc> {
 
   let luu = luu0;
   if (luu0.tuDong && ap.moi.length > 0) {
-    luu = { ...luu0, chanLuat: ap.chanLuat, luatLuc: new Date().toISOString() };
+    // Đọc LẠI ngay trước khi ghi và chỉ trộn thêm danh sách ô chặn. Tính luật
+    // mất vài trăm ms (tải cả lịch sử); nếu trong lúc đó khách bấm Lưu thì
+    // ghi nguyên `luu0` sẽ đè bản vừa lưu bằng bảng cũ — mất đúng cái khách
+    // vừa cài. Chỉ thêm ô, không bao giờ chở theo bảng tiền cũ.
+    const moiNhat = await docBangDa(region);
+    const mo = new Set(moiNhat.moTay);
+    const gop = [...new Set([...moiNhat.chanLuat, ...ap.moi])].filter((k) => !mo.has(k)).sort();
+    luu = { ...moiNhat, chanLuat: gop, luatLuc: new Date().toISOString() };
     await ghi(region, luu);
   }
 
-  const bang = luu.tuDong ? ap.bang : luu.bang;
+  // Bảng hiệu lực dựng từ bản lưu mới nhất (có thể vừa đọc lại ở trên).
+  const bang = luu.tuDong ? apChanLuat(luu.bang, luu.chanLuat) : luu.bang;
   const tt = khoKyToi(draws);
   return {
     luu,
