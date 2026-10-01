@@ -69,6 +69,16 @@ async function handleMessage(msg: TelegramMessage, text: string) {
   const chatId = msg.chat.id;
 
   if (await canUse(chatId)) {
+    // /guithu <chuỗi>: bot nói lại NGUYÊN VĂN chuỗi đó thành một tin riêng (không
+    // phải tin trả lời, không thêm chữ nào). Khách muốn làm bot gửi lệnh tự động
+    // vào nhóm có "bot nhận" của phần mềm ghi cược, và dặn thử trước: "xem con
+    // bot nó gửi tin con kia có hiểu không đã — 2 con không khớp thì vô dụng".
+    // Đây là phép thử đó: gõ trong nhóm, xem bot nhận có phản ứng không.
+    const thu = text.match(/^\/guithu(?:@\w+)?\s+([\s\S]+)$/i);
+    if (thu) {
+      await sendMessage(chatId, esc(thu[1].trim()));
+      return;
+    }
     await sendMessage(chatId, await answer(text, isAdmin(chatId)), { replyTo: msg.message_id });
     return;
   }
