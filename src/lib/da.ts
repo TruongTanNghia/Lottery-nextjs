@@ -826,8 +826,14 @@ export function tachConChan100(
 }
 
 /**
- * Cả bộ: con chặn 100% đứng đầu, mỗi con một mẩu; phần còn lại gom vòng.
- * Web và bot cùng gọi một chỗ này.
+ * Cả bộ: `con100` là các con chặn tròn (đi lệnh /chanlq), `nhom` là các cặp
+ * còn lại gom vòng (đi lệnh /chanloai). Hai phần KHÔNG chồng nhau — cặp nào
+ * dính một con tròn thì chỉ nằm ở con100 — nên phải dán CẢ HAI lệnh mới chặn
+ * đủ. Web và bot cùng gọi một chỗ này.
+ *
+ * Trước đây con tròn nằm ngay đầu chuỗi /chanloai, mỗi con một mẩu "05dx0n".
+ * Khách báo "fix giùm cái lệnh chặn đá, hoặc gom những con bị chặn 100% bằng
+ * lệnh /chanlq" và vẽ mẫu, nên con tròn dời hẳn sang lệnh riêng.
  */
 export function nhomChanDa(
   cap: [string, string][],
@@ -836,7 +842,7 @@ export function nhomChanDa(
   nguongGon = NGUONG_RUT_GON
 ): { nhom: string[][]; con100: string[]; capThem: number } {
   const { con100, conLai, capThem } = tachConChan100(cap, 100, rutGon ? chuanHoaNguongGon(nguongGon) : 99);
-  return { nhom: [...con100.map((c) => [c]), ...nhomVong(conLai, khongLap)], con100, capThem };
+  return { nhom: nhomVong(conLai, khongLap), con100, capThem };
 }
 
 export function nhomVong(cap: [string, string][], khongLap = false): string[][] {
@@ -901,7 +907,21 @@ export function nhomVong(cap: [string, string][], khongLap = false): string[][] 
  */
 export const LENH_CHAN_LOAI = "/chanloai";
 
-/** "01 10 11dx0n" — một nhóm thành một mẩu dán được, tiền dính vào con cuối. Nhóm 1 con = con chặn 100%. */
+/**
+ * Lệnh của phần mềm ghi cược cho CON đá chặn tròn. Mẫu khách vẽ, bot trả y vậy:
+ *   /chanlq
+ *   st tv ag …: 07 12 30 dx0n .
+ *   dnang pyen …: 05 13 25 dx0n .
+ *   mb: 09 28 32 da0n .
+ * Mỗi miền một dòng; hậu tố CÁCH con cuối một dấu cách, và dòng kết bằng " ."
+ * (khác /chanloai, nơi hậu tố dính liền con cuối).
+ */
+export const LENH_CHAN_LQ = "/chanlq";
+export const dongChanLq = (dau: string, con: string[], region: Region) => `${dau}: ${con.join(" ")} ${HAU_TO_CHAN_DA[region]} .`;
+/** Ghép các dòng miền thành một khối dán được; không dòng nào thì chuỗi rỗng. */
+export const khoiChanLq = (dong: string[]) => (dong.length ? `${LENH_CHAN_LQ}\n${dong.join("\n")}` : "");
+
+/** "01 10 11dx0n" — một nhóm thành một mẩu dán được, tiền dính vào con cuối. */
 export const mauNhom = (nhom: string[], region: Region) => `${nhom.join(" ")}${HAU_TO_CHAN_DA[region]}`;
 
 /**

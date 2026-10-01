@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import type { DrawHits } from "@/lib/backtest";
 import {
   CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, SO_O_DA, TRAN_DA, TRUNG_DA, apChanLuat, bangMacDinh, bienDa,
-  CAC_MUC_RUT_GON, capBiChan, chiaKhoiChanDa, khoKyToi, khoaCap, nhomChanDa, soVong, thongKeCapTheoThang,
+  CAC_MUC_RUT_GON, capBiChan, chiaKhoiChanDa, dongChanLq, khoKyToi, khoaCap, khoiChanLq, nhomChanDa, soVong, thongKeCapTheoThang,
   type BangDa, type KyDa, type LyDoChan, type OCapDayDu,
 } from "@/lib/da";
 import { provincePrefix } from "@/lib/provinces";
@@ -147,20 +147,23 @@ export default function DaBangTien({
     return { thu, tra, lai: thu - tra, pct: thu > 0 ? ((thu - tra) / thu) * 100 : 0, mo, chan, thuKyToi, capChanKyToi };
   }, [tkt, hieuLuc, capKyToi, region]);
 
-  // Chuỗi chặn đá kỳ tới — y hệt thứ bot trả cho /chanlq, chỉ khác là không
-  // cắt khúc: copy trên web thì dán vào đâu là việc của người dán.
+  // Chuỗi chặn đá kỳ tới — y hệt thứ bot trả cho /chanda, chỉ khác là không
+  // cắt khúc: copy trên web thì dán vào đâu là việc của người dán. Hai lệnh:
+  // `lq` (con chặn tròn, /chanlq) và `chuoi` (cặp còn lại, /chanloai).
   const lenhChan = useMemo(() => {
     if (!tt) return null;
     const cap = capBiChan(tt.kho, hieuLuc, TRAN);
     // Gom vòng như bot, để chuỗi copy trên web và chuỗi bot trả là một.
     const { nhom, con100, capThem } = nhomChanDa(cap, khongLap, rutGonNhap, nguongGonNhap);
     const chuoi = chiaKhoiChanDa(provincePrefix(region), nhom, Number.POSITIVE_INFINITY, region)[0] ?? "";
+    const lq = con100.length > 0 ? khoiChanLq([dongChanLq(provincePrefix(region), con100, region)]) : "";
     // Xem trước từng mức, để khách thấy đổi mức thì ngắn thêm bao nhiêu và chặn thêm bao nhiêu.
     const xemMuc = CAC_MUC_RUT_GON.map((m) => {
       const r = nhomChanDa(cap, khongLap, true, m);
-      return { muc: m, kyTu: (chiaKhoiChanDa(provincePrefix(region), r.nhom, Number.POSITIVE_INFINITY, region)[0] ?? "").length, capThem: r.capThem, con: r.con100.length };
+      const lqM = r.con100.length > 0 ? khoiChanLq([dongChanLq(provincePrefix(region), r.con100, region)]) : "";
+      return { muc: m, kyTu: (chiaKhoiChanDa(provincePrefix(region), r.nhom, Number.POSITIVE_INFINITY, region)[0] ?? "").length + lqM.length, capThem: r.capThem, con: r.con100.length };
     });
-    return { cap, nhom, con100, capThem, soVong: nhom.filter((n) => n.length > 2).length, soLe: nhom.filter((n) => n.length === 2).length, chuoi, xemMuc };
+    return { cap, nhom, con100, capThem, soVong: nhom.filter((n) => n.length > 2).length, soLe: nhom.filter((n) => n.length === 2).length, chuoi, lq, kyTu: chuoi.length + lq.length, xemMuc };
   }, [tt, hieuLuc, region, khongLap, rutGonNhap, nguongGonNhap]);
 
   if (!tkt || !tong) return null;
@@ -229,7 +232,17 @@ export default function DaBangTien({
     if (!lenhChan || !lenhChan.chuoi) return;
     try {
       await navigator.clipboard.writeText(lenhChan.chuoi);
-      toast.show("success", `Đã copy lệnh chặn ${so(lenhChan.cap.length)} cặp đá`);
+      toast.show("success", lenhChan.lq ? "Đã copy /chanloai — còn lệnh /chanlq nữa, dán cả hai" : `Đã copy lệnh chặn ${so(lenhChan.cap.length)} cặp đá`);
+    } catch {
+      toast.show("error", "Trình duyệt không cho copy — bấm giữ để chép tay");
+    }
+  };
+
+  const copyLq = async () => {
+    if (!lenhChan || !lenhChan.lq) return;
+    try {
+      await navigator.clipboard.writeText(lenhChan.lq);
+      toast.show("success", `Đã copy /chanlq — ${lenhChan.con100.length} con chặn tròn`);
     } catch {
       toast.show("error", "Trình duyệt không cho copy — bấm giữ để chép tay");
     }
@@ -411,7 +424,7 @@ export default function DaBangTien({
                   <>
                     {" "}— <b className="text-white" data-lenh-con100>{lenhChan.con100.length} con chặn {rutGonNhap ? "tròn" : "100%"}</b> +{" "}
                     <b className="text-white">{lenhChan.soVong} vòng</b> + {so(lenhChan.soLe)} cặp lẻ,{" "}
-                    <b className="text-white" data-lenh-ky-tu>{so(lenhChan.chuoi.length)} ký tự</b>
+                    <b className="text-white" data-lenh-ky-tu>{so(lenhChan.kyTu)} ký tự</b>
                     {rutGonNhap && lenhChan.capThem > 0 && (
                       <span className="text-[#ffd24a]"> · chặn thêm <b data-lenh-cap-them>{so(lenhChan.capThem)}</b> cặp lẽ ra nhận</span>
                     )}
@@ -442,23 +455,42 @@ export default function DaBangTien({
               </button>
               <button
                 onClick={copy}
-                disabled={lenhChan.cap.length === 0}
+                disabled={!lenhChan.chuoi}
                 data-lenh-copy
                 className="ml-auto px-3 py-1.5 rounded-lg text-xs font-bold bg-[#2563eb] text-white hover:bg-[#1d4ed8] disabled:opacity-40"
               >
-                📋 Copy
+                {lenhChan.lq ? "📋 Copy /chanloai" : "📋 Copy"}
               </button>
             </div>
             <div className="text-[0.66rem] text-[var(--text-muted)] mt-1">
-              Trên Telegram gõ <code className="text-[#c2d4ea]">/chanlq {region === "xsmn" ? "mn" : region === "xsmt" ? "mt" : "mb"}</code>{" "}
-              là ra đúng chuỗi này (bot tự cắt khúc nếu dài; gõ <code className="text-[#c2d4ea]">/chanlq</code> không là ra cả 3 miền).
-              Mỗi mẩu <code className="text-[#c2d4ea]">a b c{HAU_TO_CHAN_DA[region]}</code> là một vòng: chặn mọi cặp trong đó. Mẩu{" "}
-              <b>một con</b> <code className="text-[#c2d4ea]">05{HAU_TO_CHAN_DA[region]}</code> là con chặn {rutGonNhap ? "tròn" : "100%"}: mọi đá dính con đó đều không nhận.
-              {lenhChan.con100.length > 0 && (
-                <> Kỳ này: <b className="text-[#ffd24a] numeric">{lenhChan.con100.join(" ")}</b>.</>
-              )} Dòng
+              Trên Telegram gõ <code className="text-[#c2d4ea]">/chanda {region === "xsmn" ? "mn" : region === "xsmt" ? "mt" : "mb"}</code>{" "}
+              là ra đúng các chuỗi này (bot tự cắt khúc nếu dài; gõ <code className="text-[#c2d4ea]">/chanda</code> không là ra cả 3 miền).
+              Mỗi mẩu <code className="text-[#c2d4ea]">a b c{HAU_TO_CHAN_DA[region]}</code> là một vòng: chặn mọi cặp trong đó. Dòng
               đầu <code className="text-[#c2d4ea]">/chanloai</code> là lệnh của phần mềm ghi cược — dán nguyên cả hai dòng.
             </div>
+            {lenhChan.lq && (
+              <div className="mt-1.5 rounded-lg border border-[#fbbf24]/40 bg-[#b45309]/15 px-2.5 py-2" data-lenh-lq>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[0.7rem] font-bold text-[#ffd24a]">
+                    {lenhChan.con100.length} con chặn {rutGonNhap ? "tròn" : "100%"} — lệnh riêng /chanlq
+                  </span>
+                  <button
+                    onClick={copyLq}
+                    data-lenh-copy-lq
+                    className="ml-auto px-3 py-1.5 rounded-lg text-xs font-bold bg-[#b45309] text-white hover:bg-[#92400e]"
+                  >
+                    📋 Copy /chanlq
+                  </button>
+                </div>
+                <code className="block mt-1 text-[0.66rem] leading-snug text-[#ffe9b0] break-all whitespace-pre-wrap" data-lenh-lq-xem>
+                  {lenhChan.lq}
+                </code>
+                <div className="text-[0.66rem] text-[var(--text-muted)] mt-1">
+                  Mọi đá dính các con này đều không nhận. Các cặp đó <b>không</b> nằm trong chuỗi /chanloai nữa — dán <b>cả hai</b> lệnh mới chặn đủ.
+                  Trên Telegram gõ <code className="text-[#c2d4ea]">/chanlq</code> là ra các con này của cả 3 miền trong một tin.
+                </div>
+              </div>
+            )}
             {rutGonNhap && lenhChan.cap.length > 0 && (
               <div className="mt-1.5 flex flex-wrap items-center gap-1" data-lenh-muc>
                 <span className="text-[0.66rem] text-[var(--text-muted)]">Mức rút gọn — con bị chặn từ N/99 con thì chặn tròn:</span>
@@ -478,7 +510,7 @@ export default function DaBangTien({
                 ))}
               </div>
             )}
-            {lenhChan.cap.length > 0 && (
+            {lenhChan.chuoi && (
               <code className="block mt-1.5 text-[0.66rem] leading-snug text-[#c2d4ea] break-all max-h-16 overflow-hidden whitespace-pre-wrap" data-lenh-xem>
                 {lenhChan.chuoi.length > 260 ? lenhChan.chuoi.slice(0, 260) + " …" : lenhChan.chuoi}
               </code>
