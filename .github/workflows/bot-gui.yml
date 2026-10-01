@@ -1,0 +1,45 @@
+# Gõ cửa bot gửi tự động vài phút một lần trong các khung giờ khách chốt.
+#
+# Cron của Vercel ở gói hiện tại chỉ chạy mỗi ngày một lần và lệch tới cả
+# tiếng, không đủ cho khung 25–35 phút. Việc gửi thật nằm ở máy chủ
+# (/api/cron/bot-gui): ngoài khung, đang tắt hay hôm nay đã gửi thì nó không
+# làm gì, nên gọi thừa là vô hại.
+#
+# Giờ dưới đây là UTC (VN = UTC+7). Lịch của GitHub có thể trễ vài phút tới
+# hơn chục phút lúc đông, nên mỗi khung gõ nhiều lần, bắt đầu sớm 5 phút.
+name: bot-gui
+
+on:
+  schedule:
+    # Miền Nam 15:30–16:05 VN  = 08:30–09:05 UTC
+    - cron: "25,30,35,40,45,50,55 8 * * *"
+    - cron: "0,5 9 * * *"
+    # Miền Trung 16:40–17:05 VN = 09:40–10:05 UTC
+    - cron: "35,40,45,50,55 9 * * *"
+    - cron: "0,5 10 * * *"
+    # Miền Bắc 17:40–18:05 VN  = 10:40–11:05 UTC
+    - cron: "35,40,45,50,55 10 * * *"
+    - cron: "0,5 11 * * *"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: bot-gui
+  cancel-in-progress: false
+
+jobs:
+  go-cua:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Gọi /api/cron/bot-gui
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # Chưa cài khoá thì bỏ qua êm (không báo đỏ 20 lần mỗi ngày). Việc "chưa cài" vẫn
+          # lộ ra ở lệnh /lichgui của bot: "Bộ hẹn giờ CHƯA từng gõ cửa".
+          if [ -z "$CRON_SECRET" ]; then echo "::warning::Chưa cài secret CRON_SECRET cho repo — bỏ qua"; exit 0; fi
+          curl --fail-with-body -sS --max-time 60 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://gacon.vercel.app/api/cron/bot-gui"
