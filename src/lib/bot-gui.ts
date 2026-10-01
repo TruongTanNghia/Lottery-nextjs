@@ -19,6 +19,15 @@ import {
 import type { Region } from "@/lib/types";
 
 const KHOA = "bot_gui";
+const KHOA_GO_CUA = "bot_gui_go_cua";
+
+/** Lần gần nhất bộ hẹn giờ gọi vào (ISO), null = chưa từng. Để nhìn là biết bộ hẹn giờ còn sống. */
+export async function docGoCua(): Promise<string | null> {
+  return (await getConfigValue(KHOA_GO_CUA)) || null;
+}
+export async function ghiGoCua(now = new Date()): Promise<void> {
+  await setConfigValue(KHOA_GO_CUA, now.toISOString());
+}
 const MIEN: Region[] = ["xsmn", "xsmt", "xsmb"];
 const TEN: Record<Region, string> = { xsmn: "Mn", xsmt: "Mt", xsmb: "Mb" };
 

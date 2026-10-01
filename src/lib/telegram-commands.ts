@@ -23,7 +23,7 @@ import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
 import { bangHieuLuc, taiKyDaXo } from "@/lib/da-bang";
 import { chuoiChanLo, luatChanLo } from "@/lib/chan-lo";
 import { docBuoc, trangThaiChanNgay } from "@/lib/chan-ngay-server";
-import { docBotGui, guiNgay, luuBotGui, xemTruocGui } from "@/lib/bot-gui";
+import { docBotGui, docGoCua, guiNgay, luuBotGui, xemTruocGui } from "@/lib/bot-gui";
 import { daGuiHomNay, gioVN, laGioHopLe } from "@/lib/bot-gui-thuan";
 import { SO_O_DA, chiaKhoiChanDa, nhomChanDa } from "@/lib/da";
 
@@ -538,8 +538,13 @@ export async function chanNgayBot(regions: Region[]): Promise<string> {
 
 /** /lichgui — lịch và tình trạng của bot gửi. */
 export async function lichGui(): Promise<string> {
-  const cfg = await docBotGui();
+  const [cfg, goCua] = await Promise.all([docBotGui(), docGoCua()]);
   const now = new Date();
+  const phutTruoc = goCua ? Math.round((now.getTime() - new Date(goCua).getTime()) / 60_000) : null;
+  const dongGoCua =
+    goCua == null
+      ? "Bộ hẹn giờ: <b>CHƯA từng gõ cửa</b> — chưa cài khoá CRON_SECRET trên GitHub nên bật lên cũng chưa tự gửi"
+      : `Bộ hẹn giờ: gõ cửa lần cuối ${gioVN(new Date(goCua)).gio} ngày ${ddmm(gioVN(new Date(goCua)).ngay)} (${phutTruoc! < 120 ? `${phutTruoc} phút` : `${Math.round(phutTruoc! / 60)} giờ`} trước)`;
   const dong = REGIONS.map((r) => {
     const m = cfg.mien[r];
     const da = daGuiHomNay(now, cfg.daGui[r]);
@@ -549,6 +554,7 @@ export async function lichGui(): Promise<string> {
     "<b>🤖 Bot gửi tự động — lô</b>",
     cfg.nhom == null ? "Nhóm nhận: <b>CHƯA CHỌN</b> — vào nhóm có bot nhận rồi gõ <code>/nhomgui</code>" : `Nhóm nhận: <b>${esc(cfg.tenNhom ?? String(cfg.nhom))}</b>`,
     `Bây giờ: ${gioVN(now).gio} (giờ VN)`,
+    dongGoCua,
     "",
     ...dong,
     "",

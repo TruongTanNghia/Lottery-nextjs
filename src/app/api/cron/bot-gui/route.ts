@@ -10,7 +10,7 @@
  */
 import { NextResponse } from "next/server";
 import { checkCronAuth, ensureDb, jsonError } from "@/lib/api-utils";
-import { chayBotGui } from "@/lib/bot-gui";
+import { chayBotGui, ghiGoCua } from "@/lib/bot-gui";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +23,8 @@ export async function GET(req: Request) {
     const q = new URL(req.url).searchParams;
     const luc = q.get("luc");
     const now = luc && !Number.isNaN(new Date(luc).getTime()) ? new Date(luc) : new Date();
+    // Ghi dấu "đã có người gõ cửa" bằng giờ THẬT (không phải giờ giả lập) — /lichgui đọc để biết bộ hẹn giờ còn chạy.
+    if (q.get("thu") !== "1") await ghiGoCua();
     const kq = await chayBotGui(now, q.get("thu") === "1");
     console.log(`[bot-gui] ${kq.luc}: ${kq.ketQua.map((k) => `${k.region}=${k.viec}`).join(" ")}`);
     return NextResponse.json({ status: "success", thu: q.get("thu") === "1", ...kq });
