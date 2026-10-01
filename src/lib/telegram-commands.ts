@@ -23,7 +23,8 @@ import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
 import { bangHieuLuc, taiKyDaXo } from "@/lib/da-bang";
 import { chuoiChanLo, luatChanLo } from "@/lib/chan-lo";
 import { docBuoc, trangThaiChanNgay } from "@/lib/chan-ngay-server";
-import { docBotGui, docGoCua, guiNgay, luuBotGui, xemTruocGui } from "@/lib/bot-gui";
+import { docBotGui, docGoCua, guiNgay, luuBotGui, thuTaiKhoan, xemTruocGui } from "@/lib/bot-gui";
+import { coTaiKhoanGui } from "@/lib/tele-user";
 import { daGuiHomNay, gioVN, laGioHopLe } from "@/lib/bot-gui-thuan";
 import { SO_O_DA, chiaKhoiChanDa, nhomChanDa } from "@/lib/da";
 
@@ -108,6 +109,7 @@ export function helpText(isAdmin = false): string {
         "<code>/xemgui mn</code> — xem chuỗi sẽ gửi (không gửi)",
         "<code>/batgui mn</code> · <code>/tatgui mn</code> — bật/tắt tự gửi một miền (hoặc <code>all</code>)",
         "<code>/guingay mn</code> — gửi ngay vào nhóm, không đợi giờ",
+        "<code>/thutk 2d16b100, 15b50</code> — thử gửi một chuỗi bằng tài khoản người",
         "<code>/khunggio mn 15:30 16:05</code> · <code>/tiento mn 2d</code>",
       ]
     : [];
@@ -554,6 +556,9 @@ export async function lichGui(): Promise<string> {
     "<b>🤖 Bot gửi tự động — lô</b>",
     cfg.nhom == null ? "Nhóm nhận: <b>CHƯA CHỌN</b> — vào nhóm có bot nhận rồi gõ <code>/nhomgui</code>" : `Nhóm nhận: <b>${esc(cfg.tenNhom ?? String(cfg.nhom))}</b>`,
     `Bây giờ: ${gioVN(now).gio} (giờ VN)`,
+    coTaiKhoanGui()
+      ? "Gửi bằng: <b>tài khoản người</b> (bot nhận đọc được)"
+      : "Gửi bằng: <b>bot</b> — bot nhận sẽ KHÔNG thấy. Cài tài khoản gửi: xem <code>scripts/telegram-user-login.mjs</code>",
     dongGoCua,
     "",
     ...dong,
@@ -921,6 +926,14 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
       if (!region) return "Thiếu miền. Ví dụ: <code>/guingay mn</code>";
       const r = await guiNgay(region);
       return `${r.ok ? "✅" : "⚠️"} ${label(region)}: ${esc(r.chu)}`;
+    }
+
+    case "/thutk": {
+      if (!isAdmin) break;
+      // Lấy chuỗi từ chữ gốc (giữ hoa thường, dấu phẩy, xuống dòng).
+      const m = text.trim().match(/^\S+\s+([\s\S]+)$/);
+      const r = await thuTaiKhoan(m ? m[1] : "");
+      return `${r.ok ? "✅" : "⚠️"} ${esc(r.chu)}`;
     }
 
     case "/khunggio":

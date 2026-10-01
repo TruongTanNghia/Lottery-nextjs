@@ -12,6 +12,7 @@ import { getConfigValue, query, setConfigValue } from "@/lib/db";
 import { getLimitSummary } from "@/lib/limit-engine";
 import { freshness, freshnessText } from "@/lib/freshness";
 import { adminIds } from "@/lib/telegram-users";
+import { coTaiKhoanGui, guiBangTaiKhoan } from "@/lib/tele-user";
 import {
   chuanHoaBotGui, chuoiLoGui, daGuiHomNay, gioVN, trongKhung,
   type CaiDatBotGui,
@@ -62,6 +63,21 @@ async function guiTho(chatId: number | string, text: string): Promise<{ ok: bool
   } catch (e) {
     return { ok: false, loi: e instanceof Error ? e.message : "lỗi mạng" };
   }
+}
+
+/**
+ * Gửi LỆNH vào nhóm nhận. Có tài khoản người thì đi đường đó — đường duy nhất
+ * mà bot nhận đọc được. Chưa cài thì vẫn gửi bằng bot (để còn thử, và cho cách
+ * "bot nhắn riêng rồi người chuyển tiếp"). Không tự rơi từ tài khoản về bot:
+ * tin bot thì bot nhận không thấy, rơi về đó là báo "đã gửi" mà chẳng ai nhận.
+ */
+export async function guiVaoNhom(chatId: number, text: string): Promise<{ ok: boolean; loi?: string; khongRo?: boolean; bang: "tai-khoan" | "bot" }> {
+  if (coTaiKhoanGui()) {
+    const r = await guiBangTaiKhoan(chatId, text);
+    return { ok: r.ok, loi: r.loi, khongRo: r.khongRo, bang: "tai-khoan" };
+  }
+  const r = await guiTho(chatId, text);
+  return { ...r, bang: "bot" };
 }
 
 async function baoQuanTri(text: string): Promise<void> {
@@ -122,11 +138,18 @@ export async function chayBotGui(now = new Date(), thu = false): Promise<{ luc: 
     if (!xt.chuoi) { ketQua.push({ region, viec: "bo-qua", lyDo: "không lô nào đang nhận" }); continue; }
     if (thu) { ketQua.push({ region, viec: "gui", soLo: xt.soLo, kyTu: xt.chuoi.length }); continue; }
 
-    const r = await guiTho(cfg.nhom, xt.chuoi);
+    const r = await guiVaoNhom(cfg.nhom, xt.chuoi);
     if (r.ok) {
       cfg.daGui[region] = now.toISOString();
       doi = true;
       ketQua.push({ region, viec: "gui", soLo: xt.soLo, kyTu: xt.chuoi.length });
+    } else if (r.khongRo) {
+      // Không biết tin tới chưa. Ghi là "đã gửi" để các lượt gõ cửa sau KHÔNG tự
+      // gửi lại: thà sót một lần (người vận hành gửi tay) còn hơn bot nhận ghi gấp đôi.
+      cfg.daGui[region] = now.toISOString();
+      doi = true;
+      ketQua.push({ region, viec: "loi", lyDo: `không rõ đã tới chưa — ${r.loi}` });
+      await baoQuanTri(`⚠️ Bot gửi ${TEN[region]}: ${r.loi}. KHÔNG RÕ tin đã vào nhóm chưa, nên bot sẽ không tự gửi lại hôm nay. Anh mở nhóm xem: chưa có thì gõ /guingay ${TEN[region].toLowerCase()}.`);
     } else {
       ketQua.push({ region, viec: "loi", lyDo: r.loi ?? "gửi không được" });
       await baoQuanTri(`❌ Bot gửi ${TEN[region]}: gửi lệnh lô vào nhóm KHÔNG được — ${r.loi}`);
@@ -137,6 +160,19 @@ export async function chayBotGui(now = new Date(), thu = false): Promise<{ luc: 
   return { luc: gioVN(now).gio, ketQua };
 }
 
+/** /thutk <chuỗi> — gửi nguyên văn một chuỗi vào nhóm nhận BẰNG TÀI KHOẢN NGƯỜI, để thử trước khi bật. */
+export async function thuTaiKhoan(chuoi: string): Promise<{ ok: boolean; chu: string }> {
+  if (!coTaiKhoanGui()) return { ok: false, chu: "Chưa cài tài khoản gửi. Chạy scripts/telegram-user-login.mjs rồi đặt 3 biến TELEGRAM_API_ID / TELEGRAM_API_HASH / TELEGRAM_USER_SESSION trên Vercel." };
+  const cfg = await docBotGui();
+  if (cfg.nhom == null) return { ok: false, chu: "Chưa chọn nhóm nhận. Vào nhóm có bot nhận rồi gõ /nhomgui." };
+  if (!chuoi.trim()) return { ok: false, chu: "Thiếu chuỗi. Ví dụ: /thutk 2d16b100, 15b50" };
+  const r = await guiBangTaiKhoan(cfg.nhom, chuoi.trim());
+  if (r.khongRo) return { ok: false, chu: `KHÔNG RÕ tin đã vào nhóm chưa: ${r.loi}. Mở nhóm xem trước khi thử lại.` };
+  return r.ok
+    ? { ok: true, chu: `Tài khoản "${r.ten}" đã gửi vào nhóm${cfg.tenNhom ? ` "${cfg.tenNhom}"` : ""}. Xem bot nhận có ghi không.` }
+    : { ok: false, chu: `Gửi không được: ${r.loi}` };
+}
+
 /** Gửi ngay một miền theo lệnh tay của quản trị (bỏ qua khung giờ và "đã gửi", vẫn giữ chốt dữ liệu). */
 export async function guiNgay(region: Region, now = new Date()): Promise<{ ok: boolean; chu: string }> {
   const cfg = await docBotGui();
@@ -144,9 +180,10 @@ export async function guiNgay(region: Region, now = new Date()): Promise<{ ok: b
   const xt = await xemTruocGui(region, cfg, now);
   if (xt.duLieu !== "ok") return { ok: false, chu: `Không gửi: ${xt.duLieuChu}.` };
   if (!xt.chuoi) return { ok: false, chu: "Không lô nào đang nhận — không có gì để gửi." };
-  const r = await guiTho(cfg.nhom, xt.chuoi);
+  const r = await guiVaoNhom(cfg.nhom, xt.chuoi);
+  if (r.khongRo) return { ok: false, chu: `KHÔNG RÕ tin đã vào nhóm chưa: ${r.loi}. Mở nhóm xem trước, chưa có mới gõ lại — gửi trùng là bot nhận ghi gấp đôi.` };
   if (!r.ok) return { ok: false, chu: `Gửi không được: ${r.loi}` };
   cfg.daGui[region] = now.toISOString();
   await luuBotGui(cfg);
-  return { ok: true, chu: `Đã gửi ${xt.soLo} lô (${xt.chuoi.length} ký tự) vào nhóm${cfg.tenNhom ? ` "${cfg.tenNhom}"` : ""}.` };
+  return { ok: true, chu: `Đã gửi ${xt.soLo} lô (${xt.chuoi.length} ký tự) vào nhóm${cfg.tenNhom ? ` "${cfg.tenNhom}"` : ""} bằng ${r.bang === "tai-khoan" ? "tài khoản người" : "bot (bot nhận sẽ KHÔNG thấy)"}.` };
 }
