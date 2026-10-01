@@ -549,7 +549,6 @@ export default function DaBangTien({
             onClick={() => {
               if (!datHetOk) return;
               datNhieu(hien, vDatHet);
-              toast.show("info", `Đã đặt ${hien.length} ô = ${so(vDatHet)} điểm trên màn hình — CHƯA lưu. Bấm 💾 Lưu ở thanh dưới cùng.`);
             }}
             disabled={!datHetOk}
             data-bang-dat-het
@@ -560,7 +559,6 @@ export default function DaBangTien({
           <button
             onClick={() => {
               datNhieu(tkt.bang.filter((o) => o.nhan === "ne"), 0);
-              toast.show("info", `Đã chặn ${tkt.soNe} ô NÉ RA trên màn hình — CHƯA lưu. Bấm 💾 Lưu ở thanh dưới cùng.`);
             }}
             disabled={tkt.soNe === 0}
             className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[rgba(220,38,38,0.15)] text-[#ff9d9d] hover:bg-[rgba(220,38,38,0.25)] disabled:opacity-40"
@@ -570,7 +568,6 @@ export default function DaBangTien({
           <button
             onClick={() => {
               setNhap(bangMacDinh(TRAN));
-              toast.show("info", `Đã đưa cả ${SO_O_DA} ô về 1 điểm trên màn hình — CHƯA lưu. Bấm 💾 Lưu ở thanh dưới cùng.`);
             }}
             className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16]"
           >
@@ -638,7 +635,7 @@ export default function DaBangTien({
           }}
         >
           <span className="flex-1 text-[0.74rem] font-bold text-[#ffd24a] leading-snug">
-            ⚠ Chưa lưu: {[doiO > 0 ? `${doiO} ô` : "", doiLuat ? "công tắc luật" : "", doiDanhSach ? "ô luật/mở tay" : "", doiGon ? "cách rút gọn" : ""].filter(Boolean).join(", ")}
+            ⚠ CHƯA lưu — bấm 💾 Lưu: {[doiO > 0 ? `${doiO} ô` : "", doiLuat ? "công tắc luật" : "", doiDanhSach ? "ô luật/mở tay" : "", doiGon ? "cách rút gọn" : ""].filter(Boolean).join(", ")}
           </span>
           <button
             onClick={() => { setNhap(bang); setBuoc1Nhap(buoc1); setBuoc2Nhap(buoc2); setChanLuatNhap(chanLuat); setMoTayNhap(moTay); setRutGonNhap(rutGon); setNguongGonNhap(nguongGon); }}
