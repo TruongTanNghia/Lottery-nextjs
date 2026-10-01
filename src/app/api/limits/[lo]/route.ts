@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { ApiError, ensureDb, jsonError, validateRegion } from "@/lib/api-utils";
-import {
-  APPEARANCE_WINDOW_DAYS,
-  calculateEffectiveLimit,
-  loadSchedule,
-} from "@/lib/limit-engine";
-import { getAppearanceCounts, getLoStatus, query } from "@/lib/db";
+import { APPEARANCE_WINDOW_DAYS, getLimitSummary } from "@/lib/limit-engine";
+import { query } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,8 +20,11 @@ export async function GET(
       throw new ApiError(400, "Lô number must be 2 digits (00-99)");
     }
 
-    const status = await getLoStatus(lo, region);
-    if (!status) throw new ApiError(404, `Lô ${lo} not found for region ${region}`);
+    // Cùng một nguồn với bảng 100 lô. Bản trước tự tính lại ở đây theo NGÀY
+    // HÔM NAY của máy chủ (bảng thì theo kỳ mới nhất) và bỏ qua phần chia đôi,
+    // nên bấm vào một ô trên bảng lại thấy một hạn mức khác với chính ô đó.
+    const item = (await getLimitSummary(region)).find((l) => l.lo_number === lo);
+    if (!item) throw new ApiError(404, `Lô ${lo} not found for region ${region}`);
 
     const history = await query<{ date: string; count: number }>(
       `SELECT date, count FROM lo_daily WHERE lo_number = ? AND region = ?
@@ -33,28 +32,11 @@ export async function GET(
       [lo, region]
     );
 
-    const today = new Date().toISOString().slice(0, 10);
-    const todayDt = new Date(today + "T00:00:00");
-    const counts = await getAppearanceCounts(region, today, APPEARANCE_WINDOW_DAYS);
-    const sched = await loadSchedule(region);
-
-    let daysLive: number;
-    if (status.last_appeared_date) {
-      const diff = todayDt.getTime() - new Date(status.last_appeared_date + "T00:00:00").getTime();
-      daysLive = Math.max(0, Math.floor(diff / 86_400_000));
-    } else {
-      daysLive = APPEARANCE_WINDOW_DAYS;
-    }
-    const liveLimit = calculateEffectiveLimit(daysLive, status.consecutive_days, sched);
-
     return NextResponse.json({
       status: "success",
       region,
       data: {
-        ...status,
-        days_since_last: daysLive,
-        current_limit: liveLimit,
-        appearance_count: counts[lo] ?? 0,
+        ...item,
         appearance_window_days: APPEARANCE_WINDOW_DAYS,
         history,
       },

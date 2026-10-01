@@ -156,6 +156,22 @@ export default function StreakCopyCard({ limits, region }: Props) {
     [filtered]
   );
 
+  /**
+   * Nhận hay chặn — nói thẳng ra cho nhóm đang lọc.
+   *
+   * Danh sách bên dưới lọc theo TIÊU CHÍ (liên tiếp mấy kỳ, khô mấy ngày), nên
+   * lô đang bị chặn vẫn có tên trong đó. Khách cài "liên tiếp 3 kỳ → 0", bấm
+   * tiêu chí 3 ngày, thấy lô 27 hiện ra và hỏi "sao máy không chặn". Con số 27
+   * ở đây không nói được nó đang nhận hay chặn — dòng này nói.
+   */
+  const trangThai = useMemo(() => {
+    const ds = limits.filter(currentOption.match);
+    if (ds.length === 0) return null;
+    const o = new Map<string, number>();
+    for (const l of ds) if (l.o_ten) o.set(l.o_ten, l.limit_before_tracking ?? l.current_limit);
+    return { tong: ds.length, chan: ds.filter((l) => l.current_limit <= 0).length, o: [...o] };
+  }, [limits, currentOption]);
+
   function switchMode(m: Filter) {
     setFilterMode(m);
     setOptionKey(DEFAULT_OPTION_KEY[m]);
@@ -357,6 +373,55 @@ export default function StreakCopyCard({ limits, region }: Props) {
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {trangThai && (
+          <div
+            data-tieu-chi-trang-thai={trangThai.chan === trangThai.tong ? "chan" : trangThai.chan === 0 ? "nhan" : "lan"}
+            className="mb-2 rounded-lg border px-3 py-2 text-xs leading-relaxed"
+            style={
+              trangThai.chan === trangThai.tong
+                ? { borderColor: "rgba(248,113,113,0.55)", background: "rgba(220,38,38,0.10)", color: "#ffd0d0" }
+                : trangThai.chan === 0
+                ? { borderColor: "rgba(52,211,153,0.4)", background: "rgba(16,185,129,0.08)", color: "#c9f7e4" }
+                : { borderColor: "rgba(251,191,36,0.45)", background: "rgba(245,158,11,0.08)", color: "#ffe9c4" }
+            }
+          >
+            {trangThai.chan === trangThai.tong ? (
+              <>
+                🚫 <b>Cả {trangThai.tong} lô này đang bị CHẶN</b> — máy không nhận.
+              </>
+            ) : trangThai.chan === 0 ? (
+              <>
+                ✅ <b>{trangThai.tong} lô này đang được nhận.</b>
+              </>
+            ) : (
+              <>
+                <b>
+                  {trangThai.tong} lô: {trangThai.tong - trangThai.chan} đang nhận, {trangThai.chan} đang CHẶN.
+                </b>
+              </>
+            )}
+            {trangThai.o.length > 0 && trangThai.o.length <= 3 && (
+              <>
+                {" "}
+                Theo bảng hạn mức:{" "}
+                {trangThai.o.map(([ten, muc]) => `ô “${ten}” đang cài ${muc}${muc === 0 ? " = chặn" : "n"}`).join(" · ")}.
+              </>
+            )}
+            {trangThai.chan > 0 && (
+              <>
+                {" "}
+                <span className="opacity-80">
+                  {withAmount
+                    ? skipZero
+                      ? "Chuỗi dưới đã bỏ lô bị chặn."
+                      : "Trong chuỗi dưới, lô bị chặn mang số 0."
+                    : "Danh sách dưới lọc theo tiêu chí nên lô bị chặn vẫn có tên."}
+                </span>
+              </>
+            )}
           </div>
         )}
 

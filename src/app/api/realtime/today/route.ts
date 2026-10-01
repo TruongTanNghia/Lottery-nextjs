@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 import { ensureDb, jsonError, validateRegion } from "@/lib/api-utils";
 import { scrapeTodayForce } from "@/lib/scraper";
-import { updateAllLoStatus } from "@/lib/limit-engine";
+import { recalculateAllFromHistory } from "@/lib/limit-engine";
 import { query } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -76,9 +76,11 @@ export async function POST(req: Request) {
     const scraped = await scrapeTodayForce(region);
     const scrapeMs = Date.now() - t0;
 
-    // Update lo_status for today
+    // Chạy lại cả lịch sử chứ không "cập nhật riêng hôm nay": trang này gọi
+    // trong lúc đài còn đang xổ, và cập nhật một ngày bằng kết quả mới có một
+    // nửa thì lô về ở nửa sau bị cắt chuỗi về 1 — sai luôn hạn mức liên tiếp.
     const t1 = Date.now();
-    await updateAllLoStatus(todayStr(), region);
+    await recalculateAllFromHistory(region);
     const recalcMs = Date.now() - t1;
 
     const data = await getTodayResults(region);

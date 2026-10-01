@@ -17,7 +17,7 @@
 import { NextResponse } from "next/server";
 import { ensureDb, jsonError } from "@/lib/api-utils";
 import { exec, query, type Region, VALID_REGIONS } from "@/lib/db";
-import { updateAllLoStatus } from "@/lib/limit-engine";
+import { recalculateAllFromHistory } from "@/lib/limit-engine";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -91,16 +91,11 @@ export async function POST() {
       });
     }
 
-    // Recalc lo_status for affected regions (incremental — last 5 dates each)
+    // Recalc lo_status for affected regions — full replay, so the result only
+    // depends on what is now in lo_daily.
     const affectedRegions = new Set(cleaned.map((c) => c.region));
     for (const region of affectedRegions) {
-      const recent = await query<{ date: string }>(
-        "SELECT DISTINCT date FROM lo_daily WHERE region = ? ORDER BY date DESC LIMIT 5",
-        [region]
-      );
-      for (const { date } of recent.reverse()) {
-        await updateAllLoStatus(date, region);
-      }
+      await recalculateAllFromHistory(region);
     }
 
     // Per-region tally for response

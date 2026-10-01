@@ -5,7 +5,8 @@
  * Web (nút Áp dụng), bot và cron cùng đi qua đây.
  */
 import { getConfigValue, setConfigValue } from "@/lib/db";
-import { loadSchedule, recalculateAllFromHistory, saveSchedule, type Schedule } from "@/lib/limit-engine";
+import { loadSchedule, recalculateAllFromHistory, saveSchedule } from "@/lib/limit-engine";
+import type { Schedule } from "@/lib/lich-han-muc";
 import { taiKyDaXo } from "@/lib/da-bang";
 import { apVaoLich, luatChanNgay, type DoiLich, type KetQuaChanNgay } from "@/lib/chan-ngay";
 import type { CongTacBuocLo } from "@/lib/chan-lo";

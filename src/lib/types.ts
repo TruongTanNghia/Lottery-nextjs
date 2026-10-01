@@ -44,6 +44,9 @@ export interface LimitItem {
   /** Hits over the short Top-N window. */
   recent_hits?: number;
   limit_before_tracking?: number;
+  /** Ô của bảng hạn mức quyết định số trên: "ngay:3", "chuoi:2", "tren". */
+  o_lich?: string;
+  o_ten?: string;
 }
 
 export interface TopConfig {

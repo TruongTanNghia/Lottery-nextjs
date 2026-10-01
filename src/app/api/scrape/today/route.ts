@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ensureDb, jsonError, validateRegion } from "@/lib/api-utils";
 import { scrapeToday } from "@/lib/scraper";
-import { updateAllLoStatus } from "@/lib/limit-engine";
+import { recalculateAllFromHistory } from "@/lib/limit-engine";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -15,8 +15,9 @@ export async function POST(req: Request) {
 
     const result = await scrapeToday(region);
     if (result) {
-      const today = new Date().toISOString().slice(0, 10);
-      await updateAllLoStatus(today, region);
+      // Full replay — the result must not depend on how many times, or how
+      // early in the draw, this endpoint was hit.
+      await recalculateAllFromHistory(region);
     }
 
     return NextResponse.json({

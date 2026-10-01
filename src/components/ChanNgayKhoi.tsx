@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { KetQuaChanNgay, DoiLich } from "@/lib/chan-ngay";
 import { MAU_TOI_THIEU_NGAY } from "@/lib/chan-ngay";
-import type { Schedule } from "@/lib/limit-engine";
+import { docO, tenO, type Schedule } from "@/lib/lich-han-muc";
 import { useToast } from "./Toast";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
@@ -96,11 +96,9 @@ export default function ChanNgayKhoi({ region, phienBan = 0 }: { region: Region;
 
   const { kq } = tt;
   const bangChan = kq.bang.filter((x) => x.lyDo);
-  const oCua = (x: (typeof kq.bang)[number]) => (x.viTri.loai === "base" ? `ngày ${x.viTri.so}` : `liên tiếp ${x.viTri.so}`);
-  const hienTai = (x: (typeof kq.bang)[number]) => {
-    const b = x.viTri.loai === "base" ? tt.lichHienTai.base : tt.lichHienTai.consecutive;
-    return x.viTri.so in b ? b[x.viTri.so] : null;
-  };
+  // Một bậc có thể giữ hơn một ô (bậc "19+ kỳ" giữ ô ngày 19 và ô 20+): ghi đủ tên và số từng ô.
+  const oCua = (x: (typeof kq.bang)[number]) => x.o.map(tenO).join(" + ");
+  const hienTai = (x: (typeof kq.bang)[number]) => x.o.map((o) => docO(tt.lichHienTai, o));
 
   return (
     <section className="plate rise rise-2" data-chan-ngay>
@@ -108,7 +106,7 @@ export default function ChanNgayKhoi({ region, phienBan = 0 }: { region: Region;
         <div>
           <h2 className="plate-title">🗓 Chặn Theo Ngày — Áp Vào Bảng Hạn Mức</h2>
           <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-            {REGION_LABELS[region]} · {kq.soKy} kỳ · bậc = các nhóm của &ldquo;Ngày Nào Đẹp Nhất&rdquo; · mức chung{" "}
+            {REGION_LABELS[region]} · {kq.soKy} kỳ · bậc = các nhóm của “Ngày Nào Đẹp Nhất” · mức chung{" "}
             {Math.round(kq.mucChung * 100)}/100 · bước 2 chấm {kq.thang2.map(tenThang).join(" + ")} ({kq.soKy2} kỳ)
             {tt.apLuc && ` · áp lần cuối ${new Date(tt.apLuc).toLocaleString("vi-VN")}`}
           </p>
@@ -120,7 +118,9 @@ export default function ChanNgayKhoi({ region, phienBan = 0 }: { region: Region;
           Cùng luật hai bước, nhưng chấm từng <b className="text-white">bậc ngày</b>: bậc nào tổng thể về trên mức chung, hoặc 2 tháng
           gần phần ăn dưới 0% → ô của bậc đó trong bảng <b className="text-white">Hạn Mức Theo Số Ngày Chưa Về</b> về{" "}
           <b className="text-white">0</b>. Bậc không bị chặn thì <b>giữ nguyên số anh đang cài</b>. Bỏ qua bậc dưới{" "}
-          {MAU_TOI_THIEU_NGAY} lô-kỳ. &ldquo;Vừa về&rdquo; là ngày 0, &ldquo;về liên tiếp n&rdquo; là mức riêng n.
+          {MAU_TOI_THIEU_NGAY} lô-kỳ. “Vừa về” là ô ngày 0, “về liên tiếp n” là ô liên tiếp n, bậc cuối
+          “19+ kỳ” giữ cả ô ngày 19 lẫn ô 20+. <b className="text-white">Ô nào đang là 0 thì máy đang chặn</b> — kể cả ô
+          anh tự cài 0 mà luật không bắt.
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2" data-chan-ngay-tong>
@@ -179,8 +179,15 @@ export default function ChanNgayKhoi({ region, phienBan = 0 }: { region: Region;
                 return (
                   <tr key={x.key} className="border-t border-[var(--hairline)]" data-chan-ngay-bac={x.key} data-chan={x.lyDo ?? "0"} style={x.lyDo ? { background: "rgba(220,38,38,0.1)" } : undefined}>
                     <td className="px-2 py-1 text-white font-bold">{x.ten}</td>
-                    <td className="px-2 py-1 text-[var(--text-muted)]">{oCua(x)}{cai === null && <span className="text-[#ffd24a]"> (không có ô)</span>}</td>
-                    <td className="px-2 py-1 text-right numeric">{cai === null ? "—" : cai}</td>
+                    <td className="px-2 py-1 text-[var(--text-muted)]">{oCua(x)}</td>
+                    <td className="px-2 py-1 text-right numeric" data-chan-ngay-cai={cai.join("/")}>
+                      {cai.map((v, i) => (
+                        <span key={i} style={v === 0 ? { color: "#ff9d9d", fontWeight: 700 } : undefined}>
+                          {i > 0 && <span className="text-[var(--text-muted)]"> / </span>}
+                          {v === 0 ? "0 · chặn" : v}
+                        </span>
+                      ))}
+                    </td>
                     <td className="px-2 py-1 text-right numeric" style={{ color: x.b1 ? "#ff9d9d" : "#cbd5e1" }}>{tl(x.tyLe)}{it && <span className="text-[#ffd24a]"> ít</span>}</td>
                     <td className="px-2 py-1 text-right numeric" style={{ color: mau(x.bien) }}>{pc(x.bien)}</td>
                     <td className="px-2 py-1 text-right numeric" style={{ color: mau(x.bien2) }}>{x.mau2 >= MAU_TOI_THIEU_NGAY ? pc(x.bien2) : "ít"}</td>

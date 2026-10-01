@@ -16,7 +16,7 @@
  */
 import type { Region } from "./db";
 import { STAKE_PRICE, WIN_PER_POINT } from "./exposure";
-import type { Schedule } from "./limit-engine";
+import { CHUOI_TOI_DA, mucTheoLich, type Schedule } from "./lich-han-muc";
 
 export const LOS = Array.from({ length: 100 }, (_, i) => String(i).padStart(2, "0"));
 
@@ -76,17 +76,12 @@ const cachNgay = (sau: string, truocDo: string) => {
 /**
  * The schedule's answer for one lô, given how it stands this morning.
  *
- * Mirrors calculateEffectiveLimit exactly: a streak level replaces the base
- * level rather than capping it, so "vừa về" and "về liên tiếp 2 kỳ" can carry
- * different money. Any drift between these two would put the replay and the
- * live board on different books.
+ * Not a mirror of the live board's rule any more — the same function. A second
+ * copy kept "exactly in step" is how the replay and the live board end up on
+ * different books the day one of them changes.
  */
 export function mucCho(schedule: Schedule, ngayKho: number, chuoi: number): number {
-  if (chuoi > 0 && chuoi <= schedule.consecutive_reset_after) {
-    const rieng = schedule.consecutive[chuoi];
-    if (rieng != null) return rieng;
-  }
-  return schedule.base[ngayKho] ?? schedule.min_limit;
+  return mucTheoLich(schedule, ngayKho, chuoi);
 }
 
 /**
@@ -154,7 +149,7 @@ export function chayLai(
     for (const [lo, st] of trangThai) {
       if ((d.hits[lo] ?? 0) > 0) {
         st.chuoi = st.last === truoc(d.date) ? st.chuoi + 1 : 1;
-        if (st.chuoi > schedule.consecutive_reset_after) st.chuoi = 1;
+        if (st.chuoi > CHUOI_TOI_DA) st.chuoi = 1;
         st.kho = 0;
         st.last = d.date;
       } else {

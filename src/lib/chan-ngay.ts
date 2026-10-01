@@ -7,18 +7,20 @@
  *   2. hai tháng gần nhất: bậc nào phần ăn DƯỚI 0% → chặn.
  *
  * Bậc = đúng các nhóm của khối "Ngày Nào Đẹp Nhất" (slot-stats): vừa về, về
- * liên tiếp 2/3/4 kỳ, 1…19+ kỳ chưa về. Mỗi bậc ứng với một ô trong lịch hạn
- * mức: "vừa về" là ngày 0, "về liên tiếp n" là mức riêng n, "n kỳ chưa về" là
- * ngày n. Bậc bị chặn thì ô đó về 0; bậc không bị chặn thì GIỮ NGUYÊN số
- * khách đang cài — luật chỉ thêm số 0, không tự đặt lại tiền.
+ * liên tiếp 2/3/4 kỳ, 1…19+ kỳ chưa về. Mỗi bậc ứng với ô của nó trong lịch
+ * hạn mức: "vừa về" là ô ngày 0, "về liên tiếp n" là ô liên tiếp n, "n kỳ
+ * chưa về" là ô ngày n. Riêng bậc cuối "19+ kỳ chưa về" gom mọi lô khô từ 19
+ * kỳ, nên ứng với HAI ô: ngày 19 và "20+". Bậc bị chặn thì (các) ô đó về 0;
+ * bậc không bị chặn thì GIỮ NGUYÊN số khách đang cài — luật chỉ thêm số 0,
+ * không tự đặt lại tiền.
  *
  * Module thuần: web, bot và cron cùng gọi.
  */
 import type { DrawHits } from "./backtest";
 import { STAKE_PRICE, WIN_PER_POINT, hitsPerDraw } from "./exposure";
-import type { Schedule } from "./limit-engine";
+import { chuanHoaLich, docO, khoaO, tenO, type OLich, type Schedule } from "./lich-han-muc";
 import { CA_HAI_BUOC_LO, type CongTacBuocLo } from "./chan-lo";
-import { dungKy, moiBac, tenBac, type BacKey } from "./slot-stats";
+import { TRAN_BAC, dungKy, moiBac, tenBac, type BacKey } from "./slot-stats";
 import type { Region } from "./types";
 
 const LOS = Array.from({ length: 100 }, (_, i) => String(i).padStart(2, "0"));
@@ -28,15 +30,11 @@ export const MAU_TOI_THIEU_NGAY = 30;
 
 export type LyDoChanNgay = "tong" | "thang" | "cahai";
 
-export interface ViTriLich {
-  loai: "base" | "consecutive";
-  so: number;
-}
-
 export interface BacChan {
   key: BacKey;
   ten: string;
-  viTri: ViTriLich;
+  /** (Các) ô của lịch hạn mức mà bậc này quyết định. */
+  o: OLich[];
   /** Cả quãng: lô-kỳ, nháy, tỷ lệ, phần ăn. */
   mau: number;
   nhay: number;
@@ -65,12 +63,20 @@ export interface KetQuaChanNgay {
   denNgay: string | null;
 }
 
-/** Bậc nào ứng với ô nào trong lịch hạn mức. */
-export function viTriCua(key: BacKey): ViTriLich {
+/**
+ * Bậc nào ứng với (những) ô nào trong lịch hạn mức.
+ *
+ * Bậc khô cuối cùng là "19+ kỳ": slot-stats gom mọi lô khô từ 19 kỳ trở lên
+ * vào đó. Lịch thì tách hai ô, "ngày 19" và "20+". Chặn bậc 19+ mà chỉ ghi 0
+ * vào ô ngày 19 thì lô khô 20 ngày vẫn được nhận theo ô "20+" — luật nói chặn
+ * mà máy không chặn. Nên bậc đó trả về cả hai ô.
+ */
+export function oCuaBac(key: BacKey): OLich[] {
   const [loai, n] = key.split(":");
   const so = Number(n);
-  if (loai === "chuoi") return so <= 1 ? { loai: "base", so: 0 } : { loai: "consecutive", so };
-  return { loai: "base", so };
+  if (loai === "chuoi") return [so <= 1 ? { loai: "ngay", so: 0 } : { loai: "chuoi", so }];
+  if (so >= TRAN_BAC) return [{ loai: "ngay", so: TRAN_BAC }, { loai: "tren" }];
+  return [{ loai: "ngay", so }];
 }
 
 const bienBac = (nhay: number, mau: number, region: Region): number => {
@@ -113,7 +119,7 @@ export function luatChanNgay(draws: DrawHits[], region: Region, buoc: CongTacBuo
     const b2 = buoc.buoc2 && a.mau2 >= MAU_TOI_THIEU_NGAY && bien2 < 0;
     const lyDo: LyDoChanNgay | null = b1 && b2 ? "cahai" : b1 ? "tong" : b2 ? "thang" : null;
     if (lyDo) dem[lyDo]++;
-    return { key, ten: tenBac(key), viTri: viTriCua(key), mau: a.mau, nhay: a.nhay, tyLe, bien, mau2: a.mau2, nhay2: a.nhay2, tyLe2, bien2, b1, b2, lyDo };
+    return { key, ten: tenBac(key), o: oCuaBac(key), mau: a.mau, nhay: a.nhay, tyLe, bien, mau2: a.mau2, nhay2: a.nhay2, tyLe2, bien2, b1, b2, lyDo };
   });
 
   return {
@@ -131,34 +137,36 @@ export function luatChanNgay(draws: DrawHits[], region: Region, buoc: CongTacBuo
 }
 
 export interface DoiLich {
-  /** "ngày 3" / "liên tiếp 2". */
+  /** Tên ô: "ngày 3" / "liên tiếp 2 kỳ" / "20+ ngày". */
   o: string;
-  viTri: ViTriLich;
+  /** Khoá ô: "ngay:3" / "chuoi:2" / "tren". */
+  khoa: string;
   tu: number;
   den: number;
 }
 
 /**
- * Áp danh sách bậc chặn vào một lịch: ô của bậc chặn về 0, mọi ô khác giữ
- * nguyên. Chỉ đụng ô CÓ trong lịch — ô không có thì lịch đang dùng min_limit,
- * bịa thêm ô là đổi nghĩa của lịch. Trả kèm danh sách ô thật sự đổi.
+ * Áp danh sách bậc chặn vào một lịch: MỌI ô của bậc chặn về 0, mọi ô khác giữ
+ * nguyên. Trả kèm danh sách ô thật sự đổi.
+ *
+ * Bản trước bỏ qua ô nào bản lưu không có ("bịa thêm ô là đổi nghĩa của
+ * lịch"). Nghe thì thận trọng, thật ra là lỗ hổng: bậc "về liên tiếp 3 kỳ"
+ * dính luật, ô của nó không có trong bản lưu, nên không có gì được ghi — mà
+ * màn hình vẫn báo "lịch đang khớp với luật" và bảng cài vẫn vẽ ô đó là 0.
+ * Lịch giờ luôn đủ 24 ô (chuanHoaLich), nên bậc chặn nào cũng có ô để ghi.
  */
 export function apVaoLich(lich: Schedule, chan: BacKey[]): { lich: Schedule; doi: DoiLich[] } {
-  const moi: Schedule = {
-    base: { ...lich.base },
-    min_limit: lich.min_limit,
-    consecutive: { ...lich.consecutive },
-    consecutive_reset_after: lich.consecutive_reset_after,
-  };
+  const moi = chuanHoaLich(lich).lich;
   const doi: DoiLich[] = [];
   for (const key of chan) {
-    const vt = viTriCua(key);
-    const bang = vt.loai === "base" ? moi.base : moi.consecutive;
-    if (!(vt.so in bang)) continue;
-    const tu = bang[vt.so];
-    if (tu === 0) continue;
-    bang[vt.so] = 0;
-    doi.push({ o: vt.loai === "base" ? `ngày ${vt.so}` : `liên tiếp ${vt.so}`, viTri: vt, tu, den: 0 });
+    for (const o of oCuaBac(key)) {
+      const tu = docO(moi, o);
+      if (tu === 0) continue;
+      if (o.loai === "tren") moi.min_limit = 0;
+      else if (o.loai === "chuoi") moi.consecutive[o.so] = 0;
+      else moi.base[o.so] = 0;
+      doi.push({ o: tenO(o), khoa: khoaO(o), tu, den: 0 });
+    }
   }
   return { lich: moi, doi };
 }

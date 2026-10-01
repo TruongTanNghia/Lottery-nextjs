@@ -227,6 +227,13 @@ export async function loReport(lo: string): Promise<string> {
         : `<b>${num(item.current_limit)}n</b>`;
 
     lines.push("", `${label(r)} · ${head}`);
+    // Ô nào của bảng hạn mức quyết định con số này — để câu "sao lô này chặn /
+    // sao không chặn" tự trả lời được, không phải đoán.
+    lines.push(
+      `   theo ô <b>${esc(item.o_ten)}</b> · đang cài ${num(item.limit_before_tracking)}n${
+        item.limit_before_tracking === 0 ? " = chặn" : ""
+      }`
+    );
 
     if (item.limit_before_tracking !== item.current_limit) {
       const why = reasons(item).join(", ") || "theo dõi";
@@ -266,7 +273,7 @@ export async function regionReport(region: Region): Promise<string> {
     `<b>${label(region)}</b> — KQ ${ddmm(date)}`,
     "",
     `Nhận cược: <b>${open.length}</b> lô · tổng <b>${num(totalPoints)}n</b>`,
-    locked > 0 ? `Khoá (vừa về): ${locked} lô` : "Không có lô nào bị khoá",
+    locked > 0 ? `Chặn (lô ở ô đang cài 0): ${locked} lô` : "Không có lô nào bị chặn",
     "",
     `<b>Đang giảm 50%: ${cut.length} lô</b>`,
     `   • Nhịp ${watch.min_gap}–${watch.max_gap} kỳ: ${onOff(watch.enabled)}` +
