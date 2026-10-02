@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:lich": "node --experimental-strip-types scripts/kiem-lich.mts"
+    "test:lich": "node --experimental-strip-types scripts/kiem-lich.mts",
+    "test:chuoi": "node --experimental-strip-types scripts/kiem-chuoi.mts"
   },
   "dependencies": {
     "@libsql/client": "0.14.0",
