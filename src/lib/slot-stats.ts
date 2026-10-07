@@ -156,6 +156,11 @@ export interface Ky {
    */
   kho: Record<string, number>;
   chuoi: Record<string, number>;
+  /**
+   * Số kỳ về LIỀN NHAU tính tới kỳ trước — KHÔNG đếm lại sau 4 như `chuoi`.
+   * Bên đá dùng: khách chia "liên tiếp 2 / 3 / 4+ kỳ", tức 5 kỳ liền vẫn là 4+.
+   */
+  lienTiep: Record<string, number>;
 }
 
 const truoc = (d: string) => {
@@ -173,7 +178,7 @@ const cach = (a: string, b: string) => {
 /** Every kỳ tagged with each lô's group that morning. */
 export function dungKy(draws: DrawHits[]): Ky[] {
   const sap = [...draws].sort((a, b) => a.date.localeCompare(b.date));
-  const st = new Map(LOS.map((l) => [l, { last: null as string | null, kho: 0, chuoi: 0 }]));
+  const st = new Map(LOS.map((l) => [l, { last: null as string | null, kho: 0, chuoi: 0, lt: 0 }]));
   const out: Ky[] = [];
 
   for (const d of sap) {
@@ -181,6 +186,7 @@ export function dungKy(draws: DrawHits[]): Ky[] {
     const ve: Record<string, number> = {};
     const kho: Record<string, number> = {};
     const chuoi: Record<string, number> = {};
+    const lienTiep: Record<string, number> = {};
     for (const l of LOS) {
       const s = st.get(l)!;
       bac[l] =
@@ -190,18 +196,22 @@ export function dungKy(draws: DrawHits[]): Ky[] {
       ve[l] = d.hits[l] ?? 0;
       kho[l] = s.kho;
       chuoi[l] = s.chuoi;
+      lienTiep[l] = s.lt;
     }
-    out.push({ date: d.date, bac, ve, kho, chuoi });
+    out.push({ date: d.date, bac, ve, kho, chuoi, lienTiep });
 
     for (const [l, s] of st) {
       if ((d.hits[l] ?? 0) > 0) {
-        s.chuoi = s.last === truoc(d.date) ? s.chuoi + 1 : 1;
+        const lien = s.last === truoc(d.date);
+        s.chuoi = lien ? s.chuoi + 1 : 1;
         if (s.chuoi > TRAN_CHUOI) s.chuoi = 1;
+        s.lt = lien ? s.lt + 1 : 1;
         s.kho = 0;
         s.last = d.date;
       } else {
         s.kho = s.last ? cach(d.date, s.last) : s.kho + 1;
         s.chuoi = 0;
+        s.lt = 0;
       }
     }
   }

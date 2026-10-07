@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, SO_O_DA, TRAN_DA, TRUNG_DA, apChanLuat, bangMacDinh, bienDa,
+  CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, SO_BAC_DA, SO_O_DA, THU_TU_BAC_DA, TRAN_DA, TRUNG_DA, apChanLuat, bangMacDinh, bienDa, tenBacDa,
   CAC_MUC_RUT_GON, capBiChan, chiaKhoiChanDa, dongChanLq, khoKyToi, khoaCap, khoiChanLq, nhomChanDa, soVong, thongKeCapTheoThang,
   type BangDa, type KyDa, type LyDoChan, type OCapDayDu,
 } from "@/lib/da";
@@ -13,7 +13,9 @@ import { useToast } from "./Toast";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
 const TRAN = TRAN_DA;
-const SO_CUNG = TRAN + 1;
+const SO_CUNG = SO_BAC_DA;
+/** Vị trí của một bậc theo thứ tự đọc (vừa ra, liên tiếp 2/3/4+, 1 … 15+). */
+const HANG = new Map(THU_TU_BAC_DA.map((b, i) => [b, i]));
 const SO_CHEO = SO_O_DA - SO_CUNG;
 
 const tien = (n: number) => {
@@ -27,9 +29,9 @@ const pc = (n: number) => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(2) + "%";
 const mau = (n: number) => (n > 0 ? "#7ff0c0" : n < 0 ? "#ff9d9d" : "#cbd5e1");
 const so = (n: number) => n.toLocaleString("vi-VN");
 
-/** Khách gọi các bậc là "ngày 1, ngày 2…"; bậc 0 là con vừa ra, bậc 10 gom cả 10 trở lên. */
-const tenNgay = (i: number) => (i === 0 ? "Vừa ra" : i >= TRAN ? `Ngày ${TRAN}+` : `Ngày ${i}`);
-const tenNgayThuong = (i: number) => (i === 0 ? "vừa ra" : i >= TRAN ? `ngày ${TRAN}+` : `ngày ${i}`);
+/** Khách gọi các bậc là "ngày 1, ngày 2…"; bậc 0 là con vừa ra (1 kỳ), rồi liên tiếp 2/3/4+ kỳ, ngày 15 gom cả 15 trở lên. */
+const tenNgay = (i: number) => tenBacDa(i, "dai");
+const tenNgayThuong = (i: number) => tenBacDa(i, "dai").toLowerCase();
 const tenO = (i: number, j: number) =>
   i === j ? `${tenNgay(i)} đá với nhau` : `${tenNgay(i)} đá chéo ${tenNgayThuong(j)}`;
 
@@ -122,10 +124,10 @@ export default function DaBangTien({
   const capKyToi = useMemo(() => {
     const m = new Map<string, number>();
     if (!tt) return m;
-    const dem = Array.from({ length: TRAN + 1 }, () => 0);
-    for (const v of Object.values(tt.kho)) dem[Math.min(TRAN, v)]++;
-    for (let i = 0; i <= TRAN; i++)
-      for (let j = i; j <= TRAN; j++) m.set(khoaCap(i, j), i === j ? soVong(dem[i]) : dem[i] * dem[j]);
+    const dem = Array.from({ length: SO_BAC_DA }, () => 0);
+    for (const v of Object.values(tt.bac)) dem[v]++;
+    for (let i = 0; i < SO_BAC_DA; i++)
+      for (let j = i; j < SO_BAC_DA; j++) m.set(khoaCap(i, j), i === j ? soVong(dem[i]) : dem[i] * dem[j]);
     return m;
   }, [tt]);
 
@@ -152,7 +154,7 @@ export default function DaBangTien({
   // `lq` (con chặn tròn, /chanlq) và `chuoi` (cặp còn lại, /chanloai).
   const lenhChan = useMemo(() => {
     if (!tt) return null;
-    const cap = capBiChan(tt.kho, hieuLuc, TRAN);
+    const cap = capBiChan(tt.bac, hieuLuc, TRAN);
     // Gom vòng như bot, để chuỗi copy trên web và chuỗi bot trả là một.
     const { nhom, con100, capThem } = nhomChanDa(cap, khongLap, rutGonNhap, nguongGonNhap);
     const chuoi = chiaKhoiChanDa(provincePrefix(region), nhom, Number.POSITIVE_INFINITY, region)[0] ?? "";
@@ -195,9 +197,13 @@ export default function DaBangTien({
     if (lyDo[k]) setChanLuatNhap((d) => (d.includes(k) ? d : [...d, k].sort()));
   };
 
-  const hien = tkt.bang.filter((o) =>
-    nhom === "cung" ? o.i === o.j : o.i !== o.j && (ngay < 0 || o.i === ngay || o.j === ngay)
-  );
+  const hien = tkt.bang
+    .filter((o) => (nhom === "cung" ? o.i === o.j : o.i !== o.j && (ngay < 0 || o.i === ngay || o.j === ngay)))
+    .sort((a, b) => {
+      const [a1, a2] = [HANG.get(a.i)!, HANG.get(a.j)!].sort((x, y) => x - y);
+      const [b1, b2] = [HANG.get(b.i)!, HANG.get(b.j)!].sort((x, y) => x - y);
+      return a1 - b1 || a2 - b2;
+    });
 
   const dat = (k: string, v: number) =>
     setNhap((b) => ({ ...b, [k]: Math.max(0, Math.min(DIEM_DA_TOI_DA, Math.round(v))) }));
@@ -257,7 +263,7 @@ export default function DaBangTien({
         <div>
           <h2 className="plate-title">💰 Bảng Tiền Đá — Cài Riêng Từng Ô</h2>
           <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-            {REGION_LABELS[region]} · {SO_CUNG} ô cùng ngày + {SO_CHEO} ô đá chéo (vừa ra → {TRAN}+) · 1 điểm = {tien(gia)} ·{" "}
+            {REGION_LABELS[region]} · {SO_CUNG} ô cùng ngày + {SO_CHEO} ô đá chéo (vừa ra, liên tiếp 2 / 3 / 4+ kỳ, ngày 1 → {TRAN}+) · 1 điểm = {tien(gia)} ·{" "}
             {luuLuc ? `lưu lần cuối ${new Date(luuLuc).toLocaleString("vi-VN")}` : "chưa lưu lần nào"}
           </p>
         </div>
@@ -545,15 +551,16 @@ export default function DaBangTien({
         {nhom === "cheo" && (
           <div className="flex flex-wrap items-center gap-1.5" data-bang-chon-ngay>
             <span className="eyebrow">Xem ngày</span>
-            {Array.from({ length: TRAN + 1 }, (_, i) => (
+            {THU_TU_BAC_DA.map((i) => (
               <button
                 key={i}
                 onClick={() => setNgay(i)}
+                data-bang-xem-ngay={i}
                 className={`px-2 py-1 rounded-lg text-xs font-bold transition-colors ${
                   ngay === i ? "bg-[#2563eb] text-white" : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16]"
                 }`}
               >
-                {i === 0 ? "vừa ra" : i >= TRAN ? `${TRAN}+` : i}
+                {i === 0 ? "vừa ra" : tenBacDa(i, "ngan")}
               </button>
             ))}
             <button
@@ -882,7 +889,7 @@ function LuoiTien({
   bam: (i: number, j: number) => void;
 }) {
   const m = new Map(bang.map((x) => [khoaCap(x.i, x.j), x]));
-  const tenCot = (i: number) => (i === 0 ? "vr" : i >= TRAN ? `${TRAN}+` : `${i}`);
+  const tenCot = (i: number) => tenBacDa(i, "ngan");
   const nen = (bien: number) => {
     const d = Math.max(-8, Math.min(8, bien)) / 8;
     return d >= 0 ? `rgba(16,185,129,${(0.1 + d * 0.35).toFixed(3)})` : `rgba(220,38,38,${(0.12 + -d * 0.4).toFixed(3)})`;
@@ -898,17 +905,17 @@ function LuoiTien({
           <thead>
             <tr>
               <th className="text-[var(--text-muted)] font-semibold px-0.5">ngày</th>
-              {Array.from({ length: TRAN + 1 }, (_, j) => (
+              {THU_TU_BAC_DA.map((j) => (
                 <th key={j} className="numeric font-semibold text-[var(--text-muted)] px-0.5">{tenCot(j)}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: TRAN + 1 }, (_, i) => (
+            {THU_TU_BAC_DA.map((i, hi) => (
               <tr key={i}>
                 <th className="numeric font-semibold text-[var(--text-muted)] text-right px-0.5">{tenCot(i)}</th>
-                {Array.from({ length: TRAN + 1 }, (_, j) => {
-                  if (j < i) return <td key={j} />;
+                {THU_TU_BAC_DA.map((j, hj) => {
+                  if (hj < hi) return <td key={j} />;
                   const k = khoaCap(i, j);
                   const o = m.get(k);
                   const diem = hieuLuc[k] ?? 0;

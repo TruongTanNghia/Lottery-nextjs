@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
-  DIP_TOI_THIEU, SO_O_DA, TRAN_DA, kiemThuDa, thongKeCapTheoThang, thongKeDa,
+  DIP_TOI_THIEU, SO_O_DA, THU_TU_BAC_DA, TRAN_DA, kiemThuDa, tenBacDa, thongKeCapTheoThang, thongKeDa,
   type KyDa, type OCapDayDu,
 } from "@/lib/da";
 import { REGION_LABELS, type Region } from "@/lib/types";
@@ -16,8 +16,8 @@ const tien = (n: number) => {
 };
 const pc = (n: number) => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(2) + "%";
 const mau = (n: number) => (n > 0 ? "#7ff0c0" : n < 0 ? "#ff9d9d" : "#cbd5e1");
-const tenNgay = (i: number) => (i === 0 ? "vừa ra" : i >= TRAN ? `${TRAN}+ kỳ` : `${i} kỳ`);
-const tenCot = (i: number) => (i === 0 ? "vừa ra" : i >= TRAN ? `${TRAN}+` : `${i}`);
+const tenNgay = (i: number) => tenBacDa(i, "thuong");
+const tenCot = (i: number) => (i === 0 ? "vừa ra" : tenBacDa(i, "ngan"));
 const tenCap = (o: { i: number; j: number }) =>
   o.i === o.j ? `hai con cùng ${tenNgay(o.i)}` : `${tenNgay(o.i)} + ${tenNgay(o.j)}`;
 
@@ -84,7 +84,7 @@ export default function DaCapNgay({ ky, region }: { ky: KyDa[]; region: Region }
 
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="eyebrow">Xem thẻ</span>
-          {Array.from({ length: TRAN + 1 }, (_, i) => (
+          {THU_TU_BAC_DA.map((i) => (
             <button
               key={i}
               onClick={() => setLoc({ kieu: "ngay", ngay: i })}
@@ -231,7 +231,7 @@ function Luoi({ bang, chon, bam }: { bang: OCapDayDu[]; chon: number; bam: (n: n
           <thead>
             <tr>
               <th className="text-[var(--text-muted)] font-semibold px-1">ngày</th>
-              {Array.from({ length: TRAN + 1 }, (_, j) => (
+              {THU_TU_BAC_DA.map((j) => (
                 <th key={j} className="px-0.5">
                   <button onClick={() => bam(j)} className={`numeric font-semibold px-1 rounded ${chon === j ? "text-white bg-[#2563eb]" : "text-[var(--text-muted)]"}`}>
                     {tenCot(j)}
@@ -241,16 +241,16 @@ function Luoi({ bang, chon, bam }: { bang: OCapDayDu[]; chon: number; bam: (n: n
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: TRAN + 1 }, (_, i) => (
+            {THU_TU_BAC_DA.map((i, hi) => (
               <tr key={i}>
                 <th className="text-right px-0.5">
                   <button onClick={() => bam(i)} className={`numeric font-semibold px-1 rounded ${chon === i ? "text-white bg-[#2563eb]" : "text-[var(--text-muted)]"}`}>
                     {tenCot(i)}
                   </button>
                 </th>
-                {Array.from({ length: TRAN + 1 }, (_, j) => {
-                  if (j < i) return <td key={j} />;
-                  const o = m.get(`${i}-${j}`);
+                {THU_TU_BAC_DA.map((j, hj) => {
+                  if (hj < hi) return <td key={j} />;
+                  const o = m.get(i <= j ? `${i}-${j}` : `${j}-${i}`);
                   if (!o) return <td key={j} className="text-[var(--text-muted)] text-center">·</td>;
                   const sang = chon === i || chon === j;
                   return (

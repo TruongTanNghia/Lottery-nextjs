@@ -21,7 +21,7 @@ import { getConfigValue, query, setConfigValue } from "@/lib/db";
 import { dungKy } from "@/lib/slot-stats";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  NGUONG_RUT_GON, apChanLuat, apLuatDinh, bangMacDinh, capBiChan, chuanHoaBang, chuanHoaBuoc, chuanHoaDanhSachO, chuanHoaNguongGon, khoKyToi, luatHaiBuoc,
+  NGUONG_RUT_GON, apChanLuat, apLuatDinh, bangMacDinh, capBiChan, chuanHoaBang, laBangCu, moRongDanhSachCu, chuanHoaBuoc, chuanHoaDanhSachO, chuanHoaNguongGon, khoKyToi, luatHaiBuoc,
   thongKeCapTheoThang, thongKeDa,
   type BangDa, type LuatHaiBuoc, type LyDoChan,
 } from "@/lib/da";
@@ -57,6 +57,7 @@ export async function docBangDa(region: Region): Promise<BangDaLuu> {
   if (!raw) return macDinh();
   try {
     const o = JSON.parse(raw) as Partial<Record<keyof BangDaLuu, unknown>>;
+    const cu = !!o.bang && typeof o.bang === "object" && laBangCu(Object.keys(o.bang as object));
     return {
       bang: chuanHoaBang(o.bang),
       luuLuc: typeof o.luuLuc === "string" ? o.luuLuc : null,
@@ -64,8 +65,9 @@ export async function docBangDa(region: Region): Promise<BangDaLuu> {
       tuDong: o.tuDong !== false && (o.buoc1 !== false || o.buoc2 !== false),
       buoc1: o.buoc1 !== false,
       buoc2: o.buoc2 !== false,
-      chanLuat: chuanHoaDanhSachO(o.chanLuat),
-      moTay: chuanHoaDanhSachO(o.moTay),
+      // Lưu từ trước khi có bậc liên tiếp: ô chặn/mở cũ kéo theo các ô liên tiếp nó đã bao.
+      chanLuat: cu ? moRongDanhSachCu(chuanHoaDanhSachO(o.chanLuat)) : chuanHoaDanhSachO(o.chanLuat),
+      moTay: cu ? moRongDanhSachCu(chuanHoaDanhSachO(o.moTay)) : chuanHoaDanhSachO(o.moTay),
       luatLuc: typeof o.luatLuc === "string" ? o.luatLuc : null,
       rutGon: o.rutGon === true,
       nguongGon: chuanHoaNguongGon(o.nguongGon),
@@ -91,7 +93,10 @@ export async function luuBangDa(
 ): Promise<BangDaLuu> {
   const b = chuanHoaBuoc(buoc);
   const cu = await docBangDa(region);
-  const mo = new Set(chuanHoaDanhSachO(moTay));
+  // Trang mở từ trước bản có bậc liên tiếp gửi bảng 136 ô: mở rộng danh sách như lúc đọc.
+  const bangCu = !!bang && typeof bang === "object" && laBangCu(Object.keys(bang as object));
+  const moRong = (ds: string[]) => (bangCu ? moRongDanhSachCu(ds) : ds);
+  const mo = new Set(moRong(chuanHoaDanhSachO(moTay)));
   const data: BangDaLuu = {
     bang: chuanHoaBang(bang),
     luuLuc: new Date().toISOString(),
@@ -99,7 +104,7 @@ export async function luuBangDa(
     buoc1: b.buoc1,
     buoc2: b.buoc2,
     // Ô đã mở tay thì không thể đồng thời nằm trong danh sách luật chặn.
-    chanLuat: chuanHoaDanhSachO(chanLuat).filter((k) => !mo.has(k)),
+    chanLuat: moRong(chuanHoaDanhSachO(chanLuat)).filter((k) => !mo.has(k)),
     moTay: [...mo].sort(),
     luatLuc: cu.luatLuc,
     rutGon,
@@ -176,7 +181,7 @@ export async function bangHieuLuc(region: Region): Promise<BangHieuLuc> {
     lyDo: ap.lyDo,
     moi: ap.moi,
     ngayCuoi: tt?.ngayCuoi ?? null,
-    capChan: tt ? capBiChan(tt.kho, bang) : [],
+    capChan: tt ? capBiChan(tt.bac, bang) : [],
     soKy: ky.length,
   };
 }

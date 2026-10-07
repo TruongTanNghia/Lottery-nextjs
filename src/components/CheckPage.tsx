@@ -5,7 +5,7 @@ import type { DrawHits } from "@/lib/backtest";
 import { luatChanLo } from "@/lib/chan-lo";
 import { apChanLuat, capBiChan, chuanHoaBang, khoKyToi } from "@/lib/da";
 import {
-  bacDaMien, canCu, canTai, capDaBiChan, diemODa, docChuoi, kiemDa, kiemLo, luatLoMien, oDaCua, trangThaiChu, trungGiuaDong,
+  bacDaMien, canCu, canTai, capDaBiChan, diemODa, docChuoi, kiemDa, kiemLo, luatLoMien, oDaCua, tenBacDaCheck, trangThaiChu, trungGiuaDong,
   type DuLieuMien, type GhiChu, type KetQuaDa, type KetQuaLo, type Khoi, type LuatLo, type LuatMien, type MucDo,
 } from "@/lib/kiem-chuoi";
 import { provincePrefix } from "@/lib/provinces";
@@ -120,7 +120,7 @@ function SoKyToi({ region }: { region: Region }) {
         const tinhLai = capDaBiChan(dl, luat);
         const tt = khoKyToi(dl.draws);
         const bangHL = dl.da.tuDong ? apChanLuat(chuanHoaBang(dl.da.bang), dl.da.chanLuat) : chuanHoaBang(dl.da.bang);
-        const may = new Set((tt ? capBiChan(tt.kho, bangHL) : []).map(([a, b]) => (a < b ? `${a}-${b}` : `${b}-${a}`)));
+        const may = new Set((tt ? capBiChan(tt.bac, bangHL) : []).map(([a, b]) => (a < b ? `${a}-${b}` : `${b}-${a}`)));
         da = { tinhLai: tinhLai.size, may: may.size, khop: tinhLai.size === may.size && [...tinhLai].every((p) => may.has(p)) };
       }
       if (id === lan.current) setKq({ luc: new Date(), dl, luat, da });
@@ -331,7 +331,7 @@ function OChanDa({ dl, luat }: { dl: DuLieuMien; luat: LuatMien }) {
     const o = oDaCua(bac[LOS[x]], bac[LOS[y]]);
     if (diemODa(dl.da, o) <= 0) dem.set(o, (dem.get(o) ?? 0) + 1);
   }
-  const ten = (n: number) => (n >= 15 ? "15+ ngày" : n === 0 ? "vừa về" : `${n} ngày`);
+  const ten = tenBacDaCheck;
   const ds = [...dem].sort((a, b) => b[1] - a[1]);
   if (ds.length === 0) return null;
   return (
@@ -709,7 +709,7 @@ function KhoiLo({ x, luat, chiSai }: { x: KetQuaLo; luat: LuatMien; chiSai: bool
 
 function KhoiDa({ x, luat, dl }: { x: KetQuaDa; luat: LuatMien; dl: DuLieuMien }) {
   const bac = bacDaMien(dl, luat);
-  const tenBac = (n: number) => (n >= 15 ? "15+ ngày" : n === 0 ? "vừa về" : `${n} ngày`);
+  const tenBac = tenBacDaCheck;
   /** "05 (3 ngày) đá 17 (vừa về) → ô 0-3 đang cài 0" — cho người đọc tự soi lại bảng tiền đá. */
   const giai = (p: string) => {
     const [a, b] = p.split("-");

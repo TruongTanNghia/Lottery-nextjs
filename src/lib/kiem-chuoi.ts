@@ -836,10 +836,20 @@ export function trungGiuaDong(kq: KetQuaLo[]): void {
 
 const kc = (a: string, b: string) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 const TRAN_BAC_DA = 15;
+/** Bậc riêng cho con về liền 2 / 3 / 4+ kỳ (4+ không đếm lại như bên lô). */
+const BAC_LT_DA = { 2: 16, 3: 17, 4: 18 } as const;
+
+/** Tên bậc đá để in ra trang Check — tự viết, không mượn da.ts. */
+export function tenBacDaCheck(b: number): string {
+  if (b === BAC_LT_DA[2]) return "liên tiếp 2 kỳ";
+  if (b === BAC_LT_DA[3]) return "liên tiếp 3 kỳ";
+  if (b === BAC_LT_DA[4]) return "liên tiếp 4+ kỳ";
+  return b === 0 ? "vừa ra" : b >= TRAN_BAC_DA ? `${TRAN_BAC_DA}+ ngày` : `${b} ngày`;
+}
 /** Mức rút gọn thấp nhất mà web/bot cho chọn (da.ts chuanHoaNguongGon). */
 const MUC_GON_THAP_NHAT = 50;
 
-/** Bậc ngày (0…15) của 100 con ở kỳ tới — tính thẳng từ lịch sử. */
+/** Bậc của 100 con ở kỳ tới — tính thẳng từ lịch sử: 0 vừa ra, 1…15+ ngày khô, 16/17/18 về liền 2/3/4+ kỳ. */
 export function bacDaMien(dl: DuLieuMien, luat: LuatMien): Record<string, number> {
   const sap = [...dl.draws].sort((a, b) => a.date.localeCompare(b.date));
   const out: Record<string, number> = {};
@@ -847,7 +857,7 @@ export function bacDaMien(dl: DuLieuMien, luat: LuatMien): Record<string, number
     const l = luat.lo[lo];
     // Chưa từng về: khô suốt từ kỳ đầu trong kho.
     const ngay = l.last ? l.ngay : sap.length && luat.ngayCuoi ? cachNgay(luat.ngayCuoi, sap[0].date) + 1 : TRAN_BAC_DA;
-    out[lo] = Math.min(TRAN_BAC_DA, ngay);
+    out[lo] = ngay === 0 && l.lienTuc >= 2 ? BAC_LT_DA[Math.min(4, l.lienTuc) as 2 | 3 | 4] : Math.min(TRAN_BAC_DA, ngay);
   }
   return out;
 }

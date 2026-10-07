@@ -14,12 +14,12 @@
  * chủ, vì phần đó cần DB.
  */
 import {
-  canCu, capDaBiChan, docChuoi, kiemDa, kiemLo, luatLoMien, trungGiuaDong, HAU_TO_DA,
+  bacDaMien, canCu, capDaBiChan, docChuoi, kiemDa, kiemLo, luatLoMien, trungGiuaDong, HAU_TO_DA,
   type CongTacGiam, type DongMay, type DuLieuMien, type KyVe, type LichDoc,
 } from "../src/lib/kiem-chuoi.ts";
 import { provincePrefix } from "../src/lib/provinces.ts";
 import { chuanHoaLich, dungTrangThai, mucTheoLich } from "../src/lib/lich-han-muc.ts";
-import { apChanLuat, bangMacDinh, capBiChan, chiaKhoiChanDa, dongChanLq, khoKyToi, khoiChanLq, nhomChanDa } from "../src/lib/da.ts";
+import { SO_O_DA, apChanLuat, bangMacDinh, capBiChan, chiaKhoiChanDa, chuanHoaBang, dongChanLq, khoKyToi, khoiChanLq, laBangCu, moRongDanhSachCu, nhomChanDa } from "../src/lib/da.ts";
 
 type Region = "xsmn" | "xsmt" | "xsmb";
 let pass = 0, fail = 0;
@@ -229,12 +229,55 @@ let dlDa: DuLieuMien | null = null, capDaThat: [string, string][] = [];
     const cong = congCo(false);
     const { may, lich } = mayThat(draws, lichNgauNhien(), cong);
     const dl: DuLieuMien = { region: "xsmn", draws, lich, may, cong, da: { bang, tuDong, chanLuat, rutGon: true, nguongGon: 90 } };
-    const that = capBiChan(khoKyToi(draws)!.kho, tuDong ? apChanLuat(bang, chanLuat) : bang);
+    const that = capBiChan(khoKyToi(draws)!.bac, tuDong ? apChanLuat(bang, chanLuat) : bang);
     const E = capDaBiChan(dl, luatLoMien(dl));
     const thatSet = new Set(that.map(([a, b]) => (a < b ? `${a}-${b}` : `${b}-${a}`)));
     if (E.size !== thatSet.size || [...E].some((p) => !thatSet.has(p))) lechCap++;
   }
   ok("25 bảng tiền đá ngẫu nhiên (luật bật/tắt): tập cặp bị chặn tính lại = tập cặp của bộ máy đá", lechCap === 0, String(lechCap));
+
+  // Bậc liên tiếp 2 / 3 / 4+ kỳ (khách: "thiếu ra liên tiếp 2 kì, 3 kì, 4 kì+").
+  let lechBac = 0, coLT = { 16: 0, 17: 0, 18: 0 } as Record<number, number>, ltSaiNgay = 0;
+  for (let lan = 0; lan < 60; lan++) {
+    const draws = lichSu(30 + Math.floor(rnd() * 30), 0.15);
+    const cong = congCo(false);
+    const { may, lich } = mayThat(draws, lichNgauNhien(), cong);
+    const dl: DuLieuMien = { region: "xsmn", draws, lich, may, cong };
+    const luat = luatLoMien(dl);
+    const a = bacDaMien(dl, luat), b = khoKyToi(draws)!.bac;
+    for (const lo of Object.keys(b)) {
+      if (a[lo] !== b[lo]) lechBac++;
+      if (b[lo] > 15) coLT[b[lo]]++;
+      // Con ở bậc liên tiếp phải về đúng kỳ cuối và cả ngày lịch liền trước đó.
+      if (b[lo] > 15 && (luat.lo[lo].ngay !== 0 || luat.lo[lo].lienTuc < 2)) ltSaiNgay++;
+    }
+  }
+  ok("60 lịch sử: bậc đá (gồm liên tiếp 2/3/4+) tính lại độc lập = bộ máy đá, từng con", lechBac === 0, String(lechBac));
+  ok("có đủ cả 3 bậc liên tiếp xuất hiện trong dữ liệu thử", coLT[16] > 0 && coLT[17] > 0 && coLT[18] > 0, JSON.stringify(coLT));
+  ok("con ở bậc liên tiếp đều vừa về và về liền ≥ 2 ngày lịch", ltSaiNgay === 0, String(ltSaiNgay));
+  {
+    // Kỳ bị hổng (thiếu ngày quay) thì không tính là liền: 01 về 05/01 và 07/01, không có kỳ 06/01.
+    const d3: KyVe[] = [{ date: ngay(0), hits: { "01": 1 } }, { date: ngay(1), hits: { "01": 1 } }, { date: ngay(3), hits: { "01": 1, "02": 1 } }, { date: ngay(4), hits: { "01": 1, "02": 1 } }, { date: ngay(5), hits: { "01": 1, "02": 1, "03": 1 } }];
+    const kk = khoKyToi(d3)!;
+    ok("01 về 3 kỳ liền sau kỳ hổng → LT3 (không cộng 2 kỳ trước chỗ hổng); 02 → LT3; 03 → vừa ra", kk.bac["01"] === 17 && kk.bac["02"] === 17 && kk.bac["03"] === 0, `${kk.bac["01"]} ${kk.bac["02"]} ${kk.bac["03"]}`);
+    const d5 = [0, 1, 2, 3, 4, 5].map((i) => ({ date: ngay(i), hits: { "04": 1 } as Record<string, number> }));
+    ok("về 6 kỳ liền → LT4+ (không đếm lại như bên lô)", khoKyToi(d5)!.bac["04"] === 18);
+  }
+  // Bảng cũ (136 ô, chưa có bậc liên tiếp) đọc lên phải chặn ĐÚNG các cặp như trước — chưa đụng gì thì không đổi.
+  let lechCu = 0;
+  for (let lan = 0; lan < 40; lan++) {
+    const draws = lichSu(30 + Math.floor(rnd() * 30), 0.15);
+    const tt = khoKyToi(draws)!;
+    const bacCu = Object.fromEntries(Object.entries(tt.bac).map(([lo, v]) => [lo, v > 15 ? 0 : v]));
+    const cu: Record<string, number> = {};
+    for (let i = 0; i <= 15; i++) for (let j = i; j <= 15; j++) cu[`${i}-${j}`] = rnd() < 0.4 ? 0 : 100;
+    const luatCu = Object.keys(cu).filter(() => rnd() < 0.1);
+    const truoc = capBiChan(bacCu, apChanLuat(cu, luatCu)).map(([a, b]) => `${a}-${b}`).sort();
+    const moi = chuanHoaBang(cu);
+    const sau = capBiChan(tt.bac, apChanLuat(moi, moRongDanhSachCu(luatCu))).map(([a, b]) => `${a}-${b}`).sort();
+    if (!laBangCu(Object.keys(cu)) || Object.keys(moi).length !== SO_O_DA || truoc.join() !== sau.join()) lechCu++;
+  }
+  ok(`40 bảng cũ 136 ô: đọc lên thành ${SO_O_DA} ô, các cặp bị chặn y như trước`, lechCu === 0, String(lechCu));
   // Bảng chặn dày, để có cả con chặn tròn ở nhiều mức (99, 90, 80…) lẫn vòng — đúng cảnh khách đang dùng Rút gọn.
   for (let lan = 0; lan < 400 && !dlDa; lan++) {
     const draws = lichSu(60, 0.05);
@@ -242,9 +285,12 @@ let dlDa: DuLieuMien | null = null, capDaThat: [string, string][] = [];
     for (const k of Object.keys(bang)) if (rnd() < 0.6) bang[k] = 0;
     const cong = congCo(false);
     const { may, lich } = mayThat(draws, lichNgauNhien(), cong);
-    const that = capBiChan(khoKyToi(draws)!.kho, bang);
+    const that = capBiChan(khoKyToi(draws)!.bac, bang);
     const t90 = nhomChanDa(that, false, true, 90), t80 = nhomChanDa(that, false, true, 80), t99 = nhomChanDa(that, false, false, 99);
-    if (t99.con100.length >= 1 && t90.con100.length > t99.con100.length && t80.con100.length > t90.con100.length && t80.con100.length <= 70 && t90.nhom.length >= 5) {
+    const demCon: Record<string, number> = {};
+    for (const [x, y] of that) { demCon[x] = (demCon[x] ?? 0) + 1; demCon[y] = (demCon[y] ?? 0) + 1; }
+    const coConYeu = LOS.some((c) => (demCon[c] ?? 0) < 40);
+    if (coConYeu && t99.con100.length >= 1 && t90.con100.length > t99.con100.length && t80.con100.length > t90.con100.length && t80.con100.length <= 70 && t90.nhom.length >= 5) {
       dlDa = { region: "xsmn", draws, lich, may, cong, da: { bang, tuDong: false, chanLuat: [], rutGon: false, nguongGon: 90 } };
       capDaThat = that;
     }
@@ -412,9 +458,9 @@ console.log("\n===== 6. CÁC LỖI ĐỢT RÀ SOÁT 02/10 ĐÃ XÁC NHẬN — m
   // da:0 — con chặn tròn dưới 50/99
   const bac: Record<string, number> = {};
   for (const [a, b] of capDaThat) { bac[a] = (bac[a] ?? 0) + 1; bac[b] = (bac[b] ?? 0) + 1; }
-  const yeu = LOS.find((c) => (bac[c] ?? 0) < 40 && !s99.con.includes(c))!;
+  const yeu = LOS.filter((c) => !s99.con.includes(c)).sort((x, y) => (bac[x] ?? 0) - (bac[y] ?? 0))[0];
   const d0 = KD([khoiChanLq([dongChanLq(DAU[r5], [...s99.con, yeu].sort(), r5)]), ...s99.loai].join(NL));
-  ok(`[da:0] /chanlq có thêm con ${yeu} (bảng chỉ chặn ${bac[yeu] ?? 0}/99) → SAI, các cặp oan nằm ở 'chặn oan'`, d0.mucDo === "sai" && d0.thua.length > 0 && d0.thua.every((p) => p.split("-").includes(yeu)) && d0.ghiChu.some((g) => g.tieuDe.includes("chặn quá ít")));
+  ok(`[da:0] /chanlq có thêm con ${yeu} (bảng chỉ chặn ${bac[yeu] ?? 0}/99) → SAI, các cặp oan nằm ở 'chặn oan'`, (bac[yeu] ?? 0) < 50 && d0.mucDo === "sai" && d0.thua.length > 0 && d0.thua.every((p) => p.split("-").includes(yeu)) && d0.ghiChu.some((g) => g.tieuDe.includes("chặn quá ít")));
   // da:2 — dòng đá bị cắt mất hết hậu tố, nằm dưới dòng lệnh
   ok("[da:2] '/chanlq⏎…: 07 12 30' (mất ' dx0n .') → SAI 'cắt cụt'", KD(`/chanlq${NL}${DAU[r5]}: 07 12 30`).ghiChu.some((g) => g.muc === "sai" && g.tieuDe.includes("cắt cụt")));
   ok("[da:2] '…: 07 12 30 dx0' (hậu tố cắt dở) → SAI", KD(`/chanlq${NL}${DAU[r5]}: 07 12 30 dx0`).mucDo === "sai");

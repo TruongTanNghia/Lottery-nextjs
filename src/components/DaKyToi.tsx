@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  GIA_DA, TRAN_DA, TRUNG_DA, bienDa, khoKyToi, soVong, thongKeCapTheoThang,
+  GIA_DA, SO_BAC_DA, THU_TU_BAC_DA, TRAN_DA, TRUNG_DA, bienDa, khoKyToi, soVong, tenBacDa, thongKeCapTheoThang,
   type BangDa, type KyDa, type NhanO,
 } from "@/lib/da";
 import { useToast } from "./Toast";
@@ -18,8 +18,8 @@ const tien = (n: number) => {
   return `${s}${(a / 1_000_000).toFixed(1)}tr`;
 };
 const pc = (n: number) => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(2) + "%";
-const tenNgay = (i: number) => (i === 0 ? "vừa ra" : i >= TRAN ? `${TRAN}+ kỳ` : `${i} kỳ`);
-const nhanNgan = (i: number) => (i === 0 ? "mới" : i >= TRAN ? `${TRAN}+` : `${i}k`);
+const tenNgay = (i: number) => tenBacDa(i, "thuong");
+const nhanNgan = (i: number) => (i === 0 ? "mới" : i > TRAN ? tenBacDa(i, "ngan") : i >= TRAN ? `${TRAN}+` : `${i}k`);
 const dd = (v: string) => `${v.slice(8, 10)}/${v.slice(5, 7)}`;
 
 const XANH = { nen: "rgba(16,185,129,0.85)", vien: "#34e6a8", chu: "#04281c" };
@@ -73,9 +73,9 @@ export default function DaKyToi({
   const d = useMemo(() => {
     if (!tt || !tkt) return null;
     const bac: Record<string, number> = {};
-    const nhom: string[][] = Array.from({ length: TRAN + 1 }, () => []);
+    const nhom: string[][] = Array.from({ length: SO_BAC_DA }, () => []);
     for (const lo of LOS) {
-      bac[lo] = Math.min(TRAN, tt.kho[lo]);
+      bac[lo] = tt.bac[lo];
       nhom[bac[lo]].push(lo);
     }
     const nhanO = new Map<string, { nhan: NhanO; bien: number }>();
@@ -172,13 +172,15 @@ export default function DaKyToi({
       toast.show("error", "Trình duyệt không cho copy — bấm giữ để chép tay");
     }
   };
-  const chuTheoNgay = d.nhom.map((ds, i) => `${tenNgay(i)} (${ds.length} con): ${ds.join(" ")}`).join("\n");
+  const chuTheoNgay = THU_TU_BAC_DA.map((i) => `${tenNgay(i)} (${d.nhom[i].length} con): ${d.nhom[i].join(" ")}`).join("\n");
   const chuNe = d.ne.map((x) => `NÉ ${tenNgay(x.i)} x ${tenNgay(x.j)}: [${x.conI.join(" ")}] x [${x.conJ.join(" ")}]`).join("\n");
 
   /** Màu một ô trên bảng, tuỳ đang chọn gì. */
   const mauO = (lo: string): React.CSSProperties => {
     const b = d.bac[lo];
-    const goc = { background: `rgba(56,189,248,${(0.5 - b * (0.42 / TRAN)).toFixed(3)})`, color: "#fff", borderColor: "transparent" };
+    // Bậc liên tiếp (16–18) là con vừa ra — tô đậm như "mới", không kéo màu xuống quá mức.
+    const dam = b > TRAN ? 0 : b;
+    const goc = { background: `rgba(56,189,248,${(0.5 - dam * (0.42 / TRAN)).toFixed(3)})`, color: "#fff", borderColor: "transparent" };
     // Con chặn ≥ 90/99: nền đỏ khi chưa chọn gì; đang chọn thì giữ viền đỏ để vẫn nhận ra.
     if (!chon) return conDoSet.has(lo) ? { background: "rgba(220,38,38,0.8)", color: "#fff", borderColor: "#ff8a8a" } : goc;
     if (chon.kieu === "con") {
@@ -296,7 +298,7 @@ export default function DaKyToi({
             {!chon && (
               <>
                 <Cham m="rgba(220,38,38,0.8)" chu={`đỏ = chặn từ ${NGUONG_DO}/99 con trở lên`} />
-                <Cham m="rgba(56,189,248,0.5)" chu="mới = vừa ra" />
+                <Cham m="rgba(56,189,248,0.5)" chu="mới = vừa ra · LT2/LT3/LT4+ = về liên tiếp 2/3/4+ kỳ" />
                 <Cham m="rgba(56,189,248,0.25)" chu="5k = 5 kỳ chưa về" />
                 <Cham m="rgba(56,189,248,0.08)" chu={`${TRAN}+ = khô lâu`} />
               </>
@@ -385,8 +387,8 @@ export default function DaKyToi({
           </div>
           {moDanhSach && (
             <div className="mt-2 space-y-1.5" data-danh-sach-ngay>
-              {d.nhom.map((ds, i) => (
-                <div key={i} className="flex gap-2 items-start">
+              {THU_TU_BAC_DA.map((i) => [i, d.nhom[i]] as const).map(([i, ds]) => (
+                <div key={i} className="flex gap-2 items-start" data-ds-bac={i}>
                   <span className="shrink-0 w-[4.4rem] text-[0.72rem] font-bold text-white pt-0.5">
                     {tenNgay(i)} <span className="font-normal text-[var(--text-muted)]">({ds.length})</span>
                   </span>

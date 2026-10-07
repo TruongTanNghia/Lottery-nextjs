@@ -37,7 +37,44 @@ export const GIAI: Record<Region, number> = { xsmn: 36, xsmt: 36, xsmb: 27 };
  * ghép ra 136 ô.
  */
 export const TRAN_DA = 15;
-export const SO_O_DA = ((TRAN_DA + 1) * (TRAN_DA + 2)) / 2;
+
+/**
+ * Ba bậc "về liên tiếp" — khách: "phần số đá hình như mình thiếu ra liên tiếp
+ * 2 kì, ra liên tiếp 3 kì, ra liên tiếp 4 kì+, cả 3 miền". Bên lô đã tách từ
+ * lâu; bên đá trước đây mọi con về kỳ gần nhất đều nằm chung bậc 0 "vừa ra".
+ *
+ * Bậc là một con số (để khoá ô "i-j" giữ nguyên dạng cũ):
+ *   0      vừa ra — về kỳ gần nhất, kỳ trước đó không về
+ *   1…15   số ngày chưa về (15 = 15+)
+ *   16     về liên tiếp 2 kỳ
+ *   17     về liên tiếp 3 kỳ
+ *   18     về liên tiếp 4 kỳ trở lên ("4+": không đếm lại như bên lô)
+ * Bảng lưu từ trước (chưa có bậc 16–18) được mở rộng bằng cách cho ô mới lấy
+ * số của ô "vừa ra" tương ứng — đúng thứ các con đó đang được tính trước đây.
+ */
+export const BAC_LIEN_TIEP: Record<2 | 3 | 4, number> = { 2: TRAN_DA + 1, 3: TRAN_DA + 2, 4: TRAN_DA + 3 };
+export const SO_BAC_DA = TRAN_DA + 4;
+export const SO_O_DA = (SO_BAC_DA * (SO_BAC_DA + 1)) / 2;
+/** Thứ tự đọc: vừa ra → liên tiếp 2, 3, 4+ → 1 ngày … 15+. */
+export const THU_TU_BAC_DA: number[] = [0, BAC_LIEN_TIEP[2], BAC_LIEN_TIEP[3], BAC_LIEN_TIEP[4], ...Array.from({ length: TRAN_DA }, (_, i) => i + 1)];
+
+/** Bậc của một con: `kho` = số ngày chưa về, `lienTiep` = số kỳ về liền tới kỳ gần nhất. */
+export function bacDa(kho: number, lienTiep = 0): number {
+  const k = Math.max(0, Number(kho) || 0);
+  if (k === 0 && lienTiep >= 2) return BAC_LIEN_TIEP[Math.min(4, lienTiep) as 2 | 3 | 4];
+  return Math.min(TRAN_DA, k);
+}
+
+/** Tên bậc. "dai": Vừa ra / Liên tiếp 2 kỳ / Ngày 3 · "thuong": vừa ra / liên tiếp 2 kỳ / 3 kỳ · "ngan": vr / LT2 / 3. */
+export function tenBacDa(i: number, kieu: "dai" | "thuong" | "ngan" = "dai"): string {
+  const lt = i === BAC_LIEN_TIEP[2] ? "2" : i === BAC_LIEN_TIEP[3] ? "3" : i === BAC_LIEN_TIEP[4] ? "4+" : null;
+  if (kieu === "ngan") return lt ? `LT${lt}` : i === 0 ? "vr" : i >= TRAN_DA ? `${TRAN_DA}+` : `${i}`;
+  if (kieu === "thuong") return lt ? `liên tiếp ${lt} kỳ` : i === 0 ? "vừa ra" : i >= TRAN_DA ? `${TRAN_DA}+ kỳ` : `${i} kỳ`;
+  return lt ? `Liên tiếp ${lt} kỳ` : i === 0 ? "Vừa ra" : i >= TRAN_DA ? `Ngày ${TRAN_DA}+` : `Ngày ${i}`;
+}
+
+/** Bậc liên tiếp → bậc "vừa ra" mà con đó nằm trước khi có bậc liên tiếp. */
+const veBacCu = (i: number) => (i > TRAN_DA ? 0 : i);
 
 /**
  * Số vòng khi đá một bộ `a` con: mỗi hai con ghép thành một vòng.
@@ -149,6 +186,8 @@ export interface KyDa {
   date: string;
   /** Số kỳ chưa về tính tới sáng hôm đó. 0 = vừa ra. */
   kho: Record<string, number>;
+  /** Số kỳ về liền tới kỳ trước (0 nếu kỳ trước không về). Thiếu = coi như 0. */
+  lienTiep?: Record<string, number>;
   /** Số nháy về trong kỳ đó. */
   ve: Record<string, number>;
 }
@@ -201,17 +240,18 @@ export function demCapTheoNgay(
 
   for (const k of ky) {
     // a[b] = bao nhiêu con ở bậc b, h[b] = bao nhiêu con trong đó về.
-    const a = new Array<number>(tran + 1).fill(0);
-    const h = new Array<number>(tran + 1).fill(0);
+    void tran;
+    const a = new Array<number>(SO_BAC_DA).fill(0);
+    const h = new Array<number>(SO_BAC_DA).fill(0);
     for (const lo of Object.keys(k.kho)) {
-      const b = Math.min(tran, Math.max(0, k.kho[lo]));
+      const b = bacDa(k.kho[lo], k.lienTiep?.[lo] ?? 0);
       a[b]++;
       if ((k.ve[lo] ?? 0) > 0) h[b]++;
     }
-    for (let i = 0; i <= tran; i++) {
+    for (let i = 0; i < SO_BAC_DA; i++) {
       if (a[i] === 0) continue;
       cong(i, i, (a[i] * (a[i] - 1)) / 2, (h[i] * (h[i] - 1)) / 2);
-      for (let j = i + 1; j <= tran; j++) {
+      for (let j = i + 1; j < SO_BAC_DA; j++) {
         if (a[j] === 0) continue;
         cong(i, j, a[i] * a[j], h[i] * h[j]);
       }
@@ -498,6 +538,13 @@ export interface KetQuaKy {
   hits: Record<string, number>;
 }
 
+const ngayTruocDa = (d: string) => {
+  const [y, m, dd] = d.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, dd));
+  t.setUTCDate(t.getUTCDate() - 1);
+  return t.toISOString().slice(0, 10);
+};
+
 const cachNgay = (sau: string, truoc: string) => {
   const [y1, m1, d1] = sau.split("-").map(Number);
   const [y2, m2, d2] = truoc.split("-").map(Number);
@@ -513,7 +560,7 @@ const cachNgay = (sau: string, truoc: string) => {
  * `dungKy` (đếm theo ngày lịch kể từ lần về cuối), để "ngày" ở đây và "ngày"
  * trong bảng thống kê là cùng một thứ.
  */
-export function khoKyToi(draws: KetQuaKy[]): { ngayCuoi: string; kho: Record<string, number> } | null {
+export function khoKyToi(draws: KetQuaKy[]): { ngayCuoi: string; kho: Record<string, number>; lienTiep: Record<string, number>; bac: Record<string, number> } | null {
   if (draws.length === 0) return null;
   const sap = [...draws].sort((a, b) => a.date.localeCompare(b.date));
   const ngayCuoi = sap[sap.length - 1].date;
@@ -521,14 +568,22 @@ export function khoKyToi(draws: KetQuaKy[]): { ngayCuoi: string; kho: Record<str
   for (const d of sap) {
     for (const [lo, c] of Object.entries(d.hits)) if ((Number(c) || 0) > 0) veCuoi.set(lo, d.date);
   }
+  const coNgay = new Map(sap.map((d) => [d.date, d.hits]));
   const kho: Record<string, number> = {};
+  const lienTiep: Record<string, number> = {};
+  const bac: Record<string, number> = {};
   for (let i = 0; i < 100; i++) {
     const lo = String(i).padStart(2, "0");
     const last = veCuoi.get(lo);
     // Chưa từng về trong kho thì coi như khô suốt từ kỳ đầu.
     kho[lo] = last ? cachNgay(ngayCuoi, last) : cachNgay(ngayCuoi, sap[0].date) + 1;
+    // Về liền mấy kỳ tính tới kỳ cuối — đếm lùi theo ngày lịch, đúng luật `dungKy`.
+    let lt = 0;
+    for (let d = ngayCuoi; coNgay.has(d) && (Number(coNgay.get(d)![lo]) || 0) > 0; d = ngayTruocDa(d)) lt++;
+    lienTiep[lo] = lt;
+    bac[lo] = bacDa(kho[lo], lt);
   }
-  return { ngayCuoi, kho };
+  return { ngayCuoi, kho, lienTiep, bac };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -551,10 +606,34 @@ export const khoaCap = (i: number, j: number) => `${Math.min(i, j)}-${Math.max(i
 
 /** Mọi ô, cùng-ngày đứng trước rồi tới đá chéo — đúng thứ tự khách liệt kê. */
 export function moiOCap(tran = TRAN_DA): { i: number; j: number; cungNgay: boolean }[] {
+  void tran;
   const out: { i: number; j: number; cungNgay: boolean }[] = [];
-  for (let i = 0; i <= tran; i++) out.push({ i, j: i, cungNgay: true });
-  for (let i = 0; i <= tran; i++) for (let j = i + 1; j <= tran; j++) out.push({ i, j, cungNgay: false });
+  for (let i = 0; i < SO_BAC_DA; i++) out.push({ i, j: i, cungNgay: true });
+  for (let i = 0; i < SO_BAC_DA; i++) for (let j = i + 1; j < SO_BAC_DA; j++) out.push({ i, j, cungNgay: false });
   return out;
+}
+
+/** Bảng/danh sách lưu từ trước khi có bậc liên tiếp: không có khoá nào dính bậc 16–18. */
+export const laBangCu = (keys: string[]) => keys.length > 0 && !keys.some((k) => k.split("-").some((x) => Number(x) > TRAN_DA));
+
+/** Ô mới (dính bậc liên tiếp) ứng với ô cũ nào: thay bậc liên tiếp bằng bậc 0 "vừa ra". */
+export const oCuCua = (k: string) => {
+  const [i, j] = k.split("-").map(Number);
+  return khoaCap(veBacCu(i), veBacCu(j));
+};
+
+/**
+ * Mở rộng danh sách ô (chặn luật / mở tay) lưu từ trước: ô cũ có bậc 0 kéo
+ * theo mọi ô mới mà nó đã bao, để ô nào đang chặn vẫn chặn đúng những cặp đó.
+ */
+export function moRongDanhSachCu(keys: string[]): string[] {
+  const set = new Set(keys);
+  const out = new Set(keys);
+  for (const o of moiOCap()) {
+    const k = khoaCap(o.i, o.j);
+    if (set.has(oCuCua(k))) out.add(k);
+  }
+  return [...out].sort();
 }
 
 export function bangMacDinh(tran = TRAN_DA): BangDa {
@@ -572,12 +651,16 @@ export function bangMacDinh(tran = TRAN_DA): BangDa {
 export function chuanHoaBang(raw: unknown, tran = TRAN_DA): BangDa {
   const b = bangMacDinh(tran);
   if (!raw || typeof raw !== "object") return b;
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+  const r = raw as Record<string, unknown>;
+  for (const [k, v] of Object.entries(r)) {
     if (!(k in b)) continue;
     const n = Number(v);
     if (!Number.isFinite(n)) continue;
     b[k] = Math.max(0, Math.min(DIEM_DA_TOI_DA, Math.round(n)));
   }
+  // Bảng lưu trước khi có bậc liên tiếp: ô mới lấy số của ô "vừa ra" tương ứng,
+  // để con nào đang được tính thế nào thì vẫn y như vậy cho tới khi khách sửa.
+  if (laBangCu(Object.keys(r))) for (const k of Object.keys(b)) if (!(k in r)) b[k] = b[oCuCua(k)];
   return b;
 }
 
@@ -734,9 +817,11 @@ export function chuanHoaDanhSachO(raw: unknown, tran = TRAN_DA): string[] {
  * Trong cặp con lớn đứng trước, cả danh sách xếp tăng dần — theo đúng ví dụ
  * khách gõ ("01 00; 10 01").
  */
-export function capBiChan(kho: Record<string, number>, bang: BangDa, tran = TRAN_DA): [string, string][] {
-  const los = Object.keys(kho).sort();
-  const bac = (lo: string) => Math.min(tran, Math.max(0, kho[lo]));
+export function capBiChan(bacCon: Record<string, number>, bang: BangDa, tran = TRAN_DA): [string, string][] {
+  void tran;
+  // `bacCon` là bậc của từng con (khoKyToi(...).bac) — đã tính cả liên tiếp.
+  const los = Object.keys(bacCon).sort();
+  const bac = (lo: string) => bacCon[lo];
   const out: [string, string][] = [];
   for (let x = 0; x < los.length; x++) {
     for (let y = x + 1; y < los.length; y++) {
