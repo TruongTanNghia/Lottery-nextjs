@@ -33,7 +33,7 @@ const tenThang = (t: string) => `Tháng ${Number(t.slice(5))}`;
  * miền (đã áp luật tự chặn nếu bật) — cùng cách Báo Cáo Tháng — Số Đá tính,
  * nên hai khối không thể ra hai con số khác nhau cho cùng một tháng.
  */
-export default function DaChotLoi({ phienBan = 0 }: { phienBan?: number }) {
+export default function DaChotLoi({ phienBan = 0, pa = 1 }: { phienBan?: number; pa?: 1 | 2 }) {
   const [dsKy, setDsKy] = useState<KyLai[][] | null>(null);
   const [loi, setLoi] = useState<string | null>(null);
   const [moThang, setMoThang] = useState<string | null>(null);
@@ -44,7 +44,7 @@ export default function DaChotLoi({ phienBan = 0 }: { phienBan?: number }) {
       MIEN.map(async (r) => {
         const [h, c] = await Promise.all([
           fetch(`/api/history/hits?region=${r}`).then((x) => x.json()),
-          fetch(`/api/config/da?region=${r}`).then((x) => x.json()).catch(() => null),
+          fetch(`/api/config/da?region=${r}${pa === 2 ? "&pa=2" : ""}`).then((x) => x.json()).catch(() => null),
         ]);
         const ky = dungKy((h.draws ?? []) as DrawHits[]);
         const daLuu = c?.data?.bang ? chuanHoaBang(c.data.bang) : bangMacDinh();
@@ -55,7 +55,7 @@ export default function DaChotLoi({ phienBan = 0 }: { phienBan?: number }) {
       .then((x) => !huy && setDsKy(x))
       .catch(() => !huy && setLoi("Không tải được dữ liệu"));
     return () => { huy = true; };
-  }, [phienBan]);
+  }, [phienBan, pa]);
 
   const kq: ChotLoi | null = useMemo(() => (dsKy ? phanTichChotLoi(dsKy) : null), [dsKy]);
 

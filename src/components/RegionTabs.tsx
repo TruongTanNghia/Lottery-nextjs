@@ -2,12 +2,12 @@
 
 import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
 
-type ViewKey = "dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda" | "chanlo" | "check";
+type ViewKey = "dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda" | "soda2" | "chanlo" | "check";
 
 // Every view the app can render, in tab order. Kept as the full list so the
 // pages stay wired up and nothing has to be rebuilt to bring one back.
 const ALL_VIEWS = [
-  "dashboard", "soda", "chanlo", "check", "exposure", "lab", "simai", "results", "prediction", "vip", "golden", "pair", "three",
+  "dashboard", "soda", "soda2", "chanlo", "check", "exposure", "lab", "simai", "results", "prediction", "vip", "golden", "pair", "three",
   "four", "sim", "watcher", "today", "accuracy", "history", "rolling",
 ] as const;
 
@@ -19,7 +19,8 @@ const ALL_VIEWS = [
 // tên vào mảng này là hiện lại ngay.
 // Khách chốt 21/09: thêm tab "Số Đá" riêng, phần còn lại giữ nguyên vì đang chạy tốt.
 // Khách 02/10: thêm tab "Check" — dán chuỗi vừa copy vào để máy tính lại và chỉ ra số sai.
-const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard", "soda", "chanlo", "check", "exposure", "results"];
+// Khách 12/10: "copy 1 tab đá riêng biệt với tab cũ, 2 tab chạy cùng nhau" — Số Đá 2 là phương án 2, bảng riêng.
+const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard", "soda", "soda2", "chanlo", "check", "exposure", "results"];
 
 interface Props {
   current: Region;
@@ -74,6 +75,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
           const labels: Record<ViewKey, string> = {
             dashboard: "📊 Dashboard",
             soda: "🎲 Số Đá",
+            soda2: "🎲 Số Đá 2",
             chanlo: "🚫 Chặn Lô",
             check: "✅ Check",
             exposure: "💰 Rủi Ro Tiền",
@@ -96,6 +98,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
           const activeBg: Record<ViewKey, string> = {
             dashboard: "bg-blue-900 shadow-[0_1px_6px_rgba(59,130,246,0.25)]",
             soda: "bg-teal-700 shadow-[0_1px_6px_rgba(20,184,166,0.35)]",
+            soda2: "bg-violet-700 shadow-[0_1px_6px_rgba(139,92,246,0.35)]",
             chanlo: "bg-rose-700 shadow-[0_1px_6px_rgba(244,63,94,0.35)]",
             check: "bg-emerald-700 shadow-[0_1px_6px_rgba(16,185,129,0.35)]",
             exposure: "bg-rose-800 shadow-[0_1px_6px_rgba(244,63,94,0.35)]",

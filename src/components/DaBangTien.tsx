@@ -65,8 +65,10 @@ type Nhom = "cung" | "cheo";
  * tổng ở trên thì tính theo số đang gõ, để thấy trước rồi mới quyết.
  */
 export default function DaBangTien({
-  draws, ky, region, bang, luuLuc, tuDong, chanLuat, moTay, rutGon, nguongGon, buoc1, buoc2, lyDo, nguong, thangLuat, onLuu,
+  draws, ky, region, bang, luuLuc, tuDong, chanLuat, moTay, rutGon, nguongGon, buoc1, buoc2, lyDo, nguong, thangLuat, onLuu, pa = 1,
 }: {
+  /** Phương án: 1 = tab Số Đá (bảng cũ), 2 = tab Số Đá 2 (bảng riêng, lệnh bot có đuôi 2). */
+  pa?: 1 | 2;
   rutGon: boolean;
   nguongGon: number;
   buoc1: boolean;
@@ -85,6 +87,8 @@ export default function DaBangTien({
   onLuu: (data: Record<string, unknown>) => void;
 }) {
   const toast = useToast();
+  /** Tên lệnh BOT của phương án này (phương án 2 thêm đuôi "2"). Lệnh của phần mềm ghi cược (/chanloai, /chanlq trong chuỗi dán) thì giữ nguyên. */
+  const B = (l: string) => (pa === 2 ? `${l}2` : l);
   const [nhap, setNhap] = useState<BangDa>(bang);
   // Hai công tắc riêng (khách: "chặn quá mức chung / chặn lỗ 2 tháng gần nhất"); luật bật khi ít nhất một cái bật.
   const [buoc1Nhap, setBuoc1Nhap] = useState(buoc1);
@@ -218,7 +222,7 @@ export default function DaBangTien({
   const luu = async () => {
     setDangLuu(true);
     try {
-      const r = await fetch(`/api/config/da?region=${region}`, {
+      const r = await fetch(`/api/config/da?region=${region}${pa === 2 ? "&pa=2" : ""}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bang: nhap, tuDong: tuDongNhap, chanLuat: chanLuatNhap, moTay: moTayNhap, rutGon: rutGonNhap, nguongGon: nguongGonNhap, buoc1: buoc1Nhap, buoc2: buoc2Nhap }),
@@ -226,7 +230,7 @@ export default function DaBangTien({
       const d = await r.json();
       if (!r.ok || d.status !== "success") throw new Error(d.detail ?? "Lưu không được");
       onLuu(d.data as Record<string, unknown>);
-      toast.show("success", `Đã lưu bảng tiền đá ${REGION_LABELS[region]} — thống kê bên dưới và bot /chanlq tính theo bảng mới`);
+      toast.show("success", `Đã lưu bảng tiền đá ${REGION_LABELS[region]} — thống kê bên dưới và bot ${B("/chanlq")} tính theo bảng mới`);
     } catch (e) {
       toast.show("error", e instanceof Error ? e.message : "Lưu không được");
     } finally {
@@ -399,7 +403,7 @@ export default function DaBangTien({
                 Bốn ô tổng ở trên đã tính theo số mới; các khối thống kê bên dưới và bot chỉ đổi sau khi bấm Lưu.
               </>
             ) : (
-              <>Bảng đang khớp với bản đã lưu. Thống kê bên dưới và bot /chanlq đang tính theo đúng bảng này.</>
+              <>Bảng đang khớp với bản đã lưu. Thống kê bên dưới và bot {B("/chanlq")} đang tính theo đúng bảng này.</>
             )}
           </span>
           <button
@@ -469,8 +473,8 @@ export default function DaBangTien({
               </button>
             </div>
             <div className="text-[0.66rem] text-[var(--text-muted)] mt-1">
-              Trên Telegram gõ <code className="text-[#c2d4ea]">/chanda {region === "xsmn" ? "mn" : region === "xsmt" ? "mt" : "mb"}</code>{" "}
-              là ra đúng chuỗi /chanloai này (bot tự cắt khúc nếu dài; gõ <code className="text-[#c2d4ea]">/chanda</code> không là ra cả 3 miền).
+              Trên Telegram gõ <code className="text-[#c2d4ea]">{B("/chanda")} {region === "xsmn" ? "mn" : region === "xsmt" ? "mt" : "mb"}</code>{" "}
+              là ra đúng chuỗi /chanloai này (bot tự cắt khúc nếu dài; gõ <code className="text-[#c2d4ea]">{B("/chanda")}</code> không là ra cả 3 miền).
               Mỗi mẩu <code className="text-[#c2d4ea]">a b c{HAU_TO_CHAN_DA[region]}</code> là một vòng: chặn mọi cặp trong đó. Dòng
               đầu <code className="text-[#c2d4ea]">/chanloai</code> là lệnh của phần mềm ghi cược — dán nguyên cả hai dòng.
             </div>
@@ -493,7 +497,7 @@ export default function DaBangTien({
                 </code>
                 <div className="text-[0.66rem] text-[var(--text-muted)] mt-1">
                   Mọi đá dính các con này đều không nhận. Các cặp đó <b>không</b> nằm trong chuỗi /chanloai nữa — dán <b>cả hai</b> lệnh mới chặn đủ.
-                  Trên Telegram đây là lệnh riêng: gõ <code className="text-[#c2d4ea]">/chanlq</code> là ra các con này của cả 3 miền trong một tin.
+                  Trên Telegram đây là lệnh riêng: gõ <code className="text-[#c2d4ea]">{B("/chanlq")}</code> là ra các con này của cả 3 miền trong một tin.
                 </div>
               </div>
             )}

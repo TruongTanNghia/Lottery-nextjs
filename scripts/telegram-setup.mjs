@@ -83,6 +83,16 @@ const cmds = await api("setMyCommands", {
     // Số đá bị chặn 100% là một lệnh riêng, cả 3 miền một tin — khách: "cho nó
     // là 1 lệnh riêng biệt". Ba lệnh trên chỉ còn cặp và vòng.
     { command: "chanlq", description: "Số đá chặn 100% — cả 3 miền một tin" },
+    // Đá phương án 2 (tab Số Đá 2): bảng riêng, lệnh có đuôi 2; thêm số NHẬN.
+    { command: "chanda2", description: "PA2 · Chặn đá cả 3 miền" },
+    { command: "chandamn2", description: "PA2 · Chặn đá Miền Nam" },
+    { command: "chandamt2", description: "PA2 · Chặn đá Miền Trung" },
+    { command: "chandamb2", description: "PA2 · Chặn đá Miền Bắc" },
+    { command: "chanlq2", description: "PA2 · Số đá chặn 100% — cả 3 miền" },
+    { command: "nhanda2", description: "PA2 · Số NHẬN đá cả 3 miền" },
+    { command: "nhandamn2", description: "PA2 · Số nhận đá Miền Nam" },
+    { command: "nhandamt2", description: "PA2 · Số nhận đá Miền Trung" },
+    { command: "nhandamb2", description: "PA2 · Số nhận đá Miền Bắc" },
     { command: "kq", description: "Kết quả kỳ mới nhất — /kq mn" },
     { command: "help", description: "Hướng dẫn" },
     { command: "ai", description: "Ai đang dùng bot (quản trị)" },

@@ -12,6 +12,7 @@ import DaBaoCaoThang from "./DaBaoCaoThang";
 import DaCapNgay from "./DaCapNgay";
 import DaChotLoi from "./DaChotLoi";
 import DaKyToi from "./DaKyToi";
+import { DaSoNhan, DaTienNhan } from "./DaPa2";
 import DaTungKy from "./DaTungKy";
 import ThuGon from "./ThuGon";
 import { REGION_LABELS, type Region } from "@/lib/types";
@@ -38,7 +39,7 @@ const mau = (n: number) => (n > 0 ? "#7ff0c0" : n < 0 ? "#ff9d9d" : "#cbd5e1");
  *
  * Tất cả nằm trong tab này. Dashboard không bị đụng tới.
  */
-export default function SoDaPage({ region }: { region: Region }) {
+export default function SoDaPage({ region, pa = 1 }: { region: Region; pa?: 1 | 2 }) {
   const [draws, setDraws] = useState<DrawHits[] | null>(null);
   const [loi, setLoi] = useState<string | null>(null);
 
@@ -70,15 +71,18 @@ export default function SoDaPage({ region }: { region: Region }) {
   const [buoc2, setBuoc2] = useState(true);
   // Tăng mỗi lần lưu, để Báo Cáo Tháng (tự tải bảng của cả ba miền) biết mà tải lại.
   const [phienBan, setPhienBan] = useState(0);
+  // Phương án 2: true khi chưa lưu riêng lần nào — đang chạy theo bản của phương án 1.
+  const [saoTuPa1, setSaoTuPa1] = useState(false);
 
   useEffect(() => {
     let huy = false;
     setBang(null);
     setLuuLuc(null);
-    fetch(`/api/config/da?region=${region}`)
+    fetch(`/api/config/da?region=${region}${pa === 2 ? "&pa=2" : ""}`)
       .then((r) => r.json())
       .then((d) => {
         if (huy) return;
+        setSaoTuPa1(d?.data?.saoTuPa1 === true);
         setBang(chuanHoaBang(d?.data?.bang));
         setLuuLuc(typeof d?.data?.luuLuc === "string" ? d.data.luuLuc : null);
         setTuDong(d?.data?.tuDong !== false);
@@ -95,7 +99,7 @@ export default function SoDaPage({ region }: { region: Region }) {
       // Không đọc được bảng thì chạy bảng mặc định, chứ không để cả tab trắng.
       .catch(() => !huy && setBang(bangMacDinh()));
     return () => { huy = true; };
-  }, [region]);
+  }, [region, pa]);
 
   const ky = useMemo(() => (draws ? dungKy(draws) : null), [draws]);
   // Bảng ĐANG HIỆU LỰC: bảng đã lưu, ép các ô luật đã đóng đinh về 0 nếu công
@@ -123,7 +127,8 @@ export default function SoDaPage({ region }: { region: Region }) {
     <div className="space-y-4 md:space-y-6">
       {/* Đứng đầu tab, như "Ngày Mai Ôm Sao" đứng đầu Dashboard: câu người ta
           hỏi trước tiên là kỳ tới ôm con nào, thống kê để sau. */}
-      <DieuHuong />
+      {pa === 2 && <BangPa2 saoTuPa1={saoTuPa1} />}
+      <DieuHuong pa={pa} />
 
       {draws && ky && (
         <div id="da-kytoi" style={{ scrollMarginTop: 150 }}>
@@ -149,7 +154,9 @@ export default function SoDaPage({ region }: { region: Region }) {
             lyDo={lyDo}
             nguong={nguong}
             thangLuat={thangLuat}
+            pa={pa}
             onLuu={(d) => {
+              setSaoTuPa1(false);
               setBang(chuanHoaBang(d.bang));
               setLuuLuc(typeof d.luuLuc === "string" ? d.luuLuc : null);
               setTuDong(d.tuDong !== false);
@@ -165,6 +172,17 @@ export default function SoDaPage({ region }: { region: Region }) {
               setPhienBan((v) => v + 1);
             }}
           />
+        </div>
+      )}
+
+      {pa === 2 && draws && hieuLuc && (
+        <div id="da-sonhan" style={{ scrollMarginTop: 150 }}>
+          <DaSoNhan draws={draws} region={region} bang={hieuLuc} />
+        </div>
+      )}
+      {pa === 2 && ky && bang && hieuLuc && (
+        <div id="da-tiennhan" style={{ scrollMarginTop: 150 }}>
+          <DaTienNhan ky={ky} region={region} bang={bang} tuDong={tuDong} buoc1={buoc1} buoc2={buoc2} moTay={moTay} hieuLuc={hieuLuc} />
         </div>
       )}
 
@@ -261,12 +279,12 @@ export default function SoDaPage({ region }: { region: Region }) {
 
       {/* ── Ba khối thống kê, cùng khuôn Dashboard ──────────────────── */}
       <div id="da-thang" style={{ scrollMarginTop: 150 }}>
-        <DaBaoCaoThang phienBan={phienBan} />
+        <DaBaoCaoThang phienBan={phienBan} pa={pa} />
       </div>
 
       {/* Khách: "xem tổng 3 miền của đá, kiểu giống bên lô, nhìn giao diện đó quen rồi". */}
       <div id="da-chotloi" style={{ scrollMarginTop: 150 }}>
-        <DaChotLoi phienBan={phienBan} />
+        <DaChotLoi phienBan={phienBan} pa={pa} />
       </div>
 
       {loi && <p className="text-sm text-[#ff9d9d]">{loi}</p>}
@@ -301,10 +319,11 @@ export default function SoDaPage({ region }: { region: Region }) {
  * than "khó dùng". Không cho dính trên đầu: trang đã có sẵn header và thanh tab
  * dính rồi, thêm thanh thứ ba thì màn hình chẳng còn chỗ cho nội dung.
  */
-function DieuHuong() {
+function DieuHuong({ pa = 1 }: { pa?: 1 | 2 }) {
   const MUC: [string, string][] = [
     ["da-kytoi", "🌅 Kỳ tới đá con nào"],
     ["da-bangtien", "💰 Cài tiền từng ô"],
+    ...(pa === 2 ? ([["da-sonhan", "✅ Số nhận"], ["da-tiennhan", "💵 Tiền số nhận"]] as [string, string][]) : []),
     ["da-gia", "🎲 Giá"],
     ["da-thang", "📅 Báo cáo tháng"],
     ["da-chotloi", "💰 Chốt lời sớm"],
@@ -324,6 +343,22 @@ function DieuHuong() {
         </button>
       ))}
     </nav>
+  );
+}
+
+/** Dải đầu tab Số Đá 2: nói rõ đây là bảng riêng, không đụng phương án 1. */
+function BangPa2({ saoTuPa1 }: { saoTuPa1: boolean }) {
+  return (
+    <div className="rounded-xl border border-[#a78bfa]/50 bg-[#5b21b6]/20 px-3 py-2.5 text-[0.76rem] leading-relaxed text-[#e9ddff]" data-da-pa2>
+      <b className="text-white">🎲 ĐÁ PHƯƠNG ÁN 2</b> — bảng tiền, luật, rút gọn đều <b>riêng</b>, lưu ở đây không đụng tab Số Đá (phương án 1).
+      Bot: <code>/chanda2</code> <code>/chandamn2</code> <code>/chandamt2</code> <code>/chandamb2</code> <code>/chanlq2</code> (chặn) ·{" "}
+      <code>/nhanda2</code> <code>/nhandamn2</code> <code>/nhandamt2</code> <code>/nhandamb2</code> (nhận).
+      {saoTuPa1 && (
+        <div className="mt-1 text-[#ffd24a]" data-da-pa2-sao>
+          Chưa lưu riêng lần nào: đang hiện y bản của phương án 1 để anh/chị bắt đầu sửa. Bấm Lưu ở Bảng Tiền Đá là từ đó thành bảng riêng.
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -20,13 +20,14 @@ import { freshness, freshnessText } from "@/lib/freshness";
 import { esc } from "@/lib/telegram";
 import { baoCaoTheoThang } from "@/lib/profit-calculator";
 import { forgetUser, loadUsers, setStatus } from "@/lib/telegram-users";
-import { bangHieuLuc, taiKyDaXo } from "@/lib/da-bang";
+import { bangHieuLuc, taiKyDaXo, type PhuongAn } from "@/lib/da-bang";
+import { capNhan, chiaKhoiNhanDa, dongNhanLq, khoiNhanLq, nhomNhanDa } from "@/lib/da-nhan";
 import { chuoiChanLo, luatChanLo } from "@/lib/chan-lo";
 import { docBuoc, trangThaiChanNgay } from "@/lib/chan-ngay-server";
 import { docBotGui, docGoCua, guiNgay, luuBotGui, thuTaiKhoan, xemTruocGui } from "@/lib/bot-gui";
 import { coTaiKhoanGui } from "@/lib/tele-user";
 import { daGuiHomNay, gioVN, laGioHopLe } from "@/lib/bot-gui-thuan";
-import { SO_O_DA, chiaKhoiChanDa, dongChanLq, khoiChanLq, nhomChanDa } from "@/lib/da";
+import { SO_O_DA, chiaKhoiChanDa, dongChanLq, khoKyToi, khoiChanLq, nhomChanDa } from "@/lib/da";
 
 // Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
 // list is read side by side with theirs.
@@ -137,6 +138,10 @@ export function helpText(isAdmin = false): string {
     "<code>/chanda</code> — cả 3 miền một lượt · <code>/chanda mn kl</code> — bản không lặp cặp",
     "<code>/chanda mn gon</code> — rút gọn theo mức đã cài · <code>gon80</code> = mức 80/99",
     "<code>/chanlq</code> — số đá bị chặn 100% (chặn tròn), cả 3 miền một tin — lệnh riêng, dán kèm các lệnh chặn đá ở trên",
+    "",
+    "<b>Đá phương án 2</b> (tab Số Đá 2 — bảng riêng, không đụng phương án 1)",
+    "<code>/chanda2</code> · <code>/chandamn2</code> <code>/chandamt2</code> <code>/chandamb2</code> · <code>/chanlq2</code> — chặn, y như trên",
+    "<code>/nhanda2</code> — số NHẬN cả 3 miền · <code>/nhandamn2</code> <code>/nhandamt2</code> <code>/nhandamb2</code> — riêng một miền",
     "",
     "<b>Thử bot gửi</b>",
     "<code>/guithu 2d16b100, 15b50</code> — bot nói lại nguyên văn chuỗi đó (thử xem bot nhận có hiểu không)",
@@ -443,8 +448,9 @@ export async function chanSoAll(): Promise<string> {
  * Cặp nào bị chặn là do Bảng Tiền Đá trên web quyết (ô cài 0, hoặc luật tự
  * động "dưới phần ăn theo giá thì chặn"). Bot chỉ đọc ra, không sửa gì.
  */
-export async function chanDa(region: Region, khongLap = false, epGon = false, epNguong: number | null = null): Promise<string> {
-  const h = await bangHieuLuc(region);
+export async function chanDa(region: Region, khongLap = false, epGon = false, epNguong: number | null = null, pa: PhuongAn = 1): Promise<string> {
+  const h = await bangHieuLuc(region, pa);
+  const lb = (l: string) => (pa === 2 ? `${l}2` : l);
   // Rút gọn theo cài đặt đã lưu trên web, hoặc ép bằng chữ "gon" (gon80 = mức 80) trong lệnh.
   const rutGon = epGon || h.luu.rutGon;
   const nguongGon = epNguong ?? h.luu.nguongGon;
@@ -454,14 +460,14 @@ export async function chanDa(region: Region, khongLap = false, epGon = false, ep
   const soVong = nhom.filter((n) => n.length > 2).length;
   const soLe = nhom.filter((n) => n.length === 2).length;
   const head = [
-    `<b>${label(region)} · chặn đá</b> · ${num(h.capChan.length)} cặp · ${soOChan}/${SO_O_DA} ô · ${con100.length} con chặn ${
+    `<b>${label(region)} · chặn đá${pa === 2 ? " · PHƯƠNG ÁN 2" : ""}</b> · ${num(h.capChan.length)} cặp · ${soOChan}/${SO_O_DA} ô · ${con100.length} con chặn ${
       rutGon ? "tròn" : "100%"
     } + ${soVong} vòng + ${num(soLe)} cặp lẻ${khongLap ? " · không lặp" : ""}`,
     rutGon
       ? `<i>RÚT GỌN đang bật: con bị chặn từ ${nguongGon}/99 con trở lên thì chặn tròn cả con — chặn thêm ${num(capThem)} cặp lẽ ra nhận</i>`
       : "",
     con100.length > 0
-      ? `<i>${con100.length} con chặn ${rutGon ? "tròn" : "100%"} KHÔNG nằm trong chuỗi dưới — lấy bằng lệnh riêng <b>/chanlq</b> (cả 3 miền một tin). Dán CẢ HAI lệnh mới chặn đủ</i>`
+      ? `<i>${con100.length} con chặn ${rutGon ? "tròn" : "100%"} KHÔNG nằm trong chuỗi dưới — lấy bằng lệnh riêng <b>${lb("/chanlq")}</b> (cả 3 miền một tin). Dán CẢ HAI lệnh mới chặn đủ</i>`
       : "",
     h.luu.tuDong
       ? `<i>luật đang bật (bước 1 ${h.luu.buoc1 ? "BẬT" : "tắt"} · bước 2 ${h.luu.buoc2 ? "BẬT" : "tắt"}): chặn ${h.luu.chanLuat.length} ô (giữ nguyên tới khi đổi), ${h.luu.moTay.length} ô mở tay${
@@ -472,7 +478,7 @@ export async function chanDa(region: Region, khongLap = false, epGon = false, ep
 
   if (khoi.length === 0) {
     return con100.length > 0
-      ? `${head}\n\nKhông còn cặp lẻ nào — mọi cặp bị chặn đều dính con chặn tròn. Gõ /chanlq để lấy.`
+      ? `${head}\n\nKhông còn cặp lẻ nào — mọi cặp bị chặn đều dính con chặn tròn. Gõ ${lb("/chanlq")} để lấy.`
       : `${head}\n\nKhông có cặp nào bị chặn — bảng tiền đá đang nhận mọi ô.`;
   }
   if (khoi.length === 1) return `${head}\n\n<code>${esc(khoi[0])}</code>`;
@@ -495,9 +501,10 @@ export async function chanDa(region: Region, khongLap = false, epGon = false, ep
  * nhãn ngắn rồi tới các khối <code>; bộ gửi cắt theo dòng ở 4000 nên một
  * khối (≤ 3400) không bao giờ bị đứt, và mỗi miền tự đứng riêng được.
  */
-export async function chanDaTatCa(khongLap = false, epGon = false, epNguong: number | null = null): Promise<string> {
-  const parts = await Promise.all(REGIONS.map(async (r) => ({ r, h: await bangHieuLuc(r) })));
-  const out: string[] = [`<b>🎲 Chặn đá cả 3 miền</b>${khongLap ? " · không lặp cặp" : ""}${epGon ? " · rút gọn" : ""}`];
+export async function chanDaTatCa(khongLap = false, epGon = false, epNguong: number | null = null, pa: PhuongAn = 1): Promise<string> {
+  const parts = await Promise.all(REGIONS.map(async (r) => ({ r, h: await bangHieuLuc(r, pa) })));
+  const lb = (l: string) => (pa === 2 ? `${l}2` : l);
+  const out: string[] = [`<b>🎲 Chặn đá cả 3 miền${pa === 2 ? " · PHƯƠNG ÁN 2" : ""}</b>${khongLap ? " · không lặp cặp" : ""}${epGon ? " · rút gọn" : ""}`];
   const tinh = parts.map(({ r, h }) => {
     const rutGon = epGon || h.luu.rutGon;
     return { r, h, rutGon, ...nhomChanDa(h.capChan, khongLap, rutGon, epNguong ?? h.luu.nguongGon) };
@@ -505,7 +512,7 @@ export async function chanDaTatCa(khongLap = false, epGon = false, epNguong: num
   const coTron = tinh.filter((t) => t.con100.length > 0);
   if (coTron.length > 0) {
     out.push(
-      `<i>Con chặn tròn (${coTron.map((t) => `${TEN_NGAN[t.r]} ${t.con100.length}`).join(" · ")}) KHÔNG nằm trong các chuỗi dưới — lấy bằng lệnh riêng <b>/chanlq</b> (cả 3 miền một tin). Dán CẢ HAI lệnh mới chặn đủ.</i>`
+      `<i>Con chặn tròn (${coTron.map((t) => `${TEN_NGAN[t.r]} ${t.con100.length}`).join(" · ")}) KHÔNG nằm trong các chuỗi dưới — lấy bằng lệnh riêng <b>${lb("/chanlq")}</b> (cả 3 miền một tin). Dán CẢ HAI lệnh mới chặn đủ.</i>`
     );
   }
   for (const { r, h, rutGon, nhom, con100, capThem } of tinh) {
@@ -518,7 +525,7 @@ export async function chanDaTatCa(khongLap = false, epGon = false, epNguong: num
         h.luu.tuDong ? "" : " · cài tay"
       }${khoi.length > 1 ? ` · ${khoi.length} phần` : ""}`
     );
-    if (khoi.length === 0) out.push(con100.length > 0 ? "<i>không còn cặp lẻ nào — mọi cặp bị chặn đều dính con chặn tròn (/chanlq)</i>" : "<i>không chặn cặp nào</i>");
+    if (khoi.length === 0) out.push(con100.length > 0 ? `<i>không còn cặp lẻ nào — mọi cặp bị chặn đều dính con chặn tròn (${lb("/chanlq")})</i>` : "<i>không chặn cặp nào</i>");
     else out.push(...khoi.map((k) => `<code>${esc(k)}</code>`));
   }
   return out.join("\n");
@@ -539,10 +546,11 @@ export async function chanDaTatCa(khongLap = false, epGon = false, epNguong: num
  * "Chặn tròn" theo đúng cài đặt đã lưu của từng miền: Rút gọn TẮT thì phải đủ
  * 99/99 con; BẬT thì từ mức đã chọn (vd 90/99) trở lên. "gon"/"gon80" ép mức.
  */
-export async function chanLqBot(regions: Region[], epGon = false, epNguong: number | null = null): Promise<string> {
+export async function chanLqBot(regions: Region[], epGon = false, epNguong: number | null = null, pa: PhuongAn = 1): Promise<string> {
+  const lb = (l: string) => (pa === 2 ? `${l}2` : l);
   const tinh = await Promise.all(
     regions.map(async (r) => {
-      const h = await bangHieuLuc(r);
+      const h = await bangHieuLuc(r, pa);
       const rutGon = epGon || h.luu.rutGon;
       const nguong = rutGon ? (epNguong ?? h.luu.nguongGon) : 99;
       const { con100 } = nhomChanDa(h.capChan, false, rutGon, nguong);
@@ -556,11 +564,54 @@ export async function chanLqBot(regions: Region[], epGon = false, epNguong: numb
     return [
       "Chưa có con đá nào bị chặn tròn.",
       ...tinh.map((t) => `<i>${viSaoTrong(t)}</i>`),
-      "Muốn tính cả con bị chặn gần hết: gõ <code>/chanlq gon90</code> (từ 90/99 con), hoặc bật ✂ Rút gọn ở Bảng Tiền Đá trên web.",
+      `Muốn tính cả con bị chặn gần hết: gõ <code>${lb("/chanlq")} gon90</code> (từ 90/99 con), hoặc bật ✂ Rút gọn ở Bảng Tiền Đá trên web.`,
     ].join("\n");
   }
   const lq = khoiChanLq(co.map((t) => dongChanLq(provincePrefix(t.r), t.con100, t.r)));
   return [`<code>${esc(lq)}</code>`, ...tinh.filter((t) => t.con100.length === 0).map((t) => `<i>${viSaoTrong(t)}</i>`)].join("\n");
+}
+
+/**
+ * /nhanda2 [miền] — SỐ NHẬN đá của phương án 2 (tab Số Đá 2).
+ *
+ * Khách: "phương án 2: bổ sung thêm nhận số, copy được số nhận". Ngược với
+ * chặn: cặp nào rơi vào ô đang cài > 0 điểm là nhận, nhận đúng số điểm đó.
+ * Cùng khuôn chuỗi chặn — "01 10 11dx0n" là nhận 0 (chặn) nên nhận N điểm là
+ * "dxNn" (Bắc "daNn"); con nhận đủ 99 con ở một mức thì đi khối /nhanlq.
+ * Mỗi miền: các khối /nhanloai (mỗi khối ≤ SAFE_BLOCK, dán trọn được), rồi
+ * một khối /nhanlq chung cho các miền có con nhận tròn.
+ */
+export async function nhanDaBot(regions: Region[], khongLap = false): Promise<string> {
+  const tinh = await Promise.all(
+    regions.map(async (r) => {
+      const [h, draws] = await Promise.all([bangHieuLuc(r, 2), taiKyDaXo(r)]);
+      const bac = khoKyToi(draws)?.bac;
+      const cap = bac ? capNhan(bac, h.bang) : [];
+      return { r, h, cap, muc: nhomNhanDa(cap, khongLap) };
+    })
+  );
+  const out: string[] = [`<b>✅ Nhận đá${regions.length > 1 ? " cả 3 miền" : ` · ${label(regions[0])}`} · PHƯƠNG ÁN 2</b>${khongLap ? " · không lặp cặp" : ""}`];
+  const dongLq: string[] = [];
+  for (const { r, h, cap, muc } of tinh) {
+    const khoi = chiaKhoiNhanDa(provincePrefix(r), muc, SAFE_BLOCK, r);
+    const soTron = muc.reduce((s, m) => s + m.conTron.length, 0);
+    const soVong = muc.reduce((s, m) => s + m.nhom.length, 0);
+    const mucDiem = muc.map((m) => `${m.diem} điểm: ${num(m.soCap)}`).join(" · ");
+    out.push(
+      "",
+      `<b>${TEN_NGAN[r]}</b> · nhận ${num(cap.length)}/4.950 cặp${mucDiem ? ` (${mucDiem})` : ""} · ${soTron} con nhận tròn + ${num(soVong)} vòng${
+        h.luu.tuDong ? "" : " · cài tay"
+      }${h.ngayCuoi ? ` · theo kỳ ${ddmm(h.ngayCuoi)}` : ""}${khoi.length > 1 ? ` · ${khoi.length} phần` : ""}`
+    );
+    if (cap.length === 0) out.push("<i>không nhận cặp nào — bảng phương án 2 đang chặn hết</i>");
+    else if (khoi.length === 0) out.push("<i>mọi cặp nhận đều nằm ở con nhận tròn (khối /nhanlq bên dưới)</i>");
+    else out.push(...khoi.map((k) => `<code>${esc(k)}</code>`));
+    const d = dongNhanLq(provincePrefix(r), muc, r);
+    if (d) dongLq.push(d);
+  }
+  const lq = khoiNhanLq(dongLq);
+  if (lq) out.push("", "<i>Con nhận tròn (nhận đủ 99 con) — dán thêm khối này:</i>", `<code>${esc(lq)}</code>`);
+  return out.join("\n");
 }
 
 /**
@@ -951,6 +1002,45 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
       const epNguong = gonArg?.[1] ? Number(gonArg[1]) : null;
       if (!region) return (await staleWarningAll()) + (await chanLqBot(REGIONS, !!gonArg, epNguong));
       return withWarning(region, (r) => chanLqBot([r], !!gonArg, epNguong));
+    }
+
+    // ── Đá phương án 2 (tab Số Đá 2): cùng lệnh, đuôi "2", bảng riêng. ──
+    case "/chandamn2":
+      return withWarning("xsmn", (r) => chanDa(r, false, false, null, 2));
+    case "/chandamt2":
+      return withWarning("xsmt", (r) => chanDa(r, false, false, null, 2));
+    case "/chandamb2":
+      return withWarning("xsmb", (r) => chanDa(r, false, false, null, 2));
+
+    case "/chanlq2": {
+      const region = parseRegion(args);
+      const gonArg = args.map((a) => fold(a).match(/^(?:gon|rutgon|g)(\d{2})?$/)).find(Boolean);
+      const epNguong = gonArg?.[1] ? Number(gonArg[1]) : null;
+      if (!region) return (await staleWarningAll()) + (await chanLqBot(REGIONS, !!gonArg, epNguong, 2));
+      return withWarning(region, (r) => chanLqBot([r], !!gonArg, epNguong, 2));
+    }
+
+    case "/chanda2": {
+      const region = parseRegion(args);
+      const khongLap = args.some((a) => /^(khonglap|khongtrung|kl|kt|1)$/.test(fold(a)));
+      const gonArg = args.map((a) => fold(a).match(/^(?:gon|rutgon|g)(\d{2})?$/)).find(Boolean);
+      const epNguong = gonArg?.[1] ? Number(gonArg[1]) : null;
+      if (!region) return (await staleWarningAll()) + (await chanDaTatCa(khongLap, !!gonArg, epNguong, 2));
+      return withWarning(region, (r) => chanDa(r, khongLap, !!gonArg, epNguong, 2));
+    }
+
+    case "/nhandamn2":
+      return withWarning("xsmn", (r) => nhanDaBot([r]));
+    case "/nhandamt2":
+      return withWarning("xsmt", (r) => nhanDaBot([r]));
+    case "/nhandamb2":
+      return withWarning("xsmb", (r) => nhanDaBot([r]));
+
+    case "/nhanda2": {
+      const region = parseRegion(args);
+      const khongLap = args.some((a) => /^(khonglap|khongtrung|kl|kt|1)$/.test(fold(a)));
+      if (!region) return (await staleWarningAll()) + (await nhanDaBot(REGIONS, khongLap));
+      return withWarning(region, (r) => nhanDaBot([r], khongLap));
     }
 
     case "/chanda": {

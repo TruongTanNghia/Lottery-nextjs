@@ -65,7 +65,7 @@ function Dashboard() {
   const toast = useToast();
 
   const [region, setRegion] = useState<Region>("xsmn");
-  const [view, setView] = useState<"dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda" | "chanlo" | "check">("dashboard");
+  const [view, setView] = useState<"dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda" | "soda2" | "chanlo" | "check">("dashboard");
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -577,6 +577,8 @@ function Dashboard() {
           </>
         ) : view === "soda" ? (
           <SoDaPage region={region} />
+        ) : view === "soda2" ? (
+          <SoDaPage key="pa2" region={region} pa={2} />
         ) : view === "chanlo" ? (
           <ChanLoPage region={region} />
         ) : view === "check" ? (

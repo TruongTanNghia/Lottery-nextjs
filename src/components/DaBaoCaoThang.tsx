@@ -46,7 +46,7 @@ interface MienDa {
  * không có nghĩa là giá sai — tháng nào đông con về thì số cặp trúng tăng theo
  * bình phương, nên dao động của đá rộng hơn lô nhiều.
  */
-export default function DaBaoCaoThang({ phienBan = 0 }: { phienBan?: number }) {
+export default function DaBaoCaoThang({ phienBan = 0, pa = 1 }: { phienBan?: number; pa?: 1 | 2 }) {
   const [ds, setDs] = useState<MienDa[] | null>(null);
   const [loi, setLoi] = useState<string | null>(null);
 
@@ -57,7 +57,7 @@ export default function DaBaoCaoThang({ phienBan = 0 }: { phienBan?: number }) {
         const [h, c] = await Promise.all([
           fetch(`/api/history/hits?region=${r}`).then((x) => x.json()),
           // Không đọc được bảng thì tính theo bảng mặc định, không để báo cáo trắng.
-          fetch(`/api/config/da?region=${r}`).then((x) => x.json()).catch(() => null),
+          fetch(`/api/config/da?region=${r}${pa === 2 ? "&pa=2" : ""}`).then((x) => x.json()).catch(() => null),
         ]);
         const ky = dungKy((h.draws ?? []) as DrawHits[]);
         const daLuu = c?.data?.bang ? chuanHoaBang(c.data.bang) : bangMacDinh();
@@ -81,7 +81,7 @@ export default function DaBaoCaoThang({ phienBan = 0 }: { phienBan?: number }) {
       .then((x) => !huy && setDs(x))
       .catch(() => !huy && setLoi("Không tải được dữ liệu báo cáo"));
     return () => { huy = true; };
-  }, [phienBan]);
+  }, [phienBan, pa]);
 
   const cacThang = useMemo(() => {
     if (!ds) return [];

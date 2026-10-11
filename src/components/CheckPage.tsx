@@ -31,7 +31,7 @@ async function lay(url: string) {
 }
 
 /** Tải MỚI mỗi lần kiểm — trang này tồn tại để bắt số cũ, nó không được tự giữ số cũ. */
-async function taiMien(region: Region, canDa: boolean, canChanLo: boolean): Promise<DuLieuMien> {
+async function taiMien(region: Region, canDa: boolean, canChanLo: boolean, paDa: 1 | 2 = 1): Promise<DuLieuMien> {
   const [h, s, l, pair, top, watch, manual, d, c] = await Promise.all([
     lay(`/api/history/hits?region=${region}`),
     lay(`/api/config/schedule?region=${region}`),
@@ -40,7 +40,7 @@ async function taiMien(region: Region, canDa: boolean, canChanLo: boolean): Prom
     lay(`/api/config/top?region=${region}`),
     lay(`/api/config/watch?region=${region}`),
     lay(`/api/config/manual?region=${region}`),
-    canDa ? lay(`/api/config/da?region=${region}`) : null,
+    canDa ? lay(`/api/config/da?region=${region}${paDa === 2 ? "&pa=2" : ""}`) : null,
     canChanLo ? lay(`/api/config/chan-ngay?region=${region}`) : null,
   ]);
   if (!Array.isArray(h.draws) || !s.data || !Array.isArray(l.data) || !pair.data || !top.data || !watch.data || !manual.data) {
@@ -362,6 +362,8 @@ function KiemChuoi({ region }: { region: Region }) {
   const [loi, setLoi] = useState<string | null>(null);
   const [kq, setKq] = useState<KetQuaChuoi | null>(null);
   const [chiSai, setChiSai] = useState(false);
+  /** Chuỗi chặn đá lấy từ tab nào: 1 = Số Đá (/chanda…), 2 = Số Đá 2 (/chanda2…). Hai bảng khác nhau nên phải chọn đúng. */
+  const [paDa, setPaDa] = useState<1 | 2>(1);
   // Mỗi lần đổi chữ / đổi miền / bấm Xoá là một "lượt" mới: kết quả của lượt cũ về muộn thì bỏ.
   const lan = useRef(0);
   const boKq = () => { lan.current++; setKq(null); setLoi(null); };
@@ -387,7 +389,7 @@ function KiemChuoi({ region }: { region: Region }) {
       if (khoi.length === 0) throw new Error("Không đọc được dòng nào là chuỗi lô hay chuỗi chặn đá. Dán nguyên chuỗi vừa copy (vd: “st tv ag …: 00b15dd15, 01b200dd200” hoặc “/chanloai …”).");
       const can = canTai(khoi, region);
       const dl: Partial<Record<Region, DuLieuMien>> = {};
-      await Promise.all(MIEN.filter((r) => can[r].can).map(async (r) => { dl[r] = await taiMien(r, can[r].da, can[r].chanLo); }));
+      await Promise.all(MIEN.filter((r) => can[r].can).map(async (r) => { dl[r] = await taiMien(r, can[r].da, can[r].chanLo, paDa); }));
       const luat: Partial<Record<Region, LuatMien>> = {};
       for (const r of MIEN) if (dl[r]) luat[r] = luatLoMien(dl[r]!);
       const mienCua = (k: Khoi) => k.mien ?? region;
@@ -453,6 +455,19 @@ function KiemChuoi({ region }: { region: Region }) {
             >
               {ban ? "Đang kiểm…" : "🔎 Kiểm tra"}
             </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 text-[0.72rem]" data-check-pa>
+            <span className="text-[var(--text-muted)]">Chuỗi chặn đá lấy từ:</span>
+            {([[1, "Số Đá (phương án 1)"], [2, "Số Đá 2 (phương án 2)"]] as [1 | 2, string][]).map(([v, ten]) => (
+              <button
+                key={v}
+                onClick={() => { setPaDa(v); boKq(); }}
+                data-check-pa-chon={v}
+                className={`px-2.5 py-1 rounded-lg font-bold ${paDa === v ? "bg-[#2563eb] text-white" : "bg-white/[0.08] text-[#c2d4ea] hover:bg-white/[0.16]"}`}
+              >
+                {ten}
+              </button>
+            ))}
           </div>
           <p className="text-[0.68rem] text-[var(--text-muted)] leading-snug">
             Chuỗi có tên đài (st tv ag… / dnang pyen… / mb) thì máy tự biết miền. Chuỗi <b>không</b> có tên đài sẽ tính theo tab miền đang chọn:{" "}

@@ -16,6 +16,12 @@
  *
  * Chỉ tab Số Đá và lệnh /chanda của bot đọc thứ này. Bộ máy hạn mức lô không
  * biết tới nó.
+ *
+ * Hai phương án chạy song song (khách: "copy 1 tab đá riêng biệt với tab cũ,
+ * 2 tab chạy cùng nhau, full chức năng như nhau — 1 bên chặn, 1 bên nhận").
+ * Phương án 1 là bảng cũ, khoá cũ, không đổi gì. Phương án 2 có khoá riêng;
+ * chưa lưu lần nào thì đọc ra đúng bản của phương án 1 (bản sao để bắt đầu),
+ * từ lần lưu / lần luật đóng đinh đầu tiên trở đi là của riêng nó.
  */
 import { getConfigValue, query, setConfigValue } from "@/lib/db";
 import { dungKy } from "@/lib/slot-stats";
@@ -27,7 +33,10 @@ import {
 } from "@/lib/da";
 import type { Region } from "@/lib/types";
 
-const khoa = (region: Region) => `da_bang:${region}`;
+/** 1 = bảng cũ (tab Số Đá, /chanda…). 2 = bảng riêng của tab Số Đá 2 (/chanda2, /nhanda2…). */
+export type PhuongAn = 1 | 2;
+export const chuanHoaPa = (raw: unknown): PhuongAn => (String(raw) === "2" ? 2 : 1);
+const khoa = (region: Region, pa: PhuongAn = 1) => (pa === 2 ? `da_bang_pa2:${region}` : `da_bang:${region}`);
 
 export interface BangDaLuu {
   bang: BangDa;
@@ -48,12 +57,23 @@ export interface BangDaLuu {
   rutGon: boolean;
   /** Mức rút gọn: con bị chặn từ ngần này trên 99 con thì chặn tròn. */
   nguongGon: number;
+  /** Chỉ phương án 2: true khi chưa lưu riêng lần nào — đang đọc bản của phương án 1. */
+  saoTuPa1?: boolean;
 }
 
 const macDinh = (): BangDaLuu => ({ bang: bangMacDinh(), luuLuc: null, tuDong: true, chanLuat: [], moTay: [], luatLuc: null, rutGon: false, nguongGon: NGUONG_RUT_GON, buoc1: true, buoc2: true });
 
-export async function docBangDa(region: Region): Promise<BangDaLuu> {
-  const raw = await getConfigValue(khoa(region));
+export async function docBangDa(region: Region, pa: PhuongAn = 1): Promise<BangDaLuu> {
+  if (pa === 2) {
+    const rieng = await getConfigValue(khoa(region, 2));
+    if (rieng) return docTho(rieng);
+    // Chưa có bản riêng: bắt đầu từ đúng bản phương án 1 đang chạy.
+    return { ...(await docBangDa(region, 1)), saoTuPa1: true };
+  }
+  return docTho(await getConfigValue(khoa(region)));
+}
+
+function docTho(raw: string | null): BangDaLuu {
   if (!raw) return macDinh();
   try {
     const o = JSON.parse(raw) as Partial<Record<keyof BangDaLuu, unknown>>;
@@ -77,8 +97,11 @@ export async function docBangDa(region: Region): Promise<BangDaLuu> {
   }
 }
 
-async function ghi(region: Region, data: BangDaLuu): Promise<void> {
-  await setConfigValue(khoa(region), JSON.stringify(data));
+async function ghi(region: Region, data: BangDaLuu, pa: PhuongAn = 1): Promise<void> {
+  // `saoTuPa1` là cờ lúc đọc, không lưu.
+  const { saoTuPa1: _bo, ...luu } = data;
+  void _bo;
+  await setConfigValue(khoa(region, pa), JSON.stringify(luu));
 }
 
 export async function luuBangDa(
@@ -89,10 +112,11 @@ export async function luuBangDa(
   moTay: unknown,
   rutGon: boolean,
   nguongGon: unknown,
-  buoc: unknown
+  buoc: unknown,
+  pa: PhuongAn = 1
 ): Promise<BangDaLuu> {
   const b = chuanHoaBuoc(buoc);
-  const cu = await docBangDa(region);
+  const cu = await docBangDa(region, pa);
   // Trang mở từ trước bản có bậc liên tiếp gửi bảng 136 ô: mở rộng danh sách như lúc đọc.
   const bangCu = !!bang && typeof bang === "object" && laBangCu(Object.keys(bang as object));
   const moRong = (ds: string[]) => (bangCu ? moRongDanhSachCu(ds) : ds);
@@ -110,7 +134,7 @@ export async function luuBangDa(
     rutGon,
     nguongGon: chuanHoaNguongGon(nguongGon),
   };
-  await ghi(region, data);
+  await ghi(region, data, pa);
   return data;
 }
 
@@ -150,8 +174,8 @@ export interface BangHieuLuc {
  * trả bảng hiệu lực. Ghi trong lúc đọc là cố ý: "chặn rồi giữ nguyên" chỉ
  * đúng nếu cái đã chặn được ghi lại ngay lúc nó xảy ra.
  */
-export async function bangHieuLuc(region: Region): Promise<BangHieuLuc> {
-  const [luu0, draws] = await Promise.all([docBangDa(region), taiKyDaXo(region)]);
+export async function bangHieuLuc(region: Region, pa: PhuongAn = 1): Promise<BangHieuLuc> {
+  const [luu0, draws] = await Promise.all([docBangDa(region, pa), taiKyDaXo(region)]);
   const ky = dungKy(draws);
   const tk = thongKeDa(ky, region);
   const tkt = thongKeCapTheoThang(ky, region);
@@ -164,11 +188,12 @@ export async function bangHieuLuc(region: Region): Promise<BangHieuLuc> {
     // mất vài trăm ms (tải cả lịch sử); nếu trong lúc đó khách bấm Lưu thì
     // ghi nguyên `luu0` sẽ đè bản vừa lưu bằng bảng cũ — mất đúng cái khách
     // vừa cài. Chỉ thêm ô, không bao giờ chở theo bảng tiền cũ.
-    const moiNhat = await docBangDa(region);
+    const moiNhat = await docBangDa(region, pa);
     const mo = new Set(moiNhat.moTay);
     const gop = [...new Set([...moiNhat.chanLuat, ...ap.moi])].filter((k) => !mo.has(k)).sort();
     luu = { ...moiNhat, chanLuat: gop, luatLuc: new Date().toISOString() };
-    await ghi(region, luu);
+    await ghi(region, luu, pa);
+    if (pa === 2) delete luu.saoTuPa1;
   }
 
   // Bảng hiệu lực dựng từ bản lưu mới nhất (có thể vừa đọc lại ở trên).
