@@ -6,7 +6,7 @@
  * 1. Luật từng ngày (tính dồn) = luật gốc tính lại từ đầu trên đúng quãng trước ngày đó.
  * 2. Tiền số nhận khi tắt luật = chốt sổ theo bảng (soTungKyTheoBang) từng kỳ.
  * 3. Luật bật: ô chặn cộng dồn, không bao giờ tự mở; ô mở tay không bị chặn.
- * 4. Chuỗi nhận đọc ngược ra ĐÚNG tập cặp nhận và đúng điểm; chặn + nhận = đủ 4.950 cặp, không chồng.
+ * 4. Chuỗi nhận đọc ngược ra ĐÚNG tập cặp nhận và đúng điểm, MỖI CẶP ĐÚNG MỘT LẦN; chặn + nhận = đủ 4.950 cặp.
  */
 import { dungKy } from "../src/lib/slot-stats";
 import {
@@ -14,7 +14,7 @@ import {
   type BangDa, type KyDa,
 } from "../src/lib/da";
 import {
-  capNhan, chiaKhoiNhanDa, docChuoiNhan, dongNhanLq, hauToNhan, khoiNhanLq, luatTungNgay, nhomNhanDa, tienNhanTheoNgay,
+  TIEN_TO_NHAN_MAC_DINH, capNhan, chuoiNhanMien, docChuoiNhan, hauToNhan, luatTungNgay, nhomNhanDa, tienNhanTheoNgay,
 } from "../src/lib/da-nhan";
 
 let pass = 0, fail = 0;
@@ -102,35 +102,44 @@ console.log("\n===== 3. BẬT LUẬT: chặn rồi giữ nguyên, ô mở tay kh
   ok("luật bật nhận ít cặp hơn tắt (đã chặn bớt)", t.ngay.reduce((s, r) => s + r.soCap, 0) < t3.ngay.reduce((s, r) => s + r.soCap, 0));
 }
 
-console.log("\n===== 4. CHUỖI NHẬN đọc ngược ra đúng tập cặp nhận + đúng điểm =====");
+console.log("\n===== 4. CHUỖI NHẬN: đúng tập cặp, đúng điểm, MỖI CẶP ĐÚNG MỘT LẦN (khách đếm lệch ~36 cặp vì cặp trùng) =====");
 {
-  let lech = 0, quaDai = 0, chong = 0, coTron = 0, coVong = 0;
-  for (let lan = 0; lan < 30; lan++) {
+  let lech = 0, trung = 0, quaDai = 0, chong = 0, sai = 0, coNhieuKhoi = 0, tongVong = 0;
+  for (let lan = 0; lan < 45; lan++) {
     const region = (["xsmn", "xsmt", "xsmb"] as const)[lan % 3];
     const tt = khoKyToi(lichSu(40))!;
-    // Cứ 3 lần có 1 bảng một mức điểm, chặn ít ô — để có con nhận tròn.
     const bang = lan % 3 === 2 ? bangNgauNhien(0.03, [3]) : bangNgauNhien([0.1, 0.4, 0.7][lan % 3]);
     const nhan = capNhan(tt.bac, bang);
     const chan = capBiChan(tt.bac, bang);
     const kc = (a: string, b: string) => (a < b ? `${a}-${b}` : `${b}-${a}`);
     const sN = new Set(nhan.map(([a, b]) => kc(a, b)));
     if (nhan.length + chan.length !== 4950 || chan.some(([a, b]) => sN.has(kc(a, b)))) chong++;
-    const muc = nhomNhanDa(nhan, lan % 2 === 1);
-    const dau = region === "xsmb" ? "mb" : "st tv ag";
-    const khoi = chiaKhoiNhanDa(dau, muc, 3400, region);
-    if (khoi.some((k) => k.length > 3400)) quaDai++;
-    const lq = khoiNhanLq([dongNhanLq(dau, muc, region)]);
-    if (lq) coTron++;
-    if (khoi.length) coVong++;
-    const doc = docChuoiNhan([...khoi, lq].join("\n"));
+    const muc = nhomNhanDa(nhan);
+    // Tổng C(k,2) của mọi vòng = số cặp nhận (không cặp nào ở hai vòng).
+    const cong = muc.reduce((s, m) => s + m.nhom.reduce((t, n) => t + (n.length * (n.length - 1)) / 2, 0), 0);
+    if (cong !== nhan.length || muc.reduce((s, m) => s + m.soCap, 0) !== nhan.length) sai++;
+    tongVong += muc.reduce((s, m) => s + m.nhom.length, 0);
+    const tienTo = TIEN_TO_NHAN_MAC_DINH[region];
+    const khoi = chuoiNhanMien(tienTo, muc, region, 3400);
+    if (khoi.some((k) => k.length > 3400 || !k.startsWith(tienTo))) quaDai++;
+    if (khoi.length > 1) coNhieuKhoi++;
+    const doc = docChuoiNhan(khoi, tienTo);
+    if (doc.soViet !== doc.cap.size) trung++;
     const mong = new Map(nhan.map(([a, b, d]) => [kc(a, b), d]));
-    if (doc.size !== mong.size || [...mong].some(([k, d]) => doc.get(k) !== d)) lech++;
+    if (doc.cap.size !== mong.size || [...mong].some(([k, d]) => doc.cap.get(k) !== d)) lech++;
   }
-  ok("30 bảng × 3 miền: chặn + nhận = đủ 4.950 cặp, không cặp nào vừa chặn vừa nhận", chong === 0, String(chong));
-  ok("30 bảng: đọc ngược /nhanloai + /nhanlq ra ĐÚNG tập cặp nhận, đúng số điểm từng cặp", lech === 0, String(lech));
-  ok("mỗi khối dán ≤ 3.400 ký tự", quaDai === 0);
-  ok("dữ liệu thử có cả con nhận tròn lẫn vòng", coTron > 0 && coVong > 0, `${coTron} / ${coVong}`);
+  ok("45 bảng × 3 miền: chặn + nhận = đủ 4.950 cặp, không cặp nào vừa chặn vừa nhận", chong === 0, String(chong));
+  ok("cộng C(k,2) mọi vòng = đúng số cặp nhận", sai === 0, String(sai));
+  ok("đọc ngược chuỗi: số cặp VIẾT RA = số cặp khác nhau (không cặp nào ghi hai lần)", trung === 0, String(trung));
+  ok("đọc ngược chuỗi ra ĐÚNG tập cặp nhận, đúng điểm từng cặp", lech === 0, String(lech));
+  ok("mỗi khối ≤ 3.400 ký tự và mở bằng tiền tố đài (2d / mb)", quaDai === 0);
+  ok("dữ liệu thử có chuỗi dài phải chia nhiều khối, có gom vòng", coNhieuKhoi > 0 && tongVong > 0, `${coNhieuKhoi} bảng nhiều khối`);
   ok("hậu tố: Nam/Trung dx5n, Bắc da5n, 0 điểm ra đúng dx0n như chuỗi chặn", hauToNhan("xsmn", 5) === "dx5n" && hauToNhan("xsmb", 5) === "da5n" && hauToNhan("xsmt", 0) === "dx0n");
+  // Đúng dạng khách vẽ: không còn lệnh "loại"/"nhận" nào trong chuỗi.
+  const k1 = chuoiNhanMien("2d", nhomNhanDa([["10", "01", 1], ["11", "01", 1], ["11", "10", 1], ["20", "05", 5]]), "xsmn", 3400);
+  ok("ví dụ nhỏ: 3 cặp 01-10-11 nhận 1 điểm + 05-20 nhận 5 → '2d01 10 11dx1n 05 20dx5n'", k1.length === 1 && k1[0] === "2d01 10 11dx1n 05 20dx5n", JSON.stringify(k1));
+  const k2 = chuoiNhanMien("mb ", nhomNhanDa([["10", "01", 2]]), "xsmb", 3400);
+  ok("Bắc: 'mb 01 10da2n'", k2[0] === "mb 01 10da2n", JSON.stringify(k2));
 }
 
 console.log(`\n### ${pass} DAT - ${fail} HONG ###`);

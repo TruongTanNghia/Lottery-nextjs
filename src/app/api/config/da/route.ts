@@ -17,12 +17,15 @@
 import { NextResponse } from "next/server";
 import { ApiError, ensureDb, jsonError, validateRegion } from "@/lib/api-utils";
 import { bangHieuLuc, chuanHoaPa, luuBangDa, type PhuongAn } from "@/lib/da-bang";
+import { docBotGui } from "@/lib/bot-gui";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function traLoi(region: ReturnType<typeof validateRegion>, pa: PhuongAn) {
   const h = await bangHieuLuc(region, pa);
+  // Chỉ phương án 2: tiền tố đài của chuỗi nhận = đúng tiền tố bot gửi lô ("2d", Bắc "mb "), để web và bot ra một chuỗi.
+  const them = pa === 2 ? { tienToNhan: (await docBotGui()).mien[region].tienTo } : {};
   return NextResponse.json({
     status: "success",
     region,
@@ -32,6 +35,7 @@ async function traLoi(region: ReturnType<typeof validateRegion>, pa: PhuongAn) {
       moi: h.moi,
       nguong: h.luat?.nguong ?? null,
       thangLuat: h.luat?.thang ?? null,
+      ...them,
     },
   });
 }

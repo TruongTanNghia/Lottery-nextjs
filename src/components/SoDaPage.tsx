@@ -73,6 +73,8 @@ export default function SoDaPage({ region, pa = 1 }: { region: Region; pa?: 1 | 
   const [phienBan, setPhienBan] = useState(0);
   // Phương án 2: true khi chưa lưu riêng lần nào — đang chạy theo bản của phương án 1.
   const [saoTuPa1, setSaoTuPa1] = useState(false);
+  /** Tiền tố đài của chuỗi nhận (máy chủ đọc từ cài đặt bot gửi). null = chưa tải. */
+  const [tienToNhan, setTienToNhan] = useState<string | null>(null);
 
   useEffect(() => {
     let huy = false;
@@ -83,6 +85,7 @@ export default function SoDaPage({ region, pa = 1 }: { region: Region; pa?: 1 | 
       .then((d) => {
         if (huy) return;
         setSaoTuPa1(d?.data?.saoTuPa1 === true);
+        setTienToNhan(typeof d?.data?.tienToNhan === "string" ? d.data.tienToNhan : null);
         setBang(chuanHoaBang(d?.data?.bang));
         setLuuLuc(typeof d?.data?.luuLuc === "string" ? d.data.luuLuc : null);
         setTuDong(d?.data?.tuDong !== false);
@@ -177,7 +180,7 @@ export default function SoDaPage({ region, pa = 1 }: { region: Region; pa?: 1 | 
 
       {pa === 2 && draws && hieuLuc && (
         <div id="da-sonhan" style={{ scrollMarginTop: 150 }}>
-          <DaSoNhan draws={draws} region={region} bang={hieuLuc} />
+          <DaSoNhan draws={draws} region={region} bang={hieuLuc} tienTo={tienToNhan} />
         </div>
       )}
       {pa === 2 && ky && bang && hieuLuc && (

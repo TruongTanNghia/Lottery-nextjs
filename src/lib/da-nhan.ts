@@ -7,11 +7,13 @@
  *
  * Hai việc:
  *
- *   1. Chuỗi số nhận. Ngược với chuỗi chặn: cặp nào rơi vào ô đang cài > 0
- *      điểm là cặp nhận, và nhận đúng số điểm của ô đó. Viết theo đúng khuôn
- *      chuỗi chặn khách đang dán ("01 10 11dx0n"), chỉ khác số tiền: "dx0n"
- *      là nhận 0 (chặn), nên nhận N điểm là "dxNn" (Bắc "daNn"). Cặp gom vòng
- *      như bên chặn; con nhận đủ 99 con ở cùng một mức thì ghi một mình.
+ *   1. Chuỗi số nhận. Cặp nào rơi vào ô đang cài > 0 điểm là cặp nhận, và
+ *      nhận đúng số điểm của ô đó. Khách chốt dạng: "Mn: 2d các cặp đá",
+ *      tương tự Mt, Mb — chỉ có cặp ghép với nhau, KHÔNG có lệnh "loại"/
+ *      "nhận" nào. Tiền tố đài ("2d", Bắc "mb ") là đúng tiền tố bot gửi lô.
+ *      Cặp gom vòng "01 10 11dx5n" (nhận 5 điểm mỗi cặp trong vòng) cho
+ *      ngắn, nhưng MỖI CẶP GHI ĐÚNG MỘT LẦN: bên nhận, cặp ghi hai lần là
+ *      phần mềm nhận gấp đôi — khách đếm thấy lệch ~36 cặp vì đúng chỗ này.
  *
  *   2. Tiền số nhận theo từng ngày, từng tháng, THEO THỜI GIAN THỰC: sáng mỗi
  *      ngày, luật hai bước chỉ được nhìn các kỳ TRƯỚC ngày đó (đúng như máy
@@ -30,12 +32,11 @@ import type { Region } from "./db";
 // 1. Chuỗi số nhận
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Lệnh của phần mềm ghi cược cho chuỗi nhận. Khách dùng chữ khác thì đổi ở đây. */
-export const LENH_NHAN_LOAI = "/nhanloai";
-export const LENH_NHAN_LQ = "/nhanlq";
-
 /** "dx5n" — nhận 5 điểm (Bắc "da5n"). Cùng khuôn "dx0n" của chuỗi chặn. */
 export const hauToNhan = (region: Region, diem: number) => HAU_TO_CHAN_DA[region].replace(/0n$/, `${diem}n`);
+
+/** Tiền tố đài mặc định — trùng tiền tố bot gửi lô (bot-gui-thuan MAC_DINH_BOT_GUI). */
+export const TIEN_TO_NHAN_MAC_DINH: Record<Region, string> = { xsmn: "2d", xsmt: "2d", xsmb: "mb " };
 
 /** Mọi cặp nhận ở kỳ tới, kèm số điểm nhận: [con lớn, con nhỏ, điểm]. */
 export function capNhan(bacCon: Record<string, number>, bang: BangDa): [string, string, number][] {
@@ -54,19 +55,16 @@ export interface MucNhan {
   diem: number;
   /** Số cặp nhận ở mức này. */
   soCap: number;
-  /** Con nhận đủ 99 con ở đúng mức này — ghi một mình. */
-  conTron: string[];
-  /** Các cặp còn lại gom vòng. */
+  /** Các vòng — mỗi cặp nằm trong ĐÚNG một vòng. */
   nhom: string[][];
 }
 
 /**
- * Gom cặp nhận theo từng mức điểm. Trong mỗi mức: con nào nhận đủ 99 con
- * (cùng mức) thì là "nhận tròn", phần còn lại gom vòng bằng đúng hàm gom của
- * bên chặn — một vòng chỉ gồm những con mà từng cặp trong đó đều được nhận ở
- * mức đó, nên dán vào không nhận nhầm cặp nào.
+ * Gom cặp nhận theo từng mức điểm, rồi gom vòng KHÔNG LẶP: một vòng chỉ gồm
+ * những con mà từng cặp trong đó đều nhận ở mức đó và chưa ghi ở vòng nào
+ * khác. Cộng C(k,2) của mọi vòng ra đúng bằng số cặp nhận — bài kiểm giữ chặt.
  */
-export function nhomNhanDa(cap: [string, string, number][], khongLap = false): MucNhan[] {
+export function nhomNhanDa(cap: [string, string, number][]): MucNhan[] {
   const theoMuc = new Map<number, [string, string][]>();
   for (const [a, b, d] of cap) {
     let ds = theoMuc.get(d);
@@ -75,89 +73,59 @@ export function nhomNhanDa(cap: [string, string, number][], khongLap = false): M
   }
   return [...theoMuc.keys()].sort((x, y) => x - y).map((diem) => {
     const ds = theoMuc.get(diem)!;
-    const dem = new Map<string, number>();
-    for (const [a, b] of ds) {
-      dem.set(a, (dem.get(a) ?? 0) + 1);
-      dem.set(b, (dem.get(b) ?? 0) + 1);
-    }
-    const conTron = [...dem].filter(([, n]) => n >= 99).map(([c]) => c).sort();
-    const tron = new Set(conTron);
-    const conLai = ds.filter(([a, b]) => !tron.has(a) && !tron.has(b));
-    return { diem, soCap: ds.length, conTron, nhom: nhomVong(conLai, khongLap) };
+    return { diem, soCap: ds.length, nhom: nhomVong(ds, true) };
   });
 }
 
-/** Một dòng /nhanlq của một miền: các con nhận tròn, gom theo mức. */
-export function dongNhanLq(dau: string, muc: MucNhan[], region: Region): string {
-  const phan = muc.filter((m) => m.conTron.length).map((m) => `${m.conTron.join(" ")} ${hauToNhan(region, m.diem)}`);
-  return phan.length ? `${dau}: ${phan.join(" ")} .` : "";
-}
-export const khoiNhanLq = (dong: string[]) => {
-  const co = dong.filter(Boolean);
-  return co.length ? `${LENH_NHAN_LQ}\n${co.join("\n")}` : "";
-};
-
-/** Chia các vòng nhận thành các khối dán được, mỗi khối ≤ toiDa ký tự (cùng cách bên chặn). */
-export function chiaKhoiNhanDa(dau: string, muc: MucNhan[], toiDa: number, region: Region): string[] {
+/**
+ * Chuỗi nhận của một miền, chia khối ≤ toiDa ký tự; khối nào cũng mở bằng
+ * tiền tố đài và dán trọn được: "2d01 10 11dx1n 05 12dx5n …".
+ */
+export function chuoiNhanMien(tienTo: string, muc: MucNhan[], region: Region, toiDa: number): string[] {
   const mau = muc.flatMap((m) => m.nhom.map((n) => `${n.join(" ")}${hauToNhan(region, m.diem)}`));
-  if (mau.length === 0) return [];
-  const mo = `${LENH_NHAN_LOAI}\n${dau}: `;
   const khoi: string[] = [];
   let hien: string[] = [];
-  let dai = mo.length;
+  let dai = tienTo.length;
   for (const c of mau) {
     const them = c.length + (hien.length ? 1 : 0);
     if (hien.length && dai + them > toiDa) {
-      khoi.push(mo + hien.join(" "));
+      khoi.push(tienTo + hien.join(" "));
       hien = [];
-      dai = mo.length;
+      dai = tienTo.length;
     }
     hien.push(c);
     dai += c.length + (hien.length > 1 ? 1 : 0);
   }
-  if (hien.length) khoi.push(mo + hien.join(" "));
+  if (hien.length) khoi.push(tienTo + hien.join(" "));
   return khoi;
 }
 
 /**
- * Đọc ngược một chuỗi nhận (các khối /nhanloai và /nhanlq đã dán) ra tập cặp
- * kèm điểm — để bài kiểm chứng minh chuỗi ra ĐÚNG tập cặp nhận, không thừa
- * không thiếu, không sai điểm.
+ * Đọc ngược các khối nhận của một miền ra cặp → điểm, và đếm số cặp ĐÃ VIẾT
+ * (tính cả trùng) — để bài kiểm chứng minh: đúng tập cặp, đúng điểm, và số
+ * cặp viết ra = số cặp khác nhau (không cặp nào ghi hai lần).
  */
-export function docChuoiNhan(chuoi: string): Map<string, number> {
-  const out = new Map<string, number>();
-  const kc = (a: string, b: string) => (a < b ? `${a}-${b}` : `${b}-${a}`);
-  const ghi = (a: string, b: string, d: number) => {
-    const k = kc(a, b);
-    if (out.has(k) && out.get(k) !== d) out.set(k, -1); // một cặp hai mức — báo lỗi bằng -1
-    else out.set(k, d);
-  };
-  let lenh = "";
-  for (const dong of chuoi.split("\n")) {
-    const t = dong.trim();
-    if (t.startsWith("/")) { lenh = t; continue; }
-    const m = t.match(/^[^:]*:\s*(.*)$/);
-    if (!m) continue;
-    const than = m[1].replace(/\s*\.\s*$/, "");
-    const conDang: string[] = [];
-    for (const tu of than.split(/\s+/).filter(Boolean)) {
-      if (/^\d{2}$/.test(tu)) { conDang.push(tu); continue; }
-      const dinh = tu.match(/^(\d{2})?d[ax](\d+)n$/);
-      if (!dinh) { conDang.length = 0; continue; }
-      if (dinh[1]) conDang.push(dinh[1]);
-      const d = Number(dinh[2]);
-      if (lenh === LENH_NHAN_LOAI) {
-        for (let i = 0; i < conDang.length; i++) for (let j = i + 1; j < conDang.length; j++) ghi(conDang[i], conDang[j], d);
-      } else if (lenh === LENH_NHAN_LQ) {
-        for (const c of conDang) for (let q = 0; q < 100; q++) {
-          const y = String(q).padStart(2, "0");
-          if (y !== c) ghi(c, y, d);
-        }
+export function docChuoiNhan(khoi: string[], tienTo: string): { cap: Map<string, number>; soViet: number } {
+  const cap = new Map<string, number>();
+  let soViet = 0;
+  for (const k of khoi) {
+    const than = k.startsWith(tienTo) ? k.slice(tienTo.length) : k;
+    let con: string[] = [];
+    for (const tu of than.trim().split(/\s+/).filter(Boolean)) {
+      if (/^\d{2}$/.test(tu)) { con.push(tu); continue; }
+      const g = tu.match(/^(\d{2})?d[ax](\d+)n$/);
+      if (!g) { con = []; continue; }
+      if (g[1]) con.push(g[1]);
+      const d = Number(g[2]);
+      for (let i = 0; i < con.length; i++) for (let j = i + 1; j < con.length; j++) {
+        const key = con[i] < con[j] ? `${con[i]}-${con[j]}` : `${con[j]}-${con[i]}`;
+        soViet++;
+        cap.set(key, cap.has(key) && cap.get(key) !== d ? -1 : d);
       }
-      conDang.length = 0;
+      con = [];
     }
   }
-  return out;
+  return { cap, soViet };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

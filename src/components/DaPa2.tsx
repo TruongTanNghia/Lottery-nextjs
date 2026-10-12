@@ -11,10 +11,7 @@
 import { useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import { GIA_DA, khoKyToi, soTungKyTheoBang, gomThang, type BangDa, type KyDa } from "@/lib/da";
-import {
-  LENH_NHAN_LOAI, LENH_NHAN_LQ, capNhan, chiaKhoiNhanDa, dongNhanLq, hauToNhan, khoiNhanLq, nhomNhanDa, tienNhanTheoNgay,
-} from "@/lib/da-nhan";
-import { provincePrefix } from "@/lib/provinces";
+import { TIEN_TO_NHAN_MAC_DINH, capNhan, chuoiNhanMien, hauToNhan, nhomNhanDa, tienNhanTheoNgay } from "@/lib/da-nhan";
 import { useToast } from "./Toast";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
@@ -34,34 +31,33 @@ const tenMien = (r: Region) => (r === "xsmn" ? "mn" : r === "xsmt" ? "mt" : "mb"
 // Số nhận kỳ tới
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function DaSoNhan({ draws, region, bang }: { draws: DrawHits[]; region: Region; bang: BangDa }) {
+const TEN_NGAN: Record<Region, string> = { xsmn: "Mn", xsmt: "Mt", xsmb: "Mb" };
+
+export function DaSoNhan({ draws, region, bang, tienTo }: { draws: DrawHits[]; region: Region; bang: BangDa; tienTo: string | null }) {
   const toast = useToast();
-  const [khongLap, setKhongLap] = useState(false);
+  const tt = tienTo ?? TIEN_TO_NHAN_MAC_DINH[region];
   const kq = useMemo(() => {
-    const tt = khoKyToi(draws);
-    if (!tt) return null;
-    const cap = capNhan(tt.bac, bang);
-    const muc = nhomNhanDa(cap, khongLap);
-    const dau = provincePrefix(region);
-    const chuoi = chiaKhoiNhanDa(dau, muc, Number.POSITIVE_INFINITY, region)[0] ?? "";
-    const lq = khoiNhanLq([dongNhanLq(dau, muc, region)]);
-    // Theo con: mỗi con nhận với bao nhiêu con, để nhìn nhanh con nào "mở" nhiều nhất.
+    const k = khoKyToi(draws);
+    if (!k) return null;
+    const cap = capNhan(k.bac, bang);
+    const muc = nhomNhanDa(cap);
+    // Web không cắt khúc: một chuỗi trọn cho cả miền (bot mới cắt cho vừa tin Telegram).
+    const chuoi = chuoiNhanMien(tt, muc, region, Number.POSITIVE_INFINITY)[0] ?? "";
+    const soVong = muc.reduce((s, m) => s + m.nhom.length, 0);
     const dem = new Map<string, number>();
     for (const [a, b] of cap) { dem.set(a, (dem.get(a) ?? 0) + 1); dem.set(b, (dem.get(b) ?? 0) + 1); }
-    return { ngayCuoi: tt.ngayCuoi, cap, muc, chuoi, lq, dem };
-  }, [draws, bang, region, khongLap]);
+    return { ngayCuoi: k.ngayCuoi, cap, muc, chuoi, soVong, dem };
+  }, [draws, bang, region, tt]);
 
   if (!kq) return null;
-  const copy = async (s: string, bao: string) => {
+  const copy = async () => {
     try {
-      await navigator.clipboard.writeText(s);
-      toast.show("success", bao);
+      await navigator.clipboard.writeText(kq.chuoi);
+      toast.show("success", `Đã copy số nhận ${TEN_NGAN[region]} — ${so(kq.cap.length)} cặp, mỗi cặp 1 lần`);
     } catch {
       toast.show("error", "Trình duyệt không cho copy — bấm giữ để chép tay");
     }
   };
-  const soTron = kq.muc.reduce((s, m) => s + m.conTron.length, 0);
-  const soVong = kq.muc.reduce((s, m) => s + m.nhom.length, 0);
   const thu1Ky = kq.cap.reduce((s, c) => s + c[2], 0) * GIA_DA[region];
   const conMo = [...kq.dem].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 
@@ -78,61 +74,46 @@ export function DaSoNhan({ draws, region, bang }: { draws: DrawHits[]; region: R
       <div className="p-3 md:p-4 space-y-3">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
           <O nhan="Cặp nhận" gt={`${so(kq.cap.length)}`} phu={`trên 4.950 cặp · chặn ${so(4950 - kq.cap.length)}`} m="#34e6a8" />
-          <O nhan="Con nhận tròn" gt={String(soTron)} phu="nhận đủ 99 con ở một mức" m="#8fd0ff" />
-          <O nhan="Số vòng" gt={so(soVong)} phu="các cặp còn lại gom vòng" m="#ffd24a" />
+          <O nhan="Số vòng" gt={so(kq.soVong)} phu="mỗi cặp nằm trong đúng 1 vòng" m="#ffd24a" />
+          <O nhan="Mức điểm" gt={kq.muc.map((m) => m.diem).join(" · ") || "—"} phu="điểm nhận mỗi cặp" m="#8fd0ff" />
           <O nhan="Thu nếu khách đặt đủ" gt={tien(thu1Ky)} phu="mọi cặp nhận × điểm × giá" m="#c2d4ea" />
         </div>
 
-        <div className="flex flex-wrap gap-1.5 text-[0.72rem]" data-nhan-muc>
-          {kq.muc.map((m) => (
-            <span key={m.diem} className="rounded px-2 py-1 bg-white/[0.06] border border-[var(--hairline)] text-[#dbe7f7]">
-              <b className="numeric">{m.diem}</b> điểm: <b className="numeric">{so(m.soCap)}</b> cặp · {m.conTron.length} con tròn · đuôi <code>{hauToNhan(region, m.diem)}</code>
-            </span>
-          ))}
-          {kq.muc.length === 0 && <span className="text-[#ff9d9d]">Bảng đang chặn hết — không nhận cặp nào.</span>}
-        </div>
+        {kq.muc.length > 1 && (
+          <div className="flex flex-wrap gap-1.5 text-[0.72rem]" data-nhan-muc>
+            {kq.muc.map((m) => (
+              <span key={m.diem} className="rounded px-2 py-1 bg-white/[0.06] border border-[var(--hairline)] text-[#dbe7f7]">
+                <b className="numeric">{m.diem}</b> điểm: <b className="numeric">{so(m.soCap)}</b> cặp · đuôi <code>{hauToNhan(region, m.diem)}</code>
+              </span>
+            ))}
+          </div>
+        )}
 
-        <label className="flex items-center gap-2 text-[0.72rem] text-[#c2d4ea]">
-          <input type="checkbox" checked={khongLap} onChange={(e) => setKhongLap(e.target.checked)} data-nhan-khong-lap />
-          Không lặp cặp (mỗi cặp ghi đúng một lần — chuỗi dài hơn)
-        </label>
-
-        {kq.chuoi && (
+        {kq.chuoi ? (
           <div className="rounded-lg border border-[var(--hairline)] bg-black/20 px-2.5 py-2" data-nhan-chuoi>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[0.7rem] font-bold text-white">{LENH_NHAN_LOAI} · {so(kq.chuoi.length)} ký tự</span>
+              <span className="text-[0.7rem] font-bold text-white">
+                {TEN_NGAN[region]}: {so(kq.cap.length)} cặp · {so(kq.chuoi.length)} ký tự
+              </span>
               <button
-                onClick={() => copy(kq.chuoi, `Đã copy ${LENH_NHAN_LOAI}${kq.lq ? ` — còn ${LENH_NHAN_LQ} nữa, dán cả hai` : ""}`)}
+                onClick={copy}
                 data-nhan-copy
                 className="ml-auto px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-700 text-white hover:bg-emerald-800"
               >
-                📋 Copy {LENH_NHAN_LOAI}
+                📋 Copy số nhận
               </button>
             </div>
             <code className="block mt-1 max-h-40 overflow-y-auto text-[0.66rem] leading-snug text-[#dbe7f7] break-all whitespace-pre-wrap" data-nhan-chuoi-xem>
               {kq.chuoi}
             </code>
           </div>
-        )}
-        {kq.lq && (
-          <div className="rounded-lg border border-[#34e6a8]/40 bg-emerald-900/20 px-2.5 py-2" data-nhan-lq>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[0.7rem] font-bold text-[#7ff0c0]">{soTron} con nhận tròn — khối {LENH_NHAN_LQ}</span>
-              <button
-                onClick={() => copy(kq.lq, `Đã copy ${LENH_NHAN_LQ} — ${soTron} con nhận tròn`)}
-                data-nhan-copy-lq
-                className="ml-auto px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-700 text-white hover:bg-emerald-800"
-              >
-                📋 Copy {LENH_NHAN_LQ}
-              </button>
-            </div>
-            <code className="block mt-1 text-[0.66rem] leading-snug text-[#d8ffef] break-all whitespace-pre-wrap" data-nhan-lq-xem>{kq.lq}</code>
-          </div>
+        ) : (
+          <div className="text-[0.74rem] text-[#ff9d9d]">Bảng đang chặn hết — không nhận cặp nào.</div>
         )}
         <div className="text-[0.66rem] text-[var(--text-muted)] leading-relaxed">
-          Cùng khuôn chuỗi chặn: <code>01 10 11{hauToNhan(region, 0)}</code> là nhận 0 (chặn), nên <code>01 10 11{hauToNhan(region, 5)}</code> là
-          nhận 5 điểm mỗi cặp trong vòng đó. Con nằm ở {LENH_NHAN_LQ} là nhận với cả 99 con còn lại. Dán <b>cả hai</b> khối mới đủ.
-          Trên Telegram: <code>/nhanda2 {tenMien(region)}</code> (hay <code>/nhandam{tenMien(region).slice(1)}2</code>), <code>/nhanda2</code> là cả 3 miền.
+          Chỉ có cặp ghép với nhau, mở bằng tiền tố đài <code>{tt.trim() || "(trống)"}</code> (đúng tiền tố bot gửi lô).{" "}
+          <code>01 10 11{hauToNhan(region, 5)}</code> là nhận 5 điểm cho cả 3 cặp 01-10, 01-11, 10-11. <b>Mỗi cặp ghi đúng một lần</b> —
+          phần mềm đếm ra đúng {so(kq.cap.length)} cặp. Trên Telegram: <code>/nhandam{tenMien(region).slice(1)}2</code>, <code>/nhanda2</code> là cả 3 miền.
         </div>
 
         <details className="text-[0.72rem]" data-nhan-theo-con>
