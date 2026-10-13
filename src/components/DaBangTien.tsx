@@ -65,7 +65,7 @@ type Nhom = "cung" | "cheo";
  * tổng ở trên thì tính theo số đang gõ, để thấy trước rồi mới quyết.
  */
 export default function DaBangTien({
-  draws, ky, region, bang, luuLuc, tuDong, chanLuat, moTay, rutGon, nguongGon, buoc1, buoc2, lyDo, nguong, thangLuat, onLuu, pa = 1,
+  draws, ky, region, bang, luuLuc, tuDong, chanLuat, moTay, rutGon, nguongGon, buoc1, buoc2, lyDo, nguong, thangLuat, onLuu, pa = 1, onChuaLuu,
 }: {
   /** Phương án: 1 = tab Số Đá (bảng cũ), 2 = tab Số Đá 2 (bảng riêng, lệnh bot có đuôi 2). */
   pa?: 1 | 2;
@@ -85,6 +85,8 @@ export default function DaBangTien({
   nguong: number | null;
   thangLuat: string | null;
   onLuu: (data: Record<string, unknown>) => void;
+  /** Chỉ tab Số Đá 2 dùng: báo lên trang là đang sửa mà chưa Lưu. */
+  onChuaLuu?: (chuaLuu: boolean) => void;
 }) {
   const toast = useToast();
   /** Tên lệnh BOT của phương án này (phương án 2 thêm đuôi "2"). Lệnh của phần mềm ghi cược (/chanloai, /chanlq trong chuỗi dán) thì giữ nguyên. */
@@ -171,6 +173,13 @@ export default function DaBangTien({
     });
     return { cap, nhom, con100, capThem, soVong: nhom.filter((n) => n.length > 2).length, soLe: nhom.filter((n) => n.length === 2).length, chuoi, lq, kyTu: chuoi.length + lq.length, xemMuc };
   }, [tt, hieuLuc, region, khongLap, rutGonNhap, nguongGonNhap]);
+
+  // Khách sửa ô 3 điểm, 5 điểm rồi nhìn Số nhận / Tiền số nhận vẫn thấy như cũ vì chưa bấm Lưu.
+  // Báo lên để các khối đó nói rõ là đang theo bảng ĐÃ LƯU.
+  const chuaLuu =
+    Object.keys(nhap).some((k) => nhap[k] !== bang[k]) || buoc1Nhap !== buoc1 || buoc2Nhap !== buoc2 ||
+    chanLuatNhap.join(",") !== chanLuat.join(",") || moTayNhap.join(",") !== moTay.join(",");
+  useEffect(() => { onChuaLuu?.(chuaLuu); }, [chuaLuu, onChuaLuu]);
 
   if (!tkt || !tong) return null;
 

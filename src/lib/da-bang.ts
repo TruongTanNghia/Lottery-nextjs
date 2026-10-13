@@ -138,6 +138,44 @@ export async function luuBangDa(
   return data;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phương án 2 — sổ bảng thật đã chạy từng kỳ
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Khách nhập chuỗi nhận vào phần mềm 2 hôm để so: "hqua khớp, hnay cách tính
+// tiền bị lệch". Tiền số nhận theo ngày trước đây dựng lại bảng của mỗi ngày
+// bằng cách chạy luật từ đầu lịch sử với bảng điểm HÔM NAY — gần đúng, nhưng
+// không phải đúng thứ đã gửi đi. Giờ mỗi lần bảng hiệu lực của phương án 2
+// được dựng (web mở tab, bấm Lưu, bot /nhanda2…) là ghi lại, khoá theo kỳ mới
+// nhất lúc đó ("bảng dùng cho kỳ SAU ngày X"). Lần ghi sau cùng trước giờ xổ là
+// bảng đã dùng. Ngày nào có sổ thì tính tiền theo sổ — đúng từng cặp, từng điểm.
+
+const khoaLich = (region: Region) => `da_pa2_lich:${region}`;
+/** Giữ ngần này kỳ gần nhất — đủ xem lại vài tháng, không để kho phình mãi. */
+const GIU_LICH = 400;
+
+/** "2026-10-12" → bảng PA2 đã dùng cho kỳ NGAY SAU ngày đó. */
+export async function docLichBangPa2(region: Region): Promise<Record<string, BangDa>> {
+  const raw = await getConfigValue(khoaLich(region));
+  if (!raw) return {};
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    const out: Record<string, BangDa> = {};
+    for (const [ngay, b] of Object.entries(o)) if (/^\d{4}-\d{2}-\d{2}$/.test(ngay) && b && typeof b === "object") out[ngay] = chuanHoaBang(b);
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+async function ghiLichBangPa2(region: Region, ngayCuoi: string, bang: BangDa): Promise<void> {
+  const lich = await docLichBangPa2(region);
+  if (JSON.stringify(lich[ngayCuoi]) === JSON.stringify(bang)) return; // không đổi thì khỏi ghi
+  lich[ngayCuoi] = bang;
+  const giu = Object.keys(lich).sort().slice(-GIU_LICH);
+  await setConfigValue(khoaLich(region), JSON.stringify(Object.fromEntries(giu.map((k) => [k, lich[k]]))));
+}
+
 /** Mọi kỳ đã đếm của miền, đúng nguồn mà /api/history/hits trả cho trình duyệt. */
 export async function taiKyDaXo(region: Region): Promise<DrawHits[]> {
   const rows = await query<{ date: string; lo_number: string; count: number }>(
@@ -199,6 +237,9 @@ export async function bangHieuLuc(region: Region, pa: PhuongAn = 1): Promise<Ban
   // Bảng hiệu lực dựng từ bản lưu mới nhất (có thể vừa đọc lại ở trên).
   const bang = luu.tuDong ? apChanLuat(luu.bang, luu.chanLuat) : luu.bang;
   const tt = khoKyToi(draws);
+  // Phương án 2: ghi lại đúng bảng đang chạy cho kỳ tới — chuỗi nhận web/bot
+  // trả lúc này là theo bảng này, nên tiền số nhận của kỳ đó phải tính theo nó.
+  if (pa === 2 && tt) await ghiLichBangPa2(region, tt.ngayCuoi, bang);
   return {
     luu,
     bang,

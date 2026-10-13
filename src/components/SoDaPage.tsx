@@ -75,6 +75,10 @@ export default function SoDaPage({ region, pa = 1 }: { region: Region; pa?: 1 | 
   const [saoTuPa1, setSaoTuPa1] = useState(false);
   /** Tiền tố đài của chuỗi nhận (máy chủ đọc từ cài đặt bot gửi). null = chưa tải. */
   const [tienToNhan, setTienToNhan] = useState<string | null>(null);
+  /** Phương án 2: sổ bảng thật đã chạy từng kỳ (máy chủ ghi), để tiền số nhận tính đúng bảng đã gửi đi. */
+  const [lichBang, setLichBang] = useState<Record<string, BangDa>>({});
+  /** Bảng tiền đang sửa mà chưa Lưu — các khối PA2 phải nói rõ. */
+  const [chuaLuu, setChuaLuu] = useState(false);
 
   useEffect(() => {
     let huy = false;
@@ -86,6 +90,7 @@ export default function SoDaPage({ region, pa = 1 }: { region: Region; pa?: 1 | 
         if (huy) return;
         setSaoTuPa1(d?.data?.saoTuPa1 === true);
         setTienToNhan(typeof d?.data?.tienToNhan === "string" ? d.data.tienToNhan : null);
+        setLichBang(d?.data?.lichBang && typeof d.data.lichBang === "object" ? (d.data.lichBang as Record<string, BangDa>) : {});
         setBang(chuanHoaBang(d?.data?.bang));
         setLuuLuc(typeof d?.data?.luuLuc === "string" ? d.data.luuLuc : null);
         setTuDong(d?.data?.tuDong !== false);
@@ -158,7 +163,9 @@ export default function SoDaPage({ region, pa = 1 }: { region: Region; pa?: 1 | 
             nguong={nguong}
             thangLuat={thangLuat}
             pa={pa}
+            onChuaLuu={pa === 2 ? setChuaLuu : undefined}
             onLuu={(d) => {
+              if (d.lichBang && typeof d.lichBang === "object") setLichBang(d.lichBang as Record<string, BangDa>);
               setSaoTuPa1(false);
               setBang(chuanHoaBang(d.bang));
               setLuuLuc(typeof d.luuLuc === "string" ? d.luuLuc : null);
@@ -180,12 +187,12 @@ export default function SoDaPage({ region, pa = 1 }: { region: Region; pa?: 1 | 
 
       {pa === 2 && draws && hieuLuc && (
         <div id="da-sonhan" style={{ scrollMarginTop: 150 }}>
-          <DaSoNhan draws={draws} region={region} bang={hieuLuc} tienTo={tienToNhan} />
+          <DaSoNhan draws={draws} region={region} bang={hieuLuc} tienTo={tienToNhan} chuaLuu={chuaLuu} />
         </div>
       )}
       {pa === 2 && ky && bang && hieuLuc && (
         <div id="da-tiennhan" style={{ scrollMarginTop: 150 }}>
-          <DaTienNhan ky={ky} region={region} bang={bang} tuDong={tuDong} buoc1={buoc1} buoc2={buoc2} moTay={moTay} hieuLuc={hieuLuc} />
+          <DaTienNhan ky={ky} region={region} bang={bang} tuDong={tuDong} buoc1={buoc1} buoc2={buoc2} moTay={moTay} hieuLuc={hieuLuc} lichBang={lichBang} chuaLuu={chuaLuu} />
         </div>
       )}
 

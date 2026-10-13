@@ -142,5 +142,46 @@ console.log("\n===== 4. CHUỖI NHẬN: đúng tập cặp, đúng điểm, MỖ
   ok("Bắc: 'mb 01 10da2n'", k2[0] === "mb 01 10da2n", JSON.stringify(k2));
 }
 
+console.log("\n===== 5. Ô n ĐIỂM TÍNH THEO n (khách: 1n là 40,5 thì trúng 700 — cài 3n, 5n phải ra 3×, 5×) =====");
+{
+  const ky = dungKy(lichSu(70));
+  const bang1 = bangMacDinh();
+  const bang3 = Object.fromEntries(Object.keys(bang1).map((k) => [k, 3]));
+  const opt = { tuDong: false, buoc1: true, buoc2: true, moTay: [] as string[] };
+  const t1 = tienNhanTheoNgay(ky, "xsmb", bang1, opt), t3 = tienNhanTheoNgay(ky, "xsmb", bang3, opt);
+  ok("Bắc, mọi ô 3 điểm: từng ngày thu đúng 3× và TRẢ đúng 3× bảng 1 điểm", t1.ngay.every((r, i) => t3.ngay[i].thu === 3 * r.thu && t3.ngay[i].tra === 3 * r.tra && r.tra > 0));
+  const r0 = t1.ngay.find((r) => r.capTrung > 0)!;
+  ok("Bắc 1 điểm: một cặp trúng trả 700.000, một cặp nhận thu 40.500", r0.tra === r0.capTrung * 700_000 && r0.thu === r0.soCap * 40_500, `${r0.capTrung} cặp trúng → ${r0.tra}`);
+  ok("Bắc 3 điểm: một cặp trúng trả 2.100.000", t3.ngay.find((r) => r.date === r0.date)!.tra === r0.capTrung * 2_100_000);
+  // Bảng trộn 1 / 3 / 5 điểm: tách theo mức cộng lại = cả ngày, mỗi mức trả đúng n × 700.000 mỗi cặp trúng.
+  const tron = Object.fromEntries(Object.keys(bang1).map((k, i) => [k, [1, 3, 5][i % 3]]));
+  const tt = tienNhanTheoNgay(ky, "xsmb", tron, opt);
+  let sai = 0, coBa = 0;
+  for (const r of tt.ngay) {
+    const c = r.theoMuc.reduce((a, m) => ({ thu: a.thu + m.thu, tra: a.tra + m.tra, soCap: a.soCap + m.soCap }), { thu: 0, tra: 0, soCap: 0 });
+    if (c.thu !== r.thu || c.tra !== r.tra || c.soCap !== r.soCap) sai++;
+    for (const m of r.theoMuc) if (m.tra !== m.capTrung * m.diem * 700_000 || m.thu !== m.soCap * m.diem * 40_500) sai++;
+    if (r.theoMuc.length === 3) coBa++;
+  }
+  ok("bảng trộn 1/3/5 điểm: tách theo mức cộng lại = cả ngày; mức n trả đúng n × 700.000 mỗi cặp trúng", sai === 0 && coBa > 0, `sai ${sai}, ${coBa} ngày đủ 3 mức`);
+}
+
+console.log("\n===== 6. SỔ BẢNG THẬT: ngày có sổ thì tính đúng bảng đã chạy hôm đó =====");
+{
+  const region = "xsmn" as const;
+  const ky = dungKy(lichSu(90));
+  const bang = bangMacDinh();
+  const lichBang: Record<string, BangDa> = {};
+  // Sổ cho 5 kỳ cuối: bảng khác hẳn (ô 5 điểm, nửa ô chặn).
+  for (let d = ky.length - 5; d < ky.length; d++) lichBang[ky[d - 1].date] = bangNgauNhien(0.5, [5]);
+  const t = tienNhanTheoNgay(ky, region, bang, { tuDong: true, buoc1: true, buoc2: true, moTay: [], lichBang });
+  const cuoi = t.ngay.slice(-5), truoc = t.ngay.slice(0, -5);
+  ok("5 ngày có sổ: đánh dấu 'bảng thật', các ngày khác là dựng lại", cuoi.every((r) => r.that) && truoc.every((r) => !r.that));
+  ok("ngày có sổ: tiền = chốt sổ đúng kỳ đó với bảng trong sổ", cuoi.every((r) => {
+    const g = soTungKyTheoBang([ky[r.soKyTruoc]], region, lichBang[ky[r.soKyTruoc - 1].date])[0];
+    return g.thu === r.thu && g.tra === r.tra && g.soCap === r.soCap;
+  }));
+}
+
 console.log(`\n### ${pass} DAT - ${fail} HONG ###`);
 process.exit(fail ? 1 : 0);

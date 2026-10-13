@@ -135,7 +135,20 @@ export function docChuoiNhan(khoi: string[], tienTo: string): { cap: Map<string,
 /** Bỏ ngần này kỳ đầu: luật chưa có gì để nhìn. Cùng mức với bên chặn lô. */
 export const KY_BO_QUA_NHAN = 20;
 
+/** Một mức điểm trong một ngày: ô n điểm thì thu n × giá, trúng trả n × tiền trúng mỗi cặp. */
+export interface MucNgay {
+  diem: number;
+  soCap: number;
+  capTrung: number;
+  thu: number;
+  tra: number;
+}
+
 export interface NgayNhan extends KyDaRow {
+  /** true = tính theo bảng THẬT đã chạy hôm đó (sổ bảng PA2); false = dựng lại bằng luật + bảng điểm hôm nay. */
+  that: boolean;
+  /** Tách theo mức điểm — để thấy rõ ô 3 điểm trúng là trả 3 × tiền trúng. */
+  theoMuc: MucNgay[];
   /** Số ô luật đang chặn sáng hôm đó (đã cộng dồn — chặn rồi giữ nguyên). */
   oLuat: number;
   /** Ô luật bắt thêm đúng sáng hôm đó. */
@@ -209,7 +222,7 @@ export function tienNhanTheoNgay(
   ky: KyDa[],
   region: Region,
   bang: BangDa,
-  opt: { tuDong: boolean; buoc1: boolean; buoc2: boolean; moTay: string[] },
+  opt: { tuDong: boolean; buoc1: boolean; buoc2: boolean; moTay: string[]; lichBang?: Record<string, BangDa> },
   boQua = KY_BO_QUA_NHAN
 ): TienNhan {
   const gia = GIA_DA[region], trung = TRUNG_DA[region];
@@ -222,11 +235,14 @@ export function tienNhanTheoNgay(
     const oMoi: string[] = [];
     const l = luat[d];
     if (l) for (const k of l.chan.keys()) if (!mo.has(k) && !chan.has(k) && k in bang) { chan.add(k); oMoi.push(k); }
-    const hieuLuc = chan.size ? apChanLuat(bang, [...chan]) : bang;
+    // Có sổ bảng thật cho kỳ này (khoá = kỳ ngay trước) thì dùng đúng bảng đó.
+    const so = d > 0 ? opt.lichBang?.[ky[d - 1].date] : undefined;
+    const hieuLuc = so ?? (chan.size ? apChanLuat(bang, [...chan]) : bang);
     const k = ky[d];
     let h = 0;
     for (const lo of Object.keys(k.kho)) if ((k.ve[lo] ?? 0) > 0) h++;
     let soCap = 0, capTrung = 0, thu = 0, tra = 0;
+    const muc = new Map<number, MucNgay>();
     for (const [key, v] of demCapTheoNgay([k])) {
       const diem = Number(hieuLuc[key] ?? 0);
       if (!(diem > 0)) continue;
@@ -234,9 +250,19 @@ export function tienNhanTheoNgay(
       capTrung += v.caHai;
       thu += v.dip * diem * gia;
       tra += v.caHai * diem * trung;
+      let m = muc.get(diem);
+      if (!m) muc.set(diem, (m = { diem, soCap: 0, capTrung: 0, thu: 0, tra: 0 }));
+      m.soCap += v.dip;
+      m.capTrung += v.caHai;
+      m.thu += v.dip * diem * gia;
+      m.tra += v.caHai * diem * trung;
     }
     don += thu - tra;
-    ngay.push({ date: k.date, soLoVe: h, soCap, capTrung, thu, tra, lai: thu - tra, don, oLuat: chan.size, oMoi: oMoi.sort(), soKyTruoc: d });
+    ngay.push({
+      date: k.date, soLoVe: h, soCap, capTrung, thu, tra, lai: thu - tra, don,
+      oLuat: so ? Object.values(so).filter((x) => !(x > 0)).length : chan.size, oMoi: oMoi.sort(), soKyTruoc: d,
+      that: !!so, theoMuc: [...muc.values()].sort((a, b) => a.diem - b.diem),
+    });
   }
   return { region, ngay, boQuaDau: Math.min(boQua, ky.length) };
 }

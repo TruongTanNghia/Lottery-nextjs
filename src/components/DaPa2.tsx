@@ -10,7 +10,7 @@
  */
 import { useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
-import { GIA_DA, khoKyToi, soTungKyTheoBang, gomThang, type BangDa, type KyDa } from "@/lib/da";
+import { GIA_DA, TRUNG_DA, khoKyToi, soTungKyTheoBang, gomThang, type BangDa, type KyDa } from "@/lib/da";
 import { TIEN_TO_NHAN_MAC_DINH, capNhan, chuoiNhanMien, hauToNhan, nhomNhanDa, tienNhanTheoNgay } from "@/lib/da-nhan";
 import { useToast } from "./Toast";
 import { REGION_LABELS, type Region } from "@/lib/types";
@@ -33,7 +33,17 @@ const tenMien = (r: Region) => (r === "xsmn" ? "mn" : r === "xsmt" ? "mt" : "mb"
 
 const TEN_NGAN: Record<Region, string> = { xsmn: "Mn", xsmt: "Mt", xsmb: "Mb" };
 
-export function DaSoNhan({ draws, region, bang, tienTo }: { draws: DrawHits[]; region: Region; bang: BangDa; tienTo: string | null }) {
+/** Đang sửa bảng mà chưa Lưu: số ở khối này vẫn theo bảng ĐÃ LƯU. */
+function CanhBaoChuaLuu() {
+  return (
+    <div className="rounded-lg border border-[#fbbf24]/60 bg-[#b45309]/20 px-3 py-2 text-[0.74rem] leading-relaxed text-[#ffe9b0]" data-nhan-chua-luu>
+      ⚠ <b>Bảng tiền đang sửa mà CHƯA LƯU.</b> Số dưới đây vẫn tính theo bảng đã lưu (ô cũ vẫn là số điểm cũ). Bấm <b>Lưu</b> ở Bảng Tiền Đá
+      thì chuỗi nhận và tiền mới đổi theo số điểm vừa cài.
+    </div>
+  );
+}
+
+export function DaSoNhan({ draws, region, bang, tienTo, chuaLuu = false }: { draws: DrawHits[]; region: Region; bang: BangDa; tienTo: string | null; chuaLuu?: boolean }) {
   const toast = useToast();
   const tt = tienTo ?? TIEN_TO_NHAN_MAC_DINH[region];
   const kq = useMemo(() => {
@@ -72,6 +82,7 @@ export function DaSoNhan({ draws, region, bang, tienTo }: { draws: DrawHits[]; r
         </div>
       </div>
       <div className="p-3 md:p-4 space-y-3">
+        {chuaLuu && <CanhBaoChuaLuu />}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
           <O nhan="Cặp nhận" gt={`${so(kq.cap.length)}`} phu={`trên 4.950 cặp · chặn ${so(4950 - kq.cap.length)}`} m="#34e6a8" />
           <O nhan="Số vòng" gt={so(kq.soVong)} phu="mỗi cặp nằm trong đúng 1 vòng" m="#ffd24a" />
@@ -138,8 +149,11 @@ export function DaSoNhan({ draws, region, bang, tienTo }: { draws: DrawHits[]; r
 type Quang = "thang" | "3thang" | "het";
 
 export function DaTienNhan({
-  ky, region, bang, tuDong, buoc1, buoc2, moTay, hieuLuc,
+  ky, region, bang, tuDong, buoc1, buoc2, moTay, hieuLuc, lichBang = {}, chuaLuu = false,
 }: {
+  /** Sổ bảng thật đã chạy từng kỳ: "ngày" → bảng dùng cho kỳ ngay sau ngày đó. */
+  lichBang?: Record<string, BangDa>;
+  chuaLuu?: boolean;
   ky: KyDa[];
   region: Region;
   /** Bảng đã cài (chưa ép ô luật) — luật được chạy lại theo từng ngày. */
@@ -153,7 +167,7 @@ export function DaTienNhan({
 }) {
   const [quang, setQuang] = useState<Quang>("thang");
   const [mo, setMo] = useState<string | null>(null);
-  const tn = useMemo(() => tienNhanTheoNgay(ky, region, bang, { tuDong, buoc1, buoc2, moTay }), [ky, region, bang, tuDong, buoc1, buoc2, moTay]);
+  const tn = useMemo(() => tienNhanTheoNgay(ky, region, bang, { tuDong, buoc1, buoc2, moTay, lichBang }), [ky, region, bang, tuDong, buoc1, buoc2, moTay, lichBang]);
   const nhinTruoc = useMemo(() => soTungKyTheoBang(ky.slice(tn.boQuaDau), region, hieuLuc), [ky, tn.boQuaDau, region, hieuLuc]);
 
   const cuoi = tn.ngay.length ? tn.ngay[tn.ngay.length - 1].date : "";
@@ -180,12 +194,13 @@ export function DaTienNhan({
         <div>
           <h2 className="plate-title">💵 Tiền Số Nhận — Từng Ngày, Từng Tháng</h2>
           <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
-            {REGION_LABELS[region]} · thời gian thực: sáng mỗi ngày luật chỉ nhìn các kỳ trước ngày đó, ô luật đã chặn thì giữ nguyên ·
-            bỏ {tn.boQuaDau} kỳ đầu (luật chưa có gì để nhìn)
+            {REGION_LABELS[region]} · ô n điểm: thu n × {tien(GIA_DA[region])}, trúng trả n × {tien(TRUNG_DA[region])} mỗi cặp ·
+            ngày có ✔ là tính theo <b>đúng bảng đã chạy hôm đó</b>; ngày khác dựng lại bằng luật + bảng điểm hôm nay
           </p>
         </div>
       </div>
       <div className="p-3 md:p-4 space-y-3">
+        {chuaLuu && <CanhBaoChuaLuu />}
         <div className="flex flex-wrap gap-1.5">
           {([["thang", "Tháng này"], ["3thang", "3 tháng"], ["het", "Từ đầu"]] as [Quang, string][]).map(([k, ten]) => (
             <button
@@ -266,7 +281,9 @@ export function DaTienNhan({
                       data-nhan-ngay={r.date}
                       className={`border-t border-[var(--hairline)] cursor-pointer hover:bg-white/[0.04] ${mo === r.date ? "bg-white/[0.05]" : ""}`}
                     >
-                      <td className="py-1 pr-2 font-bold text-white">{ddmm(r.date)}</td>
+                      <td className="py-1 pr-2 font-bold text-white">
+                        {ddmm(r.date)} {r.that ? <span className="text-[#7ff0c0]" title="tính theo đúng bảng đã chạy hôm đó" data-nhan-that>✔</span> : null}
+                      </td>
                       <td className="py-1 pr-2 text-right numeric">{so(r.soCap)}</td>
                       <td className="py-1 pr-2 text-right numeric">{so(r.capTrung)}</td>
                       <td className="py-1 pr-2 text-right numeric font-bold" style={{ color: mau(r.lai) }}>{tien(r.lai)}</td>
@@ -275,9 +292,24 @@ export function DaTienNhan({
                     mo === r.date && (
                       <tr key={r.date + "-ct"} data-nhan-chi-tiet>
                         <td colSpan={5} className="pb-2 pt-1 px-1 text-[0.68rem] leading-relaxed text-[var(--text-secondary)]">
-                          Luật sáng {ddmm(r.date)} lập từ <b>{r.soKyTruoc}</b> kỳ trước đó · đang chặn <b>{r.oLuat}</b> ô
-                          {r.oMoi.length > 0 && <> (bắt thêm hôm đó: {r.oMoi.join(", ")})</>} · {r.soLoVe} con về ·
-                          thu <b>{tien(r.thu)}</b> − trả <b>{tien(r.tra)}</b> = <b style={{ color: mau(r.lai) }}>{tien(r.lai)}</b>
+                          {r.that ? (
+                            <>✔ Tính theo <b>đúng bảng đã chạy</b> cho kỳ {ddmm(r.date)} (bảng chặn <b>{r.oLuat}</b> ô)</>
+                          ) : (
+                            <>Dựng lại: luật sáng {ddmm(r.date)} lập từ <b>{r.soKyTruoc}</b> kỳ trước đó, chặn <b>{r.oLuat}</b> ô
+                            {r.oMoi.length > 0 && <> (bắt thêm hôm đó: {r.oMoi.join(", ")})</>}, số điểm từng ô lấy theo bảng hôm nay</>
+                          )}{" "}
+                          · {r.soLoVe} con về
+                          <div className="mt-1 space-y-0.5" data-nhan-theo-muc>
+                            {r.theoMuc.map((m) => (
+                              <div key={m.diem} className="numeric">
+                                Ô <b className="text-white">{m.diem} điểm</b>: {so(m.soCap)} cặp × {m.diem} × {tien(GIA_DA[region])} = thu <b>{tien(m.thu)}</b> ·{" "}
+                                {so(m.capTrung)} cặp trúng × {m.diem} × {tien(TRUNG_DA[region])} = trả <b className="text-[#ff9d9d]">{tien(m.tra)}</b>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-0.5">
+                            Cả ngày: thu <b>{tien(r.thu)}</b> − trả <b>{tien(r.tra)}</b> = <b style={{ color: mau(r.lai) }}>{tien(r.lai)}</b>
+                          </div>
                         </td>
                       </tr>
                     ),
