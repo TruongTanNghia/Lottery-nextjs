@@ -16,6 +16,16 @@ import {
   type OLich,
   type Schedule,
 } from "@/lib/lich-han-muc";
+import type { DrawHits } from "@/lib/backtest";
+import { phanAnTheoO, type PhanAnO } from "@/lib/phan-an-o";
+
+/** Khách: "% thắng thua của ô đó — vd 30 kì gần". Cho chọn thêm 60, 90 để so. */
+const CAC_QUANG = [30, 60, 90] as const;
+const pcO = (n: number) => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(1).replace(".", ",") + "%";
+const tienO = (n: number) => {
+  const a = Math.abs(n), s = n < 0 ? "−" : "";
+  return a >= 1_000_000 ? `${s}${(a / 1_000_000).toFixed(1).replace(".", ",")}tr` : `${s}${Math.round(a).toLocaleString("vi-VN")}đ`;
+};
 
 /** 20 ô ngày rồi tới ô "20+" — đúng thứ tự đọc. */
 const O_NGAY = moiO().filter((o) => o.loai !== "chuoi");
@@ -79,6 +89,19 @@ export default function ScheduleEditor({
   const [savedFlash, setSavedFlash] = useState(false);
   const mienDangXem = useRef(region);
   mienDangXem.current = region;
+  // % lời/lỗ từng ô trong N kỳ gần nhất — chỉ để xem, không đụng hạn mức.
+  const [draws, setDraws] = useState<DrawHits[] | null>(null);
+  const [quang, setQuang] = useState<number>(30);
+  useEffect(() => {
+    let huy = false;
+    setDraws(null);
+    fetch(`/api/history/hits?region=${region}`)
+      .then((r) => r.json())
+      .then((d) => { if (!huy && Array.isArray(d?.draws)) setDraws(d.draws as DrawHits[]); })
+      .catch(() => { /* không có % thì thôi, bảng vẫn dùng bình thường */ });
+    return () => { huy = true; };
+  }, [region]);
+  const phanAn = useMemo(() => (draws ? phanAnTheoO(draws, region, quang) : null), [draws, region, quang]);
 
   // Re-fetch on region change: each region keeps its own limits now. Bảng của
   // miền cũ bị gỡ NGAY, không để nằm lại dưới nhãn miền mới trong lúc chờ tải:
@@ -274,12 +297,33 @@ export default function ScheduleEditor({
         </div>
       )}
 
+      <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] text-slate-400" data-lich-phan-an>
+        <span>
+          <b className="text-slate-200">% dưới mỗi ô</b> = lời/lỗ của ô đó trong
+        </span>
+        {CAC_QUANG.map((n) => (
+          <button
+            key={n}
+            onClick={() => setQuang(n)}
+            data-lich-quang={n}
+            className={`px-2 py-0.5 rounded font-bold ${quang === n ? "bg-[#2563eb] text-white" : "bg-white/[0.07] text-slate-300 hover:bg-white/[0.14]"}`}
+          >
+            {n} kỳ
+          </button>
+        ))}
+        <span>
+          gần nhất{phanAn?.tuNgay && phanAn.denNgay ? ` (${phanAn.tuNgay.slice(8, 10)}/${phanAn.tuNgay.slice(5, 7)} → ${phanAn.denNgay.slice(8, 10)}/${phanAn.denNgay.slice(5, 7)})` : ""} ·
+          tính như nhận 1 điểm mỗi lô · <span className="text-[#7ff0c0]">+ là lời</span>, <span className="text-[#ff9d9d]">− là lỗ</span> · ô
+          đang chặn vẫn có % để biết mở ra thì sao · bấm giữ / rê chuột vào ô để xem chi tiết
+        </span>
+      </div>
+
       <div className="text-[0.72rem] text-slate-400 mb-1.5">
         <b className="text-slate-200">Lô chưa về</b> — mỗi ô là một mức riêng (điểm), đếm theo số ngày từ lần về gần nhất tới kỳ mới nhất.
       </div>
       <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-11 gap-1.5" data-lich-ngay>
         {O_NGAY.map((o) => (
-          <O key={khoaO(o)} o={o} lich={lich} daLuu={daLuu} dat={dat} />
+          <O key={khoaO(o)} o={o} lich={lich} daLuu={daLuu} dat={dat} pa={phanAn?.o[khoaO(o)]} quang={phanAn?.soKy ?? quang} coSo={!!phanAn} />
         ))}
       </div>
 
@@ -287,7 +331,7 @@ export default function ScheduleEditor({
         <strong className="block text-xs text-amber-500 mb-1.5">Lô về liên tiếp — mức riêng, không phải trần:</strong>
         <div className="grid grid-cols-3 gap-1.5 max-w-xs" data-lich-chuoi>
           {O_CHUOI.map((o) => (
-            <O key={khoaO(o)} o={o} lich={lich} daLuu={daLuu} dat={dat} />
+            <O key={khoaO(o)} o={o} lich={lich} daLuu={daLuu} dat={dat} pa={phanAn?.o[khoaO(o)]} quang={phanAn?.soKy ?? quang} coSo={!!phanAn} />
           ))}
         </div>
         <p className="mt-1.5 text-[0.68rem] leading-snug text-slate-400">
@@ -359,21 +403,32 @@ function O({
   lich,
   daLuu,
   dat,
+  pa,
+  quang,
+  coSo,
 }: {
   o: OLich;
   lich: Schedule;
   daLuu: Schedule;
   dat: (o: OLich, muc: number) => void;
+  /** % lời/lỗ của ô trong quãng đang xem; undefined = ô không có lô nào trong quãng. */
+  pa?: PhanAnO;
+  quang: number;
+  /** Đã tải xong lịch sử chưa (chưa thì không vẽ dòng %). */
+  coSo: boolean;
 }) {
   const v = docO(lich, o);
   const chan = v <= 0;
   const sua = v !== docO(daLuu, o);
+  const chiTiet = pa && pa.bien != null
+    ? `${quang} kỳ gần nhất: ${pa.soLo} lượt lô ở ô này, về ${pa.nhay} nháy · nhận 1 điểm mỗi lô: thu ${tienO(pa.thu)}, trả ${tienO(pa.tra)} → ${pa.lai >= 0 ? "lời" : "lỗ"} ${tienO(Math.abs(pa.lai))} (${pcO(pa.bien)})`
+    : `${quang} kỳ gần nhất: không có lô nào ở ô này`;
   return (
     <label
       data-o-lich={khoaO(o)}
       data-o-chan={chan ? "1" : "0"}
       data-o-sua={sua ? "1" : "0"}
-      title={`${tenO(o)}: ${chan ? "0 — máy CHẶN, không nhận lô đang ở ô này" : `nhận ${v} điểm`}${sua ? " (chưa lưu)" : ""}`}
+      title={`${tenO(o)}: ${chan ? "0 — máy CHẶN, không nhận lô đang ở ô này" : `nhận ${v} điểm`}${sua ? " (chưa lưu)" : ""}${coSo ? `\n${chiTiet}` : ""}`}
       className="block rounded-md border px-1 pt-1 pb-1 text-center cursor-text"
       style={{
         borderColor: sua ? "rgba(251,191,36,0.9)" : chan ? "rgba(248,113,113,0.55)" : "#1f2937",
@@ -401,6 +456,19 @@ function O({
       >
         {chan ? "CHẶN" : "nhận"}
       </span>
+      {coSo && (
+        <span
+          data-o-phan-an={pa?.bien != null ? pa.bien.toFixed(2) : ""}
+          className="block mt-0.5 text-[0.58rem] font-bold leading-none numeric"
+          style={{
+            color: pa?.bien == null ? "#64748b" : pa.bien > 0 ? "#7ff0c0" : pa.bien < 0 ? "#ff9d9d" : "#cbd5e1",
+            // Ô quá ít lượt lô thì % là may rủi — vẽ mờ để khỏi tin quá.
+            opacity: pa && pa.soLo >= 30 ? 1 : 0.55,
+          }}
+        >
+          {pa?.bien != null ? pcO(pa.bien) : "—"}
+        </span>
+      )}
     </label>
   );
 }
