@@ -14,7 +14,7 @@
  */
 import type { DrawHits } from "./backtest";
 import { STAKE_PRICE, WIN_PER_POINT } from "./exposure";
-import { khoaO, oCua } from "./lich-han-muc";
+import { khoaO, moiO, oCua } from "./lich-han-muc";
 import { dungKy } from "./slot-stats";
 import type { Region } from "./types";
 
@@ -30,9 +30,23 @@ export interface PhanAnO {
   bien: number | null;
 }
 
+/** Một kỳ của một ô — một "vạch". */
+export interface VachKy {
+  date: string;
+  /** Số lô nằm ở ô đó sáng hôm ấy (0 = ô trống, không thu không trả). */
+  soLo: number;
+  nhay: number;
+  lai: number;
+}
+
+/** Khách: "bên cạnh ô 7 vạch nhỏ, báo hiệu ngày hôm đó — xanh là lời, đỏ là lỗ, xám là hoà". */
+export const SO_VACH = 7;
+
 export interface KetQuaPhanAnO {
   /** Khoá ô (khoaO) → số liệu. */
   o: Record<string, PhanAnO>;
+  /** Khoá ô → SO_VACH kỳ gần nhất, cũ trước mới sau. Ô nào cũng đủ vạch (kỳ ô trống thì soLo 0). */
+  vach: Record<string, VachKy[]>;
   /** Số kỳ thật sự đem ra tính (có thể ít hơn N nếu kho ngắn). */
   soKy: number;
   tuNgay: string | null;
@@ -59,5 +73,18 @@ export function phanAnTheoO(draws: DrawHits[], region: Region, soKy = 30): KetQu
     x.lai = x.thu - x.tra;
     x.bien = x.thu > 0 ? (x.lai / x.thu) * 100 : null;
   }
-  return { o, soKy: ky.length, tuNgay: ky[0]?.date ?? null, denNgay: ky[ky.length - 1]?.date ?? null };
+  // Vạch từng kỳ: luôn là SO_VACH kỳ cuối, không phụ thuộc quãng % đang chọn.
+  const vach: Record<string, VachKy[]> = {};
+  const kyVach = dungKy(draws).slice(-SO_VACH);
+  for (const oo of moiO()) vach[khoaO(oo)] = kyVach.map((k) => ({ date: k.date, soLo: 0, nhay: 0, lai: 0 }));
+  kyVach.forEach((k, i) => {
+    for (const lo of Object.keys(k.kho)) {
+      const v = vach[khoaO(oCua(k.kho[lo], k.chuoi[lo]))][i];
+      const n = Number(k.ve[lo]) || 0;
+      v.soLo++;
+      v.nhay += n;
+      v.lai += gia - n * WIN_PER_POINT;
+    }
+  });
+  return { o, vach, soKy: ky.length, tuNgay: ky[0]?.date ?? null, denNgay: ky[ky.length - 1]?.date ?? null };
 }

@@ -8,7 +8,7 @@
  * không đi qua dungKy. Hai đường phải ra cùng số lượt lô, số nháy, thu, trả.
  */
 import { dungTrangThai, khoaO, moiO, oCua } from "../src/lib/lich-han-muc";
-import { phanAnTheoO } from "../src/lib/phan-an-o";
+import { SO_VACH, phanAnTheoO } from "../src/lib/phan-an-o";
 
 let pass = 0, fail = 0;
 const ok = (t: string, c: boolean, note = "") => { c ? pass++ : fail++; console.log(`${c ? "  v" : "  X HONG"} ${t}${note ? " -- " + note : ""}`); };
@@ -62,6 +62,34 @@ for (const [region, soKy] of [["xsmn", 30], ["xsmb", 30], ["xsmt", 60], ["xsmn",
   ok("phần ăn = (thu − trả) / thu × 100", Math.abs(x.bien! - ((x.thu - x.tra) / x.thu) * 100) < 1e-9);
   const coChuoi = Object.keys(kq.o).some((k) => k.startsWith("chuoi:"));
   ok("dữ liệu thử có lô ở ô liên tiếp", coChuoi);
+}
+
+console.log("\n===== 7 VẠCH: mỗi ô 7 kỳ gần nhất, lời/lỗ từng kỳ = tính lại độc lập =====");
+for (const region of ["xsmn", "xsmb"] as const) {
+  const draws = lichSu(120);
+  const kq = phanAnTheoO(draws, region, 30);
+  const gia = region === "xsmb" ? 20_250 : 27_000;
+  const sap = [...draws].sort((a, b) => a.date.localeCompare(b.date));
+  let lech = 0, xanh = 0, do_ = 0, xam = 0;
+  for (let i = 0; i < SO_VACH; i++) {
+    const d = sap.length - SO_VACH + i;
+    const truoc = sap.slice(0, d).flatMap((x) => Object.keys(x.hits).map((lo) => ({ date: x.date, lo_number: lo })));
+    const st = dungTrangThai(truoc).lo;
+    const tay: Record<string, { soLo: number; lai: number }> = {};
+    for (const lo of LOS) {
+      const s = st.get(lo)!;
+      const x = (tay[khoaO(oCua(s.days, s.consec))] ??= { soLo: 0, lai: 0 });
+      x.soLo++;
+      x.lai += gia - (Number(sap[d].hits[lo]) || 0) * 75_000;
+    }
+    for (const o of moiO()) {
+      const v = kq.vach[khoaO(o)][i], t = tay[khoaO(o)] ?? { soLo: 0, lai: 0 };
+      if (v.date !== sap[d].date || v.soLo !== t.soLo || v.lai !== t.lai) lech++;
+      if (v.lai > 0) xanh++; else if (v.lai < 0) do_++; else xam++;
+    }
+  }
+  ok(`${region}: 24 ô × ${SO_VACH} vạch, đúng ngày, số lô và lời/lỗ từng kỳ`, lech === 0 && Object.values(kq.vach).every((v) => v.length === SO_VACH), `lệch ${lech}`);
+  ok(`${region}: có đủ cả vạch xanh (lời), đỏ (lỗ), xám (hoà / ô trống)`, xanh > 0 && do_ > 0 && xam > 0, `${xanh} / ${do_} / ${xam}`);
 }
 
 console.log(`\n### ${pass} DAT - ${fail} HONG ###`);

@@ -17,10 +17,12 @@ import {
   type Schedule,
 } from "@/lib/lich-han-muc";
 import type { DrawHits } from "@/lib/backtest";
-import { phanAnTheoO, type PhanAnO } from "@/lib/phan-an-o";
+import { SO_VACH, phanAnTheoO, type PhanAnO, type VachKy } from "@/lib/phan-an-o";
 
-/** Khách: "% thắng thua của ô đó — vd 30 kì gần". Cho chọn thêm 60, 90 để so. */
-const CAC_QUANG = [30, 60, 90] as const;
+/** Khách: "% thắng thua của ô đó — vd 30 kì gần", rồi "phải theo dõi theo tháng — theo tuần": 7 kỳ là một tuần. */
+const CAC_QUANG = [7, 30, 60, 90] as const;
+/** Màu vạch: xanh lời, đỏ lỗ, xám hoà — đúng ba màu khách chọn. */
+const MAU_VACH = { loi: "#34d399", lo: "#f87171", hoa: "#94a3b8" } as const;
 const pcO = (n: number) => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(1).replace(".", ",") + "%";
 const tienO = (n: number) => {
   const a = Math.abs(n), s = n < 0 ? "−" : "";
@@ -317,13 +319,20 @@ export default function ScheduleEditor({
           đang chặn vẫn có % để biết mở ra thì sao · bấm giữ / rê chuột vào ô để xem chi tiết
         </span>
       </div>
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.7rem] text-slate-400" data-lich-vach-chu>
+        <b className="text-slate-200">{SO_VACH} vạch bên phải mỗi ô</b> = {SO_VACH} kỳ gần nhất của ô đó, trên cũ → dưới mới:
+        <span className="inline-flex items-center gap-1"><i className="inline-block w-3 h-1.5 rounded-sm" style={{ background: MAU_VACH.loi }} /> lời</span>
+        <span className="inline-flex items-center gap-1"><i className="inline-block w-3 h-1.5 rounded-sm" style={{ background: MAU_VACH.lo }} /> lỗ</span>
+        <span className="inline-flex items-center gap-1"><i className="inline-block w-3 h-1.5 rounded-sm" style={{ background: MAU_VACH.hoa }} /> hoà</span>
+        <span className="inline-flex items-center gap-1"><i className="inline-block w-3 h-1.5 rounded-sm opacity-30" style={{ background: MAU_VACH.hoa }} /> hôm đó ô không có lô</span>
+      </div>
 
       <div className="text-[0.72rem] text-slate-400 mb-1.5">
         <b className="text-slate-200">Lô chưa về</b> — mỗi ô là một mức riêng (điểm), đếm theo số ngày từ lần về gần nhất tới kỳ mới nhất.
       </div>
       <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-11 gap-1.5" data-lich-ngay>
         {O_NGAY.map((o) => (
-          <O key={khoaO(o)} o={o} lich={lich} daLuu={daLuu} dat={dat} pa={phanAn?.o[khoaO(o)]} quang={phanAn?.soKy ?? quang} coSo={!!phanAn} />
+          <O key={khoaO(o)} o={o} lich={lich} daLuu={daLuu} dat={dat} pa={phanAn?.o[khoaO(o)]} quang={phanAn?.soKy ?? quang} coSo={!!phanAn} vach={phanAn?.vach[khoaO(o)]} />
         ))}
       </div>
 
@@ -331,7 +340,7 @@ export default function ScheduleEditor({
         <strong className="block text-xs text-amber-500 mb-1.5">Lô về liên tiếp — mức riêng, không phải trần:</strong>
         <div className="grid grid-cols-3 gap-1.5 max-w-xs" data-lich-chuoi>
           {O_CHUOI.map((o) => (
-            <O key={khoaO(o)} o={o} lich={lich} daLuu={daLuu} dat={dat} pa={phanAn?.o[khoaO(o)]} quang={phanAn?.soKy ?? quang} coSo={!!phanAn} />
+            <O key={khoaO(o)} o={o} lich={lich} daLuu={daLuu} dat={dat} pa={phanAn?.o[khoaO(o)]} quang={phanAn?.soKy ?? quang} coSo={!!phanAn} vach={phanAn?.vach[khoaO(o)]} />
           ))}
         </div>
         <p className="mt-1.5 text-[0.68rem] leading-snug text-slate-400">
@@ -406,7 +415,10 @@ function O({
   pa,
   quang,
   coSo,
+  vach,
 }: {
+  /** 7 kỳ gần nhất của ô, cũ trước mới sau. */
+  vach?: VachKy[];
   o: OLich;
   lich: Schedule;
   daLuu: Schedule;
@@ -429,7 +441,7 @@ function O({
       data-o-chan={chan ? "1" : "0"}
       data-o-sua={sua ? "1" : "0"}
       title={`${tenO(o)}: ${chan ? "0 — máy CHẶN, không nhận lô đang ở ô này" : `nhận ${v} điểm`}${sua ? " (chưa lưu)" : ""}${coSo ? `\n${chiTiet}` : ""}`}
-      className="block rounded-md border px-1 pt-1 pb-1 text-center cursor-text"
+      className={`relative block rounded-md border px-1 pt-1 pb-1 text-center cursor-text ${vach ? "pr-3" : ""}`}
       style={{
         borderColor: sua ? "rgba(251,191,36,0.9)" : chan ? "rgba(248,113,113,0.55)" : "#1f2937",
         background: chan ? "rgba(220,38,38,0.10)" : "#0f1623",
@@ -456,6 +468,23 @@ function O({
       >
         {chan ? "CHẶN" : "nhận"}
       </span>
+      {vach && (
+        <span className="absolute right-[3px] top-1 bottom-1 flex flex-col justify-center gap-[2px]" data-o-vach>
+          {vach.map((x) => {
+            const loai = x.soLo === 0 ? "trong" : x.lai > 0 ? "loi" : x.lai < 0 ? "lo" : "hoa";
+            const dm = `${x.date.slice(8, 10)}/${x.date.slice(5, 7)}`;
+            return (
+              <i
+                key={x.date}
+                data-vach={loai}
+                title={x.soLo === 0 ? `${dm}: ô không có lô` : `${dm}: ${x.soLo} lô, về ${x.nhay} nháy → ${x.lai > 0 ? "lời" : x.lai < 0 ? "lỗ" : "hoà"} ${tienO(Math.abs(x.lai))} (1 điểm mỗi lô)`}
+                className="block w-[6px] h-[4px] rounded-[1px]"
+                style={{ background: loai === "loi" ? MAU_VACH.loi : loai === "lo" ? MAU_VACH.lo : MAU_VACH.hoa, opacity: loai === "trong" ? 0.3 : 1 }}
+              />
+            );
+          })}
+        </span>
+      )}
       {coSo && (
         <span
           data-o-phan-an={pa?.bien != null ? pa.bien.toFixed(2) : ""}
