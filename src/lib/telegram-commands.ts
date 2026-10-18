@@ -107,11 +107,13 @@ export function helpText(isAdmin = false): string {
         "<b>Bot gửi tự động (lô)</b>",
         "<code>/nhomgui</code> — gõ TRONG nhóm có bot nhận để chọn nhóm đó",
         "<code>/lichgui</code> — lịch, khung giờ, hôm nay đã gửi chưa",
-        "<code>/xemgui mn</code> — xem chuỗi sẽ gửi (không gửi)",
+        "<code>/xemgui mn</code> — xem nội dung sẽ gửi, chia mấy phần (không gửi)",
         "<code>/batgui mn</code> · <code>/tatgui mn</code> — bật/tắt tự gửi một miền (hoặc <code>all</code>)",
-        "<code>/guingay mn</code> — gửi ngay vào nhóm, không đợi giờ",
+        "<code>/guingay mn</code> — gửi ngay vào nhóm, không đợi giờ (gửi tiếp phần còn dở; <code>lai</code> = gửi lại cả bộ)",
         "<code>/thutk 2d16b100, 15b50</code> — thử gửi một chuỗi bằng tài khoản người",
-        "<code>/khunggio mn 15:30 16:05</code> · <code>/tiento mn 2d</code>",
+        "<code>/noidunggui da2</code> — gửi số nhận đá phương án 2 (mặc định) · <code>/noidunggui lo</code> — gửi chuỗi lô",
+        "<code>/dodaigui 2000</code> — mỗi tin dài tối đa bao nhiêu ký tự (500–3400)",
+        "<code>/khunggio mn 15:50 16:05</code> · <code>/tiento mn 2d</code>",
       ]
     : [];
   return [
@@ -664,10 +666,12 @@ export async function lichGui(): Promise<string> {
   const dong = REGIONS.map((r) => {
     const m = cfg.mien[r];
     const da = daGuiHomNay(now, cfg.daGui[r]);
-    return `<b>${TEN_NGAN[r]}</b> · ${m.bat ? "✅ BẬT" : "⭕ tắt"} · ${m.tu}–${m.den} · tiền tố <code>${esc(m.tienTo)}</code> · hôm nay ${da ? `đã gửi lúc ${gioVN(new Date(cfg.daGui[r]!)).gio}` : "chưa gửi"}`;
+    const td = cfg.tienDo[r];
+    const doDang = !da && td && td.ngay === gioVN(now).ngay && td.daGui < td.tong ? ` · đang dở ${td.daGui}/${td.tong} phần` : "";
+    return `<b>${TEN_NGAN[r]}</b> · ${m.bat ? "✅ BẬT" : "⭕ tắt"} · ${m.tu}–${m.den} · tiền tố <code>${esc(m.tienTo)}</code> · hôm nay ${da ? `đã gửi đủ lúc ${gioVN(new Date(cfg.daGui[r]!)).gio}` : "chưa gửi"}${doDang}`;
   });
   return [
-    "<b>🤖 Bot gửi tự động — lô</b>",
+    `<b>🤖 Bot gửi tự động — ${cfg.noiDung === "lo" ? "chuỗi lô" : "số nhận đá phương án 2"}</b> · mỗi tin ≤ ${cfg.doDaiTin.toLocaleString("vi-VN")} ký tự`,
     cfg.nhom == null ? "Nhóm nhận: <b>CHƯA CHỌN</b> — vào nhóm có bot nhận rồi gõ <code>/nhomgui</code>" : `Nhóm nhận: <b>${esc(cfg.tenNhom ?? String(cfg.nhom))}</b>`,
     `Bây giờ: ${gioVN(now).gio} (giờ VN)`,
     coTaiKhoanGui()
@@ -677,20 +681,41 @@ export async function lichGui(): Promise<string> {
     "",
     ...dong,
     "",
-    "<i>Mỗi miền mỗi ngày gửi một lần, trong khung giờ. Dữ liệu thiếu kỳ thì không gửi mà báo quản trị.</i>",
+    "<i>Mỗi miền mỗi ngày gửi một bộ, trong khung giờ; bộ dài thì chia nhiều tin gửi nối tiếp, dở dang thì lượt sau gửi tiếp (không gửi lại phần đã đi). Dữ liệu thiếu kỳ thì không gửi mà báo quản trị.</i>",
   ].join("\n");
 }
 
-/** /xemgui <miền> — chuỗi sẽ gửi, hiện ngay tại đây, không gửi vào nhóm. */
+/** /xemgui <miền> — nội dung sẽ gửi, hiện ngay tại đây (từng phần một khối), không gửi vào nhóm. */
 export async function xemGui(region: Region): Promise<string> {
   const cfg = await docBotGui();
   const xt = await xemTruocGui(region, cfg);
+  const dau = xt.noiDung === "lo" ? `chuỗi lô sẽ gửi · ${xt.soLo} lô` : `số nhận đá PA2 sẽ gửi · ${xt.soCap.toLocaleString("vi-VN")} cặp`;
   return [
-    `<b>${label(region)} · chuỗi lô sẽ gửi</b> · ${xt.soLo} lô · ${xt.chuoi.length} ký tự`,
+    `<b>${label(region)} · ${dau}</b> · ${xt.khoi.length} phần · ${xt.chuoi.length.toLocaleString("vi-VN")} ký tự (mỗi phần ≤ ${cfg.doDaiTin.toLocaleString("vi-VN")})`,
     xt.duLieu === "ok" ? "" : `<b>⚠️ ${esc(xt.duLieuChu)}</b> — lúc này bot sẽ KHÔNG tự gửi`,
     "",
-    xt.chuoi ? `<code>${esc(xt.chuoi)}</code>` : "<i>không lô nào đang nhận</i>",
+    ...(xt.khoi.length ? xt.khoi.map((k, i) => `<i>phần ${i + 1}/${xt.khoi.length}</i>\n<code>${esc(k)}</code>`) : [xt.noiDung === "lo" ? "<i>không lô nào đang nhận</i>" : "<i>không cặp đá nào đang nhận</i>"]),
   ].filter((x) => x !== "").join("\n");
+}
+
+/** /noidunggui da2|lo — gửi số nhận đá phương án 2 hay chuỗi lô. */
+async function datNoiDung(arg: string | undefined): Promise<string> {
+  const nd = arg === "lo" ? "lo" : arg === "da2" || arg === "da" ? "da2" : null;
+  if (!nd) return "Cú pháp: <code>/noidunggui da2</code> (số nhận đá phương án 2) hoặc <code>/noidunggui lo</code> (chuỗi lô)";
+  const cfg = await docBotGui();
+  cfg.noiDung = nd;
+  await luuBotGui(cfg);
+  return `Đã đặt nội dung gửi: <b>${nd === "lo" ? "chuỗi lô" : "số nhận đá phương án 2"}</b>.\n\n${await lichGui()}`;
+}
+
+/** /dodaigui N — mỗi tin dài tối đa N ký tự. */
+async function datDoDai(arg: string | undefined): Promise<string> {
+  const n = Number(arg);
+  if (!Number.isInteger(n) || n < 500 || n > 3400) return "Cú pháp: <code>/dodaigui 2000</code> (từ 500 tới 3400 ký tự)";
+  const cfg = await docBotGui();
+  cfg.doDaiTin = n;
+  await luuBotGui(cfg);
+  return `Đã đặt mỗi tin ≤ <b>${n.toLocaleString("vi-VN")}</b> ký tự. Gõ <code>/xemgui mn</code> để xem chia thành mấy phần.`;
 }
 
 async function batTatGui(arg: string | undefined, bat: boolean): Promise<string> {
@@ -707,7 +732,7 @@ async function batTatGui(arg: string | undefined, bat: boolean): Promise<string>
 async function datKhungGio(args: string[]): Promise<string> {
   const region = parseRegion([args[0]]);
   if (!region || !laGioHopLe(args[1]) || !laGioHopLe(args[2]) || args[1] > args[2]) {
-    return "Cú pháp: <code>/khunggio mn 15:30 16:05</code> (giờ VN, dạng HH:MM, giờ đầu trước giờ cuối)";
+    return "Cú pháp: <code>/khunggio mn 15:50 16:05</code> (giờ VN, dạng HH:MM, giờ đầu trước giờ cuối)";
   }
   const cfg = await docBotGui();
   cfg.mien[region].tu = args[1];
@@ -1079,11 +1104,19 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
       if (isAdmin) return batTatGui(args[0], false);
       break;
 
+    case "/noidunggui":
+      if (isAdmin) return datNoiDung(args[0]);
+      break;
+
+    case "/dodaigui":
+      if (isAdmin) return datDoDai(args[0]);
+      break;
+
     case "/guingay": {
       if (!isAdmin) break;
       const region = parseRegion(args);
       if (!region) return "Thiếu miền. Ví dụ: <code>/guingay mn</code>";
-      const r = await guiNgay(region);
+      const r = await guiNgay(region, new Date(), args.some((a) => /^(lai|again|ep)$/.test(fold(a))));
       return `${r.ok ? "✅" : "⚠️"} ${label(region)}: ${esc(r.chu)}`;
     }
 

@@ -6,6 +6,13 @@
  * 15b50, 15b10". Tức là: tới khung giờ của miền, bot nhắn vào nhóm có "bot
  * nhận" một dòng lệnh lô — tiền tố đài ("2d", khách chốt cố định) rồi từng lô
  * "số b điểm", cách nhau dấu phẩy.
+ *
+ * Khách chốt lại 18/10/2026: "Mn 15h50–16h05, Mt 16h50–17h05, Mb 17h50–18h05;
+ * chia tin ngắn lại gửi đều cho tới hết các số nhận của miền đó; nội dung gửi:
+ * số nhận đá phương án 2". Nên có thêm: nội dung gửi (`noiDung`: số nhận đá
+ * PA2 hay chuỗi lô), độ dài mỗi tin (`doDaiTin`), và tiến độ gửi từng miền
+ * (`tienDo`): tin dài chia nhiều phần, gửi nối tiếp; lượt gõ cửa hết giờ giữa
+ * chừng thì lượt sau gửi tiếp từ phần kế, không bao giờ gửi lại phần đã đi.
  */
 import type { Region } from "./types";
 
@@ -13,6 +20,21 @@ export interface KhungGio {
   /** "HH:MM" giờ Việt Nam. */
   tu: string;
   den: string;
+}
+
+/** Gửi gì: "da2" = số nhận đá phương án 2 (khách chốt), "lo" = chuỗi lô theo hạn mức. */
+export type NoiDungGui = "lo" | "da2";
+/** Mỗi tin dài tối đa ngần này ký tự — "chia tin ngắn lại". Telegram cho 4.096; để dư cho an toàn. */
+export const DO_DAI_TIN_MAC_DINH = 2000;
+export const DO_DAI_TIN_MIN = 500;
+export const DO_DAI_TIN_MAX = 3400;
+
+/** Hôm nay miền này đã gửi được mấy phần trên tổng mấy phần. */
+export interface TienDoGui {
+  /** Ngày VN "YYYY-MM-DD". */
+  ngay: string;
+  daGui: number;
+  tong: number;
 }
 
 export interface CaiDatMien extends KhungGio {
@@ -27,20 +49,37 @@ export interface CaiDatBotGui {
   nhom: number | null;
   tenNhom: string | null;
   mien: Record<Region, CaiDatMien>;
-  /** Lần gửi gần nhất của từng miền (ISO) — để mỗi ngày chỉ gửi một lần. */
+  /** Lần gửi XONG gần nhất của từng miền (ISO) — để mỗi ngày chỉ gửi một lần. */
   daGui: Partial<Record<Region, string>>;
+  noiDung: NoiDungGui;
+  doDaiTin: number;
+  /** Tiến độ của ngày đang gửi dở — xem `batDauTu`. */
+  tienDo: Partial<Record<Region, TienDoGui>>;
 }
 
-/** Khung giờ khách chốt. MT khách gõ "16h40-16h05", hiểu là 17h05 vì các khung đều kết thúc trước giờ xổ 10 phút. */
+/** Khung giờ khách chốt 18/10/2026 (trước đó 15:30 / 16:40 / 17:40 — xem KHUNG_CU). */
 export const MAC_DINH_BOT_GUI: CaiDatBotGui = {
   nhom: null,
   tenNhom: null,
   mien: {
-    xsmn: { bat: false, tu: "15:30", den: "16:05", tienTo: "2d" },
-    xsmt: { bat: false, tu: "16:40", den: "17:05", tienTo: "2d" },
-    xsmb: { bat: false, tu: "17:40", den: "18:05", tienTo: "mb " },
+    xsmn: { bat: false, tu: "15:50", den: "16:05", tienTo: "2d" },
+    xsmt: { bat: false, tu: "16:50", den: "17:05", tienTo: "2d" },
+    xsmb: { bat: false, tu: "17:50", den: "18:05", tienTo: "mb " },
   },
   daGui: {},
+  noiDung: "da2",
+  doDaiTin: DO_DAI_TIN_MAC_DINH,
+  tienDo: {},
+};
+/**
+ * Khung mặc định cũ. Bản lưu nào còn đúng y khung cũ là chưa ai đặt tay (lệnh
+ * /nhomgui, /batgui lưu cả cấu hình kể cả khung), nên đọc lên thành khung mới
+ * luôn — khách đổi giờ là đổi cho cả hệ, không bắt gõ lại /khunggio ba lần.
+ */
+const KHUNG_CU: Record<Region, KhungGio> = {
+  xsmn: { tu: "15:30", den: "16:05" },
+  xsmt: { tu: "16:40", den: "17:05" },
+  xsmb: { tu: "17:40", den: "18:05" },
 };
 
 const GIO_PHUT = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -93,8 +132,9 @@ export function chuanHoaBotGui(raw: unknown): CaiDatBotGui {
   for (const r of ["xsmn", "xsmt", "xsmb"] as Region[]) {
     const md = MAC_DINH_BOT_GUI.mien[r];
     const m = mienRaw[r] && typeof mienRaw[r] === "object" ? (mienRaw[r] as Record<string, unknown>) : {};
-    const tu = laGioHopLe(m.tu) ? m.tu : md.tu;
-    const den = laGioHopLe(m.den) ? m.den : md.den;
+    let tu = laGioHopLe(m.tu) ? m.tu : md.tu;
+    let den = laGioHopLe(m.den) ? m.den : md.den;
+    if (tu === KHUNG_CU[r].tu && den === KHUNG_CU[r].den) { tu = md.tu; den = md.den; }
     mien[r] = {
       bat: m.bat === true,
       // Khung ngược (đến trước từ) là vô nghĩa — về mặc định cả cặp.
@@ -106,10 +146,32 @@ export function chuanHoaBotGui(raw: unknown): CaiDatBotGui {
   const dg = o.daGui && typeof o.daGui === "object" ? (o.daGui as Record<string, unknown>) : {};
   const daGui: Partial<Record<Region, string>> = {};
   for (const r of ["xsmn", "xsmt", "xsmb"] as Region[]) if (typeof dg[r] === "string") daGui[r] = dg[r] as string;
+  const tdRaw = o.tienDo && typeof o.tienDo === "object" ? (o.tienDo as Record<string, unknown>) : {};
+  const tienDo: Partial<Record<Region, TienDoGui>> = {};
+  for (const r of ["xsmn", "xsmt", "xsmb"] as Region[]) {
+    const t = tdRaw[r] && typeof tdRaw[r] === "object" ? (tdRaw[r] as Record<string, unknown>) : null;
+    if (!t || typeof t.ngay !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(t.ngay)) continue;
+    const daGuiN = Number(t.daGui), tong = Number(t.tong);
+    if (!Number.isInteger(daGuiN) || !Number.isInteger(tong) || daGuiN < 0 || tong < 1 || daGuiN > tong) continue;
+    tienDo[r] = { ngay: t.ngay, daGui: daGuiN, tong };
+  }
+  const dd = Number(o.doDaiTin);
   return {
     nhom: typeof o.nhom === "number" && Number.isFinite(o.nhom) ? o.nhom : null,
     tenNhom: typeof o.tenNhom === "string" ? o.tenNhom : null,
     mien,
     daGui,
+    noiDung: o.noiDung === "lo" ? "lo" : "da2",
+    doDaiTin: Number.isFinite(dd) ? Math.min(DO_DAI_TIN_MAX, Math.max(DO_DAI_TIN_MIN, Math.round(dd))) : DO_DAI_TIN_MAC_DINH,
+    tienDo,
   };
+}
+
+/**
+ * Lượt này gửi từ phần thứ mấy: hôm nay (giờ VN) đã gửi dở thì từ phần kế
+ * tiếp; ngày khác, hoặc hôm nay đã gửi đủ, thì từ đầu (0).
+ */
+export function batDauTu(now: Date, td: TienDoGui | undefined): number {
+  if (!td || td.ngay !== gioVN(now).ngay) return 0;
+  return td.daGui < td.tong ? td.daGui : 0;
 }

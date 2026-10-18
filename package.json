@@ -10,7 +10,8 @@
     "test:lich": "node --experimental-strip-types scripts/kiem-lich.mts",
     "test:chuoi": "node --experimental-strip-types scripts/kiem-chuoi.mts",
     "test:danhan": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-da-nhan.mts",
-    "test:phanan": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-phan-an-o.mts"
+    "test:phanan": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-phan-an-o.mts",
+    "test:botgui": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-bot-gui.mts"
   },
   "dependencies": {
     "@libsql/client": "0.14.0",
