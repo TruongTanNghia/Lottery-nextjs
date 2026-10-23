@@ -112,7 +112,8 @@ export function helpText(isAdmin = false): string {
         "<code>/guingay mn</code> — gửi ngay vào nhóm, không đợi giờ (gửi tiếp phần còn dở; <code>lai</code> = gửi lại cả bộ)",
         "<code>/thutk 2d16b100, 15b50</code> — thử gửi một chuỗi bằng tài khoản người",
         "<code>/noidunggui da2</code> — gửi số nhận đá phương án 2 (mặc định) · <code>/noidunggui lo</code> — gửi chuỗi lô",
-        "<code>/dodaigui 2000</code> — mỗi tin dài tối đa bao nhiêu ký tự (500–3400)",
+        "<code>/sotin 50</code> — mỗi miền chia thành bao nhiêu tin · <code>/tinphut 2</code> — mỗi phút gửi mấy tin",
+        "<code>/dodaigui 2000</code> — trần ký tự một tin (500–3400)",
         "<code>/khunggio mn 15:50 16:05</code> · <code>/tiento mn 2d</code>",
       ]
     : [];
@@ -671,7 +672,7 @@ export async function lichGui(): Promise<string> {
     return `<b>${TEN_NGAN[r]}</b> · ${m.bat ? "✅ BẬT" : "⭕ tắt"} · ${m.tu}–${m.den} · tiền tố <code>${esc(m.tienTo)}</code> · hôm nay ${da ? `đã gửi đủ lúc ${gioVN(new Date(cfg.daGui[r]!)).gio}` : "chưa gửi"}${doDang}`;
   });
   return [
-    `<b>🤖 Bot gửi tự động — ${cfg.noiDung === "lo" ? "chuỗi lô" : "số nhận đá phương án 2"}</b> · mỗi tin ≤ ${cfg.doDaiTin.toLocaleString("vi-VN")} ký tự`,
+    `<b>🤖 Bot gửi tự động — ${cfg.noiDung === "lo" ? "chuỗi lô" : "số nhận đá phương án 2"}</b>${cfg.noiDung === "lo" ? "" : ` · mỗi miền ${cfg.soTin} tin · ${cfg.tinMoiPhut} tin/phút`}`,
     cfg.nhom == null ? "Nhóm nhận: <b>CHƯA CHỌN</b> — vào nhóm có bot nhận rồi gõ <code>/nhomgui</code>" : `Nhóm nhận: <b>${esc(cfg.tenNhom ?? String(cfg.nhom))}</b>`,
     `Bây giờ: ${gioVN(now).gio} (giờ VN)`,
     coTaiKhoanGui()
@@ -681,7 +682,7 @@ export async function lichGui(): Promise<string> {
     "",
     ...dong,
     "",
-    "<i>Mỗi miền mỗi ngày gửi một bộ, trong khung giờ; bộ dài thì chia nhiều tin gửi nối tiếp, dở dang thì lượt sau gửi tiếp (không gửi lại phần đã đi). Dữ liệu thiếu kỳ thì không gửi mà báo quản trị.</i>",
+    "<i>Mỗi miền mỗi ngày gửi một bộ, rải đều trong khung giờ (bộ hẹn giờ gõ cửa mỗi phút, mỗi lượt gửi ngần ấy tin); lỡ lượt thì lượt sau gửi bù, không gửi lại phần đã đi. Dữ liệu thiếu kỳ thì không gửi mà báo quản trị.</i>",
   ].join("\n");
 }
 
@@ -691,10 +692,12 @@ export async function xemGui(region: Region): Promise<string> {
   const xt = await xemTruocGui(region, cfg);
   const dau = xt.noiDung === "lo" ? `chuỗi lô sẽ gửi · ${xt.soLo} lô` : `số nhận đá PA2 sẽ gửi · ${xt.soCap.toLocaleString("vi-VN")} cặp`;
   return [
-    `<b>${label(region)} · ${dau}</b> · ${xt.khoi.length} phần · ${xt.chuoi.length.toLocaleString("vi-VN")} ký tự (mỗi phần ≤ ${cfg.doDaiTin.toLocaleString("vi-VN")})`,
+    `<b>${label(region)} · ${dau}</b> · ${xt.khoi.length} tin · ${xt.chuoi.length.toLocaleString("vi-VN")} ký tự${xt.noiDung === "lo" ? "" : ` · ${cfg.tinMoiPhut} tin/phút → ${Math.ceil(xt.khoi.length / cfg.tinMoiPhut)} phút`}`,
     xt.duLieu === "ok" ? "" : `<b>⚠️ ${esc(xt.duLieuChu)}</b> — lúc này bot sẽ KHÔNG tự gửi`,
     "",
-    ...(xt.khoi.length ? xt.khoi.map((k, i) => `<i>phần ${i + 1}/${xt.khoi.length}</i>\n<code>${esc(k)}</code>`) : [xt.noiDung === "lo" ? "<i>không lô nào đang nhận</i>" : "<i>không cặp đá nào đang nhận</i>"]),
+    ...(xt.khoi.length
+      ? [...xt.khoi.slice(0, 3).map((k, i) => `<i>tin ${i + 1}/${xt.khoi.length}</i>\n<code>${esc(k)}</code>`), ...(xt.khoi.length > 3 ? [`<i>… và ${xt.khoi.length - 3} tin nữa, cùng dạng</i>`] : [])]
+      : [xt.noiDung === "lo" ? "<i>không lô nào đang nhận</i>" : "<i>không cặp đá nào đang nhận</i>"]),
   ].filter((x) => x !== "").join("\n");
 }
 
@@ -706,6 +709,26 @@ async function datNoiDung(arg: string | undefined): Promise<string> {
   cfg.noiDung = nd;
   await luuBotGui(cfg);
   return `Đã đặt nội dung gửi: <b>${nd === "lo" ? "chuỗi lô" : "số nhận đá phương án 2"}</b>.\n\n${await lichGui()}`;
+}
+
+/** /sotin N — mỗi miền chia thành N tin. */
+async function datSoTin(arg: string | undefined): Promise<string> {
+  const n = Number(arg);
+  if (!Number.isInteger(n) || n < 1 || n > 200) return "Cú pháp: <code>/sotin 50</code> (1–200 tin mỗi miền)";
+  const cfg = await docBotGui();
+  cfg.soTin = n;
+  await luuBotGui(cfg);
+  return `Đã đặt mỗi miền chia thành <b>${n}</b> tin (${cfg.tinMoiPhut} tin/phút → chừng ${Math.ceil(n / cfg.tinMoiPhut)} phút). Gõ <code>/xemgui mn</code> để xem.`;
+}
+
+/** /tinphut N — mỗi phút gửi N tin. */
+async function datTinPhut(arg: string | undefined): Promise<string> {
+  const n = Number(arg);
+  if (!Number.isInteger(n) || n < 1 || n > 10) return "Cú pháp: <code>/tinphut 2</code> (1–10 tin mỗi phút)";
+  const cfg = await docBotGui();
+  cfg.tinMoiPhut = n;
+  await luuBotGui(cfg);
+  return `Đã đặt mỗi phút gửi <b>${n}</b> tin (${cfg.soTin} tin → chừng ${Math.ceil(cfg.soTin / n)} phút). Khung mỗi miền phải dài hơn số phút đó.`;
 }
 
 /** /dodaigui N — mỗi tin dài tối đa N ký tự. */
@@ -1110,6 +1133,14 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
 
     case "/dodaigui":
       if (isAdmin) return datDoDai(args[0]);
+      break;
+
+    case "/sotin":
+      if (isAdmin) return datSoTin(args[0]);
+      break;
+
+    case "/tinphut":
+      if (isAdmin) return datTinPhut(args[0]);
       break;
 
     case "/guingay": {

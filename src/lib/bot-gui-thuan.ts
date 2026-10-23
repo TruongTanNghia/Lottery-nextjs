@@ -28,6 +28,11 @@ export type NoiDungGui = "lo" | "da2";
 export const DO_DAI_TIN_MAC_DINH = 2000;
 export const DO_DAI_TIN_MIN = 500;
 export const DO_DAI_TIN_MAX = 3400;
+/** Khách 22/10: "mỗi miền chia thành 50 tin, 1 phút gửi 2 tin". */
+export const SO_TIN_MAC_DINH = 50;
+export const SO_TIN_MAX = 200;
+export const TIN_MOI_PHUT_MAC_DINH = 2;
+export const TIN_MOI_PHUT_MAX = 10;
 
 /** Hôm nay miền này đã gửi được mấy phần trên tổng mấy phần. */
 export interface TienDoGui {
@@ -35,6 +40,8 @@ export interface TienDoGui {
   ngay: string;
   daGui: number;
   tong: number;
+  /** Đã báo quản trị "hết giờ mà còn dở" cho ngày này chưa — báo đúng một lần. */
+  daBao?: boolean;
 }
 
 export interface CaiDatMien extends KhungGio {
@@ -53,22 +60,28 @@ export interface CaiDatBotGui {
   daGui: Partial<Record<Region, string>>;
   noiDung: NoiDungGui;
   doDaiTin: number;
+  /** Mỗi miền chia thành bao nhiêu tin (nội dung "da2"). */
+  soTin: number;
+  /** Mỗi phút gửi mấy tin — bộ hẹn giờ gõ cửa mỗi phút, mỗi lượt gửi ngần này tin. */
+  tinMoiPhut: number;
   /** Tiến độ của ngày đang gửi dở — xem `batDauTu`. */
   tienDo: Partial<Record<Region, TienDoGui>>;
 }
 
-/** Khung giờ khách chốt 18/10/2026 (trước đó 15:30 / 16:40 / 17:40 — xem KHUNG_CU). */
+/** Khung giờ khách chốt 22/10/2026 (các khung cũ: xem KHUNG_CU). Tiền tố: chữ đầu HP79 nhận, thử ngày 21/10. */
 export const MAC_DINH_BOT_GUI: CaiDatBotGui = {
   nhom: null,
   tenNhom: null,
   mien: {
-    xsmn: { bat: false, tu: "15:50", den: "16:05", tienTo: "2d" },
-    xsmt: { bat: false, tu: "16:50", den: "17:05", tienTo: "2d" },
-    xsmb: { bat: false, tu: "17:50", den: "18:05", tienTo: "mb " },
+    xsmn: { bat: false, tu: "15:40", den: "16:08", tienTo: "Mn 2d" },
+    xsmt: { bat: false, tu: "16:40", den: "17:08", tienTo: "Mt 2d" },
+    xsmb: { bat: false, tu: "17:40", den: "18:08", tienTo: "Mb " },
   },
   daGui: {},
   noiDung: "da2",
   doDaiTin: DO_DAI_TIN_MAC_DINH,
+  soTin: SO_TIN_MAC_DINH,
+  tinMoiPhut: TIN_MOI_PHUT_MAC_DINH,
   tienDo: {},
 };
 /**
@@ -76,10 +89,10 @@ export const MAC_DINH_BOT_GUI: CaiDatBotGui = {
  * /nhomgui, /batgui lưu cả cấu hình kể cả khung), nên đọc lên thành khung mới
  * luôn — khách đổi giờ là đổi cho cả hệ, không bắt gõ lại /khunggio ba lần.
  */
-const KHUNG_CU: Record<Region, KhungGio> = {
-  xsmn: { tu: "15:30", den: "16:05" },
-  xsmt: { tu: "16:40", den: "17:05" },
-  xsmb: { tu: "17:40", den: "18:05" },
+const KHUNG_CU: Record<Region, KhungGio[]> = {
+  xsmn: [{ tu: "15:30", den: "16:05" }, { tu: "15:50", den: "16:05" }],
+  xsmt: [{ tu: "16:40", den: "17:05" }, { tu: "16:50", den: "17:05" }],
+  xsmb: [{ tu: "17:40", den: "18:05" }, { tu: "17:50", den: "18:05" }],
 };
 
 const GIO_PHUT = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -134,7 +147,7 @@ export function chuanHoaBotGui(raw: unknown): CaiDatBotGui {
     const m = mienRaw[r] && typeof mienRaw[r] === "object" ? (mienRaw[r] as Record<string, unknown>) : {};
     let tu = laGioHopLe(m.tu) ? m.tu : md.tu;
     let den = laGioHopLe(m.den) ? m.den : md.den;
-    if (tu === KHUNG_CU[r].tu && den === KHUNG_CU[r].den) { tu = md.tu; den = md.den; }
+    if (KHUNG_CU[r].some((k) => k.tu === tu && k.den === den)) { tu = md.tu; den = md.den; }
     mien[r] = {
       bat: m.bat === true,
       // Khung ngược (đến trước từ) là vô nghĩa — về mặc định cả cặp.
@@ -153,9 +166,10 @@ export function chuanHoaBotGui(raw: unknown): CaiDatBotGui {
     if (!t || typeof t.ngay !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(t.ngay)) continue;
     const daGuiN = Number(t.daGui), tong = Number(t.tong);
     if (!Number.isInteger(daGuiN) || !Number.isInteger(tong) || daGuiN < 0 || tong < 1 || daGuiN > tong) continue;
-    tienDo[r] = { ngay: t.ngay, daGui: daGuiN, tong };
+    tienDo[r] = { ngay: t.ngay, daGui: daGuiN, tong, ...(t.daBao === true ? { daBao: true } : {}) };
   }
   const dd = Number(o.doDaiTin);
+  const st = Number(o.soTin), tp = Number(o.tinMoiPhut);
   return {
     nhom: typeof o.nhom === "number" && Number.isFinite(o.nhom) ? o.nhom : null,
     tenNhom: typeof o.tenNhom === "string" ? o.tenNhom : null,
@@ -163,8 +177,26 @@ export function chuanHoaBotGui(raw: unknown): CaiDatBotGui {
     daGui,
     noiDung: o.noiDung === "lo" ? "lo" : "da2",
     doDaiTin: Number.isFinite(dd) ? Math.min(DO_DAI_TIN_MAX, Math.max(DO_DAI_TIN_MIN, Math.round(dd))) : DO_DAI_TIN_MAC_DINH,
+    soTin: Number.isInteger(st) && st >= 1 && st <= SO_TIN_MAX ? st : SO_TIN_MAC_DINH,
+    tinMoiPhut: Number.isInteger(tp) && tp >= 1 && tp <= TIN_MOI_PHUT_MAX ? tp : TIN_MOI_PHUT_MAC_DINH,
     tienDo,
   };
+}
+
+/** Còn mấy phút (kể cả phút này) tới hết khung — tức còn mấy lượt gõ cửa nếu gõ mỗi phút. */
+export function phutConLai(now: Date, k: KhungGio): number {
+  return Math.max(0, phutCua(k.den) - gioVN(now).phut + 1);
+}
+
+/**
+ * Lượt này gửi mấy tin: thường là `tinMoiPhut`; nếu số tin còn lại chia cho số
+ * lượt còn lại lớn hơn (lượt trước bị lỡ, hay bắt đầu trễ) thì gửi bù cho kịp
+ * hết trong khung. Không bao giờ quá số tin còn lại.
+ */
+export function soTinLuotNay(conLai: number, phutCon: number, tinMoiPhut: number): number {
+  if (conLai <= 0) return 0;
+  const can = Math.ceil(conLai / Math.max(1, phutCon));
+  return Math.min(conLai, Math.max(tinMoiPhut, can));
 }
 
 /**

@@ -14,15 +14,10 @@ on:
     # Khách chốt 18/10/2026: Mn 15:50–16:05, Mt 16:50–17:05, Mb 17:50–18:05 (giờ VN).
     # Gõ sớm 5 phút và gõ dày 2–3 phút một lần: bộ số nhận đá dài, chia nhiều phần,
     # một lượt gửi không hết thì lượt sau gửi tiếp — gõ càng dày, càng chắc gửi đủ trong khung.
-    # Miền Nam 15:50–16:05 VN  = 08:50–09:05 UTC
-    - cron: "45,48,51,54,57 8 * * *"
-    - cron: "0,2,4,6 9 * * *"
-    # Miền Trung 16:50–17:05 VN = 09:50–10:05 UTC
-    - cron: "45,48,51,54,57 9 * * *"
-    - cron: "0,2,4,6 10 * * *"
-    # Miền Bắc 17:50–18:05 VN  = 10:50–11:05 UTC
-    - cron: "45,48,51,54,57 10 * * *"
-    - cron: "0,2,4,6 11 * * *"
+    # Khách 22/10: gửi từ từ, mỗi phút 2 tin → gõ cửa MỖI PHÚT 15:00–18:59 VN (08–11 UTC).
+    # Lịch GitHub thường trễ hàng giờ với repo này; bộ hẹn giờ chính là cron-job.org
+    # (cùng lịch "* 8-11 * * *"), workflow này chỉ là dự phòng.
+    - cron: "* 8-11 * * *"
   workflow_dispatch: {}
 
 permissions: {}

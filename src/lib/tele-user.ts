@@ -63,7 +63,8 @@ async function guiThat(
   texts: string[],
   giu: TrangThaiGui,
   hanMs: number,
-  onDaGui?: (daGui: number) => Promise<void>
+  onDaGui?: (daGui: number) => Promise<void>,
+  nghiMs = NGHI_GIUA_TIN_MS
 ): Promise<KetQuaGuiNhieu> {
   const batDau = Date.now();
   const apiId = Number(process.env.TELEGRAM_API_ID);
@@ -103,8 +104,8 @@ async function guiThat(
     for (let i = 0; i < texts.length; i++) {
       if (i > 0) {
         // Không đủ chỗ cho tin kế trong lượt này thì dừng gọn: phần đã gửi đã được ghi nhận qua onDaGui.
-        if (Date.now() - batDau > hanMs - CAN_CHO_MOT_TIN_MS) return { ok: true, ten, daGui: giu.daGui, doDang: true };
-        await new Promise((r) => setTimeout(r, NGHI_GIUA_TIN_MS));
+        if (Date.now() - batDau + nghiMs + CAN_CHO_MOT_TIN_MS > hanMs) return { ok: true, ten, daGui: giu.daGui, doDang: true };
+        await new Promise((r) => setTimeout(r, nghiMs));
       }
       giu.daPhat = true;
       await client.sendMessage(nhom, { message: texts[i], linkPreview: false });
@@ -152,7 +153,8 @@ export async function guiNhieuBangTaiKhoan(
   chatId: number,
   texts: string[],
   hanMs = HAN_GUI_MS,
-  onDaGui?: (daGui: number) => Promise<void>
+  onDaGui?: (daGui: number) => Promise<void>,
+  nghiMs = NGHI_GIUA_TIN_MS
 ): Promise<KetQuaGuiNhieu> {
   if (!coTaiKhoanGui()) return { ok: false, loi: "chưa cài tài khoản gửi (TELEGRAM_API_ID / API_HASH / USER_SESSION)", daGui: 0 };
   if (texts.length === 0) return { ok: true, daGui: 0 };
@@ -160,7 +162,7 @@ export async function guiNhieuBangTaiKhoan(
   let hen: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      guiThat(chatId, texts, giu, hanMs, onDaGui),
+      guiThat(chatId, texts, giu, hanMs, onDaGui, nghiMs),
       // Đã thử: phiên bị thu hồi thì Telegram không trả lỗi mà im lặng, thư viện
       // đứng chờ mãi. Nên quá hạn là dấu hiệu thường gặp nhất của phiên chết.
       new Promise<KetQuaGuiNhieu>((r) => {

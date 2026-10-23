@@ -15,9 +15,9 @@ import { adminIds } from "@/lib/telegram-users";
 import { NGHI_GIUA_TIN_MS, coTaiKhoanGui, guiBangTaiKhoan, guiNhieuBangTaiKhoan } from "@/lib/tele-user";
 import { khoKyToi } from "@/lib/da";
 import { bangHieuLuc, taiKyDaXo } from "@/lib/da-bang";
-import { capNhan, chuoiNhanMien, nhomNhanDa } from "@/lib/da-nhan";
+import { capNhan, chuoiNhanDeu } from "@/lib/da-nhan";
 import {
-  batDauTu, chuanHoaBotGui, chuoiLoGui, daGuiHomNay, gioVN, trongKhung,
+  batDauTu, chuanHoaBotGui, chuoiLoGui, daGuiHomNay, gioVN, phutConLai, soTinLuotNay, trongKhung,
   type CaiDatBotGui, type NoiDungGui,
 } from "@/lib/bot-gui-thuan";
 import type { Region } from "@/lib/types";
@@ -109,12 +109,14 @@ export interface XemTruocMien {
 
 /** Trần một lượt gửi (route cron có 30 giây; chừa chỗ kết nối và báo lỗi). */
 const HAN_MOT_LUOT_MS = 22_000;
+/** Gửi từ từ: trong một lượt (mỗi phút), hai tin cách nhau ngần này — "1 phút gửi 2 tin". */
+const NGHI_GIAN_DEU_MS = 8_000;
 
 /**
  * Nội dung sẽ gửi cho một miền ngay lúc này, đã chia tin, kèm tình trạng dữ liệu.
  *
  * "da2" (khách chốt): số nhận đá phương án 2 — cặp nào ô đang cài > 0 là nhận,
- * gom vòng không lặp, chia khối ≤ doDaiTin, mỗi khối mở bằng tiền tố đài.
+ * chia ĐỀU thành `soTin` tin, mỗi tin ghi từng cặp, mở bằng tiền tố đài.
  * Đi qua bangHieuLuc(…, 2) nên bảng dùng để gửi được ghi vào sổ bảng PA2 —
  * khối "Tiền số nhận" tính đúng theo cái đã gửi đi.
  */
@@ -131,7 +133,7 @@ export async function xemTruocGui(region: Region, cfg: CaiDatBotGui, now = new D
   const [h, draws] = await Promise.all([bangHieuLuc(region, 2), taiKyDaXo(region)]);
   const bac = khoKyToi(draws)?.bac;
   const cap = bac ? capNhan(bac, h.bang) : [];
-  const khoi = chuoiNhanMien(m.tienTo, nhomNhanDa(cap), region, cfg.doDaiTin);
+  const khoi = chuoiNhanDeu(m.tienTo, cap, cfg.soTin, region, cfg.doDaiTin);
   return { ...chung, noiDung: "da2", khoi, chuoi: khoi.join("\n"), soLo: 0, soCap: cap.length };
 }
 
@@ -158,18 +160,18 @@ interface KetQuaGuiKhoi {
  * không thấy, rơi về đó là báo "đã gửi" mà chẳng ai nhận. Sau mỗi phần xong,
  * `ghi(n)` được gọi để ghi tiến độ ngay.
  */
-async function guiKhoiVaoNhom(chatId: number, khoi: string[], batDau: number, ghi: (daGui: number) => Promise<void>): Promise<KetQuaGuiKhoi> {
-  const con = khoi.slice(batDau);
+async function guiKhoiVaoNhom(chatId: number, khoi: string[], batDau: number, toiDa: number, nghiMs: number, ghi: (daGui: number) => Promise<void>): Promise<KetQuaGuiKhoi> {
+  const con = khoi.slice(batDau, batDau + Math.max(1, toiDa));
   if (coTaiKhoanGui()) {
-    const r = await guiNhieuBangTaiKhoan(chatId, con, HAN_MOT_LUOT_MS, ghi);
+    const r = await guiNhieuBangTaiKhoan(chatId, con, HAN_MOT_LUOT_MS, ghi, nghiMs);
     return { ok: r.ok, daGui: r.daGui, doDang: r.doDang, khongRo: r.khongRo, loi: r.loi, bang: "tai-khoan" };
   }
   const batDauLuot = Date.now();
   let daGui = 0;
   for (let i = 0; i < con.length; i++) {
     if (i > 0) {
-      if (Date.now() - batDauLuot > HAN_MOT_LUOT_MS - 4_000) return { ok: true, daGui, doDang: true, bang: "bot" };
-      await new Promise((r) => setTimeout(r, NGHI_GIUA_TIN_MS));
+      if (Date.now() - batDauLuot + nghiMs + 4_000 > HAN_MOT_LUOT_MS) return { ok: true, daGui, doDang: true, bang: "bot" };
+      await new Promise((r) => setTimeout(r, nghiMs));
     }
     const r = await guiTho(chatId, con[i]);
     if (!r.ok) return { ok: false, daGui, loi: r.loi, bang: "bot" };
@@ -199,7 +201,17 @@ export async function chayBotGui(now = new Date(), thu = false): Promise<{ luc: 
     const m = cfg.mien[region];
     if (!m.bat) { ketQua.push({ region, viec: "bo-qua", lyDo: "đang tắt" }); continue; }
     if (cfg.nhom == null) { ketQua.push({ region, viec: "bo-qua", lyDo: "chưa chọn nhóm nhận (/nhomgui trong nhóm)" }); continue; }
-    if (!trongKhung(now, m)) { ketQua.push({ region, viec: "bo-qua", lyDo: `ngoài khung ${m.tu}–${m.den} (đang ${gioVN(now).gio})` }); continue; }
+    if (!trongKhung(now, m)) {
+      // Hết giờ mà hôm nay còn gửi dở: báo quản trị đúng một lần, để gửi tay phần còn lại nếu còn kịp.
+      const td = cfg.tienDo[region];
+      if (!thu && td && td.ngay === ngay && td.daGui < td.tong && !td.daBao && gioVN(now).gio > m.den) {
+        td.daBao = true;
+        doi = true;
+        await baoQuanTri(`⚠️ Bot gửi ${TEN[region]}: hết khung ${m.tu}–${m.den} mà mới đi ${td.daGui}/${td.tong} tin. Còn kịp thì gõ /guingay ${TEN[region].toLowerCase()} để gửi nốt (bot chỉ gửi tiếp phần chưa đi).`);
+      }
+      ketQua.push({ region, viec: "bo-qua", lyDo: `ngoài khung ${m.tu}–${m.den} (đang ${gioVN(now).gio})` });
+      continue;
+    }
     if (daGuiHomNay(now, cfg.daGui[region])) { ketQua.push({ region, viec: "bo-qua", lyDo: "hôm nay đã gửi đủ" }); continue; }
 
     const batDau = batDauTu(now, cfg.tienDo[region]);
@@ -218,7 +230,10 @@ export async function chayBotGui(now = new Date(), thu = false): Promise<{ luc: 
       cfg.tienDo[region] = { ngay, daGui: tiepTu + n, tong: xt.khoi.length };
       await luuBotGui(cfg);
     };
-    const r = await guiKhoiVaoNhom(cfg.nhom, xt.khoi, tiepTu, ghi);
+    // Gửi từ từ: mỗi lượt `tinMoiPhut` tin; lượt trước bị lỡ thì gửi bù để kịp hết khung.
+    const toiDa = soTinLuotNay(xt.khoi.length - tiepTu, phutConLai(now, m), cfg.tinMoiPhut);
+    const nghi = toiDa <= cfg.tinMoiPhut ? NGHI_GIAN_DEU_MS : NGHI_GIUA_TIN_MS;
+    const r = await guiKhoiVaoNhom(cfg.nhom, xt.khoi, tiepTu, toiDa, nghi, ghi);
     let daGui = tiepTu + r.daGui;
     if (r.khongRo) {
       // Không biết phần đó tới chưa. Tính là đã gửi để lượt sau KHÔNG gửi lại phần
@@ -235,7 +250,8 @@ export async function chayBotGui(now = new Date(), thu = false): Promise<{ luc: 
       cfg.daGui[region] = now.toISOString();
       doi = true;
       ketQua.push({ region, viec: "gui", soPhan: xt.khoi.length, kyTu: xt.chuoi.length, soLo: xt.soLo, soCap: xt.soCap });
-    } else if (r.ok && r.doDang) {
+    } else if (r.ok) {
+      // Đúng nhịp: lượt này xong phần của nó, phần còn lại để các lượt sau.
       doi = true;
       ketQua.push({ region, viec: "do-dang", daGui, tong: xt.khoi.length });
     } else {
@@ -284,7 +300,8 @@ export async function guiNgay(region: Region, now = new Date(), ep = false): Pro
     cfg.tienDo[region] = { ngay, daGui: tiepTu + n, tong: xt.khoi.length };
     await luuBotGui(cfg);
   };
-  const r = await guiKhoiVaoNhom(cfg.nhom, xt.khoi, tiepTu, ghi);
+  // Gửi tay: đi hết phần còn lại, nghỉ ngắn giữa các tin.
+  const r = await guiKhoiVaoNhom(cfg.nhom, xt.khoi, tiepTu, xt.khoi.length, NGHI_GIUA_TIN_MS, ghi);
   const daGui = tiepTu + r.daGui + (r.khongRo ? 1 : 0);
   if (r.khongRo) {
     cfg.tienDo[region] = { ngay, daGui, tong: xt.khoi.length };

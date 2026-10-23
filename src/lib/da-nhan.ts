@@ -101,6 +101,37 @@ export function chuoiNhanMien(tienTo: string, muc: MucNhan[], region: Region, to
 }
 
 /**
+ * Chia ĐỀU các cặp nhận thành `soTin` tin, mỗi tin ghi từng cặp một
+ * ("24 95dx10n 02 97dx10n …"), mở bằng tiền tố đài. Khách (22/10): "chia ra
+ * tầm 10 cặp 1 tin là ok nhất — cứ mỗi miền chia thành 50 tin, 1 phút gửi 2
+ * tin". Ít cặp hơn số tin thì mỗi tin một cặp. Tin nào dài quá `doDaiTin` thì
+ * tách đôi tiếp — chỉ là lưới an toàn, 10 cặp chưa tới 120 ký tự.
+ */
+export function chuoiNhanDeu(tienTo: string, cap: [string, string, number][], soTin: number, region: Region, doDaiTin: number): string[] {
+  const sap = [...cap].sort((x, y) => {
+    const a = x[0] < x[1] ? x[0] + x[1] : x[1] + x[0], b = y[0] < y[1] ? y[0] + y[1] : y[1] + y[0];
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+  if (sap.length === 0) return [];
+  const n = Math.max(1, Math.min(Math.floor(soTin), sap.length));
+  const out: string[] = [];
+  const viet = (ds: [string, string, number][]): string => tienTo + ds.map(([a, b, d]) => `${a < b ? a : b} ${a < b ? b : a}${hauToNhan(region, d)}`).join(" ");
+  const them = (ds: [string, string, number][]) => {
+    const t = viet(ds);
+    if (t.length <= doDaiTin || ds.length <= 1) { out.push(t); return; }
+    const giua = Math.ceil(ds.length / 2);
+    them(ds.slice(0, giua));
+    them(ds.slice(giua));
+  };
+  for (let i = 0; i < n; i++) {
+    // Chia đều: tin đầu nhận phần dư, lệch nhau tối đa 1 cặp.
+    const tu = Math.floor((i * sap.length) / n), den = Math.floor(((i + 1) * sap.length) / n);
+    if (den > tu) them(sap.slice(tu, den));
+  }
+  return out;
+}
+
+/**
  * Đọc ngược các khối nhận của một miền ra cặp → điểm, và đếm số cặp ĐÃ VIẾT
  * (tính cả trùng) — để bài kiểm chứng minh: đúng tập cặp, đúng điểm, và số
  * cặp viết ra = số cặp khác nhau (không cặp nào ghi hai lần).
