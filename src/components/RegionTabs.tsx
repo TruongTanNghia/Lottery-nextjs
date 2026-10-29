@@ -2,12 +2,12 @@
 
 import { REGION_ICONS, REGION_LABELS, type Region } from "@/lib/types";
 
-type ViewKey = "dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda" | "soda2" | "chanlo" | "check";
+type ViewKey = "dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda" | "soda2" | "chanlo" | "check" | "track";
 
 // Every view the app can render, in tab order. Kept as the full list so the
 // pages stay wired up and nothing has to be rebuilt to bring one back.
 const ALL_VIEWS = [
-  "dashboard", "soda", "soda2", "chanlo", "check", "exposure", "lab", "simai", "results", "prediction", "vip", "golden", "pair", "three",
+  "dashboard", "soda", "soda2", "chanlo", "check", "track", "exposure", "lab", "simai", "results", "prediction", "vip", "golden", "pair", "three",
   "four", "sim", "watcher", "today", "accuracy", "history", "rolling",
 ] as const;
 
@@ -20,7 +20,8 @@ const ALL_VIEWS = [
 // Khách chốt 21/09: thêm tab "Số Đá" riêng, phần còn lại giữ nguyên vì đang chạy tốt.
 // Khách 02/10: thêm tab "Check" — dán chuỗi vừa copy vào để máy tính lại và chỉ ra số sai.
 // Khách 12/10: "copy 1 tab đá riêng biệt với tab cũ, 2 tab chạy cùng nhau" — Số Đá 2 là phương án 2, bảng riêng.
-const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard", "soda", "soda2", "chanlo", "check", "exposure", "results"];
+// Khách 29/10: "track dữ liệu, bám tháng hiện tại" — tab Track riêng, chỉ đọc.
+const ENABLED_VIEWS: readonly ViewKey[] = ["dashboard", "soda", "soda2", "chanlo", "check", "track", "exposure", "results"];
 
 interface Props {
   current: Region;
@@ -78,6 +79,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
             soda2: "🎲 Số Đá 2",
             chanlo: "🚫 Chặn Lô",
             check: "✅ Check",
+            track: "📈 Track",
             exposure: "💰 Rủi Ro Tiền",
             lab: "🔬 Thử Chiến Thuật",
             simai: "🤖 SIM-AI",
@@ -101,6 +103,7 @@ export default function RegionTabs({ current, onChange, view, onViewChange, badg
             soda2: "bg-violet-700 shadow-[0_1px_6px_rgba(139,92,246,0.35)]",
             chanlo: "bg-rose-700 shadow-[0_1px_6px_rgba(244,63,94,0.35)]",
             check: "bg-emerald-700 shadow-[0_1px_6px_rgba(16,185,129,0.35)]",
+            track: "bg-sky-700 shadow-[0_1px_6px_rgba(14,165,233,0.35)]",
             exposure: "bg-rose-800 shadow-[0_1px_6px_rgba(244,63,94,0.35)]",
             lab: "bg-violet-800 shadow-[0_1px_6px_rgba(139,92,246,0.35)]",
             simai: "bg-cyan-800 shadow-[0_1px_6px_rgba(34,211,238,0.35)]",
