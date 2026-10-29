@@ -109,7 +109,7 @@ function TomTatKhoi({ t, tKia, chieu }: { t: ThangTrack; tKia: ThangTrack | null
         <O nhan={`Tháng ${tenThang(t.thang)}`} gt={dau(s.lai)} phu={`${s.thu > 0 ? `phần ăn ${pc(s.pct)} · ` : ""}thu ${tien(s.thu)} · trả ${tien(s.tra)}`} m={mau(s.lai)} />
         <O nhan="Ngày ăn / thua / hoà" gt={`${s.ngayAn} / ${s.ngayThua} / ${s.ngayHoa}`} phu={`${s.soNgay} kỳ · ${s.ngayCho} ngày chờ dữ liệu`} m="#8fd0ff" />
         <O nhan="Thua dài nhất" gt={s.thuaDai.soNgay ? `${s.thuaDai.soNgay} ngày liền` : "—"} phu={s.thuaDai.tu ? `${ddmm(s.thuaDai.tu)} → ${ddmm(s.thuaDai.den!)}` : "không có ngày thua"} m="#ff9d9d" />
-        <O nhan="Thua sâu nhất" gt={s.sutSau.tien ? `−${tien(s.sutSau.tien)}` : "—"} phu={s.sutSau.tu ? `từ đỉnh ${ddmm(s.sutSau.tu)} xuống ${ddmm(s.sutSau.den!)}` : "chưa sụt khỏi đỉnh"} m="#ff6b78" />
+        <O nhan="Thua sâu nhất" gt={s.sutSau.tien ? `−${tien(s.sutSau.tien)}` : "—"} phu={s.sutSau.tu ? `từ đỉnh ${ddmm(s.sutSau.tu)} xuống ${ddmm(s.sutSau.den!)}` : s.sutSau.tien ? `từ đầu tháng xuống ${ddmm(s.sutSau.den!)}` : "chưa sụt khỏi đỉnh"} m="#ff6b78" />
       </div>
       {tKia && (
         <div className="rounded-lg border border-[var(--hairline)] bg-white/[0.03] px-3 py-2 text-[0.72rem] leading-relaxed text-[var(--text-secondary)]" data-track-so-sanh>
