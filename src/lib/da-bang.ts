@@ -27,7 +27,7 @@ import { getConfigValue, query, setConfigValue } from "@/lib/db";
 import { dungKy } from "@/lib/slot-stats";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  NGUONG_RUT_GON, apChanLuat, apLuatDinh, bangMacDinh, capBiChan, chuanHoaBang, laBangCu, moRongDanhSachCu, chuanHoaBuoc, chuanHoaDanhSachO, chuanHoaNguongGon, khoKyToi, luatHaiBuoc,
+  NGUONG_RUT_GON, apChanLuat, apLuatDinh, bangMacDinhKhach, capBiChan, chuanHoaBang, laBangCu, moRongDanhSachCu, chuanHoaBuoc, chuanHoaDanhSachO, chuanHoaNguongGon, khoKyToi, luatHaiBuoc,
   thongKeCapTheoThang, thongKeDa,
   type BangDa, type LuatHaiBuoc, type LyDoChan,
 } from "@/lib/da";
@@ -61,7 +61,7 @@ export interface BangDaLuu {
   saoTuPa1?: boolean;
 }
 
-const macDinh = (): BangDaLuu => ({ bang: bangMacDinh(), luuLuc: null, tuDong: true, chanLuat: [], moTay: [], luatLuc: null, rutGon: false, nguongGon: NGUONG_RUT_GON, buoc1: true, buoc2: true });
+const macDinh = (): BangDaLuu => ({ bang: bangMacDinhKhach(), luuLuc: null, tuDong: true, chanLuat: [], moTay: [], luatLuc: null, rutGon: false, nguongGon: NGUONG_RUT_GON, buoc1: true, buoc2: true });
 
 export async function docBangDa(region: Region, pa: PhuongAn = 1): Promise<BangDaLuu> {
   if (pa === 2) {

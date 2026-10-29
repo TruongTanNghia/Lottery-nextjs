@@ -65,7 +65,7 @@ export default function TrackPage({ region }: { region: Region }) {
             <h2 className="plate-title">📈 Track dữ liệu — bám tháng hiện tại · {REGION_LABELS[region]}</h2>
             <p className="text-[0.7rem] text-[var(--text-muted)] mt-0.5">
               Mỗi ngày cài lại 190 ô theo số liệu <b>từ đầu tháng tới hôm trước</b>: ô phần ăn <b>−%</b> → 1n, <b>+%</b> → 0n, dưới{" "}
-              {so(DIP_TOI_THIEU)} cặp → 0n. Nhận mọi cặp ở ô 1n, chốt bằng kết quả hôm đó. Tháng nào riêng tháng đó. Giá{" "}
+              {so(DIP_TOI_THIEU)} cặp → 0n, 19 ô cùng ngày → luôn 0n. Nhận mọi cặp ở ô 1n, chốt bằng kết quả hôm đó. Tháng nào riêng tháng đó. Giá{" "}
               {tien(GIA_DA[region])} / trúng {tien(TRUNG_DA[region])}.
             </p>
           </div>

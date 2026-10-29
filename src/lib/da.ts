@@ -642,6 +642,24 @@ export function bangMacDinh(tran = TRAN_DA): BangDa {
   return b;
 }
 
+/** Ô "cùng ngày đá với nhau" (hai con cùng bậc): "i-i". */
+export const laOCungNgay = (k: string): boolean => {
+  const [i, j] = k.split("-");
+  return i === j;
+};
+
+/**
+ * Bảng mặc định KHÁCH chốt (29/10/2026): "các ô cùng ngày đá với nhau mình
+ * mặc định cho về 0n hết, cả 3 miền". Dùng cho bảng chưa lưu lần nào và nút
+ * "Mặc định"; bảng đã lưu không tự đổi — khách bấm "Chặn 19 ô cùng ngày" rồi Lưu.
+ * `bangMacDinh` (toàn 1 điểm) giữ nguyên cho thống kê và bài kiểm.
+ */
+export function bangMacDinhKhach(tran = TRAN_DA): BangDa {
+  const b = bangMacDinh(tran);
+  for (const k of Object.keys(b)) if (laOCungNgay(k)) b[k] = 0;
+  return b;
+}
+
 /**
  * Dọn một bảng đọc từ ngoài vào: đủ mọi ô, số nguyên, không âm, có trần.
  *

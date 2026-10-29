@@ -8,7 +8,7 @@
  * tháng từ bậc của từng con (không qua demCapTheoNgay), chọn ô, chấm tiền.
  */
 import { dungKy } from "../src/lib/slot-stats";
-import { DIP_TOI_THIEU, GIA_DA, TRUNG_DA, bacDa, type KyDa } from "../src/lib/da";
+import { DIP_TOI_THIEU, GIA_DA, TRUNG_DA, bacDa, bangMacDinh, bangMacDinhKhach, laOCungNgay, type KyDa } from "../src/lib/da";
 import { oCai1n, tomTat, trackTheoThang, type NgayTrack } from "../src/lib/track-thang";
 
 let pass = 0, fail = 0;
@@ -51,7 +51,7 @@ for (const region of ["xsmn", "xsmt", "xsmb"] as const) {
             if ((k.ve[LOS[x]] ?? 0) > 0 && (k.ve[LOS[y]] ?? 0) > 0) a.ca++;
           }
         }
-        const oTay = Object.entries(tong).filter(([, v]) => v.dip >= DIP_TOI_THIEU && (chieu === "am" ? v.dip * gia - v.ca * trung < 0 : v.dip * gia - v.ca * trung > 0)).map(([k]) => k).sort();
+        const oTay = Object.entries(tong).filter(([k, v]) => k.split("-")[0] !== k.split("-")[1] && v.dip >= DIP_TOI_THIEU && (chieu === "am" ? v.dip * gia - v.ca * trung < 0 : v.dip * gia - v.ca * trung > 0)).map(([k]) => k).sort();
         const k = kyThang[d];
         const bac = LOS.map((lo) => bacDa(k.kho[lo], k.lienTiep?.[lo] ?? 0));
         const oSet = new Set(oTay);
@@ -87,7 +87,9 @@ console.log("\n===== Ô 1n: dưới 500 cặp là 0n; phần ăn đúng dấu ==
   ]);
   ok("chiều khách (am): chỉ ô 0-2", oCai1n(m, "xsmn", "am").join(",") === "0-2");
   ok("chiều ngược (duong): 0-3, 0-4; ô 499 cặp bị loại ở cả hai chiều", oCai1n(m, "xsmn", "duong").join(",") === "0-3,0-4");
-  ok("Bắc dùng giá 40.500/700.000: ô 1000 cặp, 60 cùng về → 40,5tr − 42tr âm → 1n", oCai1n(new Map([["5-5", { dip: 1000, caHai: 60 }]]), "xsmb", "am").length === 1);
+  ok("Bắc dùng giá 40.500/700.000: ô 1000 cặp, 60 cùng về → 40,5tr − 42tr âm → 1n", oCai1n(new Map([["3-5", { dip: 1000, caHai: 60 }]]), "xsmb", "am").length === 1);
+  ok("ô cùng ngày (5-5) dù âm vẫn 0n — khách chốt 29/10", oCai1n(new Map([["5-5", { dip: 1000, caHai: 60 }]]), "xsmb", "am").length === 0);
+  ok("bảng mặc định khách: 19 ô cùng ngày = 0, 171 ô chéo = 1; bangMacDinh cũ vẫn toàn 1", (() => { const b = bangMacDinhKhach(); const ks = Object.keys(b); return ks.length === 190 && ks.filter((k) => laOCungNgay(k)).length === 19 && ks.every((k) => b[k] === (laOCungNgay(k) ? 0 : 1)) && Object.values(bangMacDinh()).every((v) => v === 1); })());
 }
 
 console.log("\n===== Tóm tắt tháng: chuỗi thua, sụt từ đỉnh =====");

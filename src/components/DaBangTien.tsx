@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, SO_BAC_DA, SO_O_DA, THU_TU_BAC_DA, TRAN_DA, TRUNG_DA, apChanLuat, bangMacDinh, bienDa, tenBacDa,
+  CAP_TOI_THIEU_LUAT, DIEM_DA_TOI_DA, DIP_TOI_THIEU, GIA_DA, HAU_TO_CHAN_DA, SO_BAC_DA, SO_O_DA, THU_TU_BAC_DA, TRAN_DA, TRUNG_DA, apChanLuat, bangMacDinhKhach, bienDa, tenBacDa,
   CAC_MUC_RUT_GON, capBiChan, chiaKhoiChanDa, dongChanLq, khoKyToi, khoaCap, khoiChanLq, nhomChanDa, soVong, thongKeCapTheoThang,
   type BangDa, type KyDa, type LyDoChan, type OCapDayDu,
 } from "@/lib/da";
@@ -619,7 +619,17 @@ export default function DaBangTien({
           </button>
           <button
             onClick={() => {
-              setNhap(bangMacDinh(TRAN));
+              datNhieu(tkt.bang.filter((o) => o.i === o.j), 0);
+            }}
+            data-bang-chan-cung-ngay
+            title="Khách chốt 29/10: 19 ô cùng ngày đá với nhau mặc định 0n — bấm rồi Lưu"
+            className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[rgba(220,38,38,0.15)] text-[#ff9d9d] hover:bg-[rgba(220,38,38,0.25)]"
+          >
+            Chặn {SO_BAC_DA} ô cùng ngày
+          </button>
+          <button
+            onClick={() => {
+              setNhap(bangMacDinhKhach(TRAN));
             }}
             className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16]"
           >

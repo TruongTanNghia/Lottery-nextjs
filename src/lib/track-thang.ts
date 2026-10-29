@@ -12,12 +12,13 @@
  * số cặp đã rơi vào ô (dịp) và số cặp cả hai cùng về; ô dưới DIP_TOI_THIEU
  * cặp = "ít cặp" → 0n; còn lại phần ăn < 0 → 1n, ≥ 0 → 0n. Nhận mọi cặp rơi
  * vào ô 1n với 1 điểm, chốt bằng kết quả ngày d. Ngày chưa có ô nào đủ cặp là
- * ngày "chờ dữ liệu", không nhận gì.
+ * ngày "chờ dữ liệu", không nhận gì. 19 ô "cùng ngày đá với nhau" luôn 0n —
+ * khách chốt 29/10 "mặc định cho về 0n hết, cả 3 miền".
  *
  * Để khách so, tính luôn chiều ngược (ô +% → 1n, ô −% → 0n) cùng dữ liệu.
  * Hoàn toàn thuần, không chạm bảng đá đang chạy hay bot gửi.
  */
-import { DIP_TOI_THIEU, GIA_DA, TRUNG_DA, demCapTheoNgay, type KyDa } from "./da";
+import { DIP_TOI_THIEU, GIA_DA, TRUNG_DA, demCapTheoNgay, laOCungNgay, type KyDa } from "./da";
 import type { Region } from "./db";
 
 export type ChieuTrack = "am" | "duong";
@@ -71,6 +72,7 @@ export function oCai1n(tong: Map<string, { dip: number; caHai: number }>, region
   const gia = GIA_DA[region], trung = TRUNG_DA[region];
   const out: string[] = [];
   for (const [k, v] of tong) {
+    if (laOCungNgay(k)) continue; // cùng ngày đá với nhau: luôn 0n
     if (v.dip < DIP_TOI_THIEU) continue; // "ít cặp"
     const bien = v.dip * gia - v.caHai * trung;
     if (chieu === "am" ? bien < 0 : bien > 0) out.push(k);
