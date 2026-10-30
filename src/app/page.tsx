@@ -12,6 +12,7 @@ import SoDaPage from "@/components/SoDaPage";
 import ChanLoPage from "@/components/ChanLoPage";
 import CheckPage from "@/components/CheckPage";
 import TrackPage from "@/components/TrackPage";
+import CanSoPage from "@/components/CanSoPage";
 import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import BacktestPanel from "@/components/BacktestPanel";
@@ -66,7 +67,7 @@ function Dashboard() {
   const toast = useToast();
 
   const [region, setRegion] = useState<Region>("xsmn");
-  const [view, setView] = useState<"dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda" | "soda2" | "chanlo" | "check" | "track">("dashboard");
+  const [view, setView] = useState<"dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda" | "soda2" | "chanlo" | "check" | "track" | "canso">("dashboard");
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -586,6 +587,8 @@ function Dashboard() {
           <CheckPage region={region} />
         ) : view === "track" ? (
           <TrackPage region={region} />
+        ) : view === "canso" ? (
+          <CanSoPage region={region} />
         ) : view === "exposure" ? (
           <ExposurePage region={region} />
         ) : view === "lab" ? (
