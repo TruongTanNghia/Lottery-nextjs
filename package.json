@@ -13,7 +13,8 @@
     "test:phanan": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-phan-an-o.mts",
     "test:botgui": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-bot-gui.mts",
     "test:track": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-track.mts",
-    "test:canso": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-can-so.mts"
+    "test:canso": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-can-so.mts",
+    "test:tuan": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-tuan.mts"
   },
   "dependencies": {
     "@libsql/client": "0.14.0",
