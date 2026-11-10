@@ -14,6 +14,7 @@ import CheckPage from "@/components/CheckPage";
 import TrackPage from "@/components/TrackPage";
 import CanSoPage from "@/components/CanSoPage";
 import TuanPage from "@/components/TuanPage";
+import DuBaoPage from "@/components/DuBaoPage";
 import ScheduleEditor from "@/components/ScheduleEditor";
 import ScrapeProgressModal from "@/components/ScrapeProgressModal";
 import BacktestPanel from "@/components/BacktestPanel";
@@ -68,7 +69,7 @@ function Dashboard() {
   const toast = useToast();
 
   const [region, setRegion] = useState<Region>("xsmn");
-  const [view, setView] = useState<"dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda" | "soda2" | "chanlo" | "check" | "track" | "canso" | "tuan">("dashboard");
+  const [view, setView] = useState<"dashboard" | "exposure" | "lab" | "simai" | "results" | "prediction" | "today" | "accuracy" | "history" | "vip" | "sim" | "watcher" | "pair" | "three" | "four" | "golden" | "rolling" | "soda" | "soda2" | "chanlo" | "check" | "track" | "canso" | "tuan" | "dubao">("dashboard");
 
   const [limits, setLimits] = useState<LimitItem[]>([]);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -592,6 +593,8 @@ function Dashboard() {
           <CanSoPage region={region} />
         ) : view === "tuan" ? (
           <TuanPage region={region} />
+        ) : view === "dubao" ? (
+          <DuBaoPage region={region} />
         ) : view === "exposure" ? (
           <ExposurePage region={region} />
         ) : view === "lab" ? (

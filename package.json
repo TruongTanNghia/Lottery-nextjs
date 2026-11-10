@@ -14,7 +14,8 @@
     "test:botgui": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-bot-gui.mts",
     "test:track": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-track.mts",
     "test:canso": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-can-so.mts",
-    "test:tuan": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-tuan.mts"
+    "test:tuan": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-tuan.mts",
+    "test:dubao": "node --experimental-strip-types --import ./scripts/ts-duoi.mjs scripts/kiem-du-bao.mts"
   },
   "dependencies": {
     "@libsql/client": "0.14.0",
