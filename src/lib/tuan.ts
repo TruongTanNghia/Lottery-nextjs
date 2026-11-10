@@ -339,3 +339,76 @@ export function gopKho(dai: DrawHits[], moi: DrawHits[]): DrawHits[] {
   for (const d of moi) m.set(d.date, d);
   return [...m.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lời khuyên một câu: tuần này / tuần tới có nên đánh không (khách 10/11/2026:
+// "UI ít thông tin thôi, tuần tiếp theo có nên đánh hay không")
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type KetTuan = "danh" | "nghi" | "nhuNhau";
+
+export interface LuatNoiGi {
+  luat: Luat;
+  ten: string;
+  /** Luật này bảo đánh tuần đang hỏi. */
+  danh: boolean;
+  vuot: boolean;
+  lai: number;
+  laiTB: number;
+  tuanDanh: number;
+  tuanAn: number;
+  tuanThua: number;
+  mayRui: number;
+}
+
+export interface LoiKhuyenTuan {
+  /** Tuần đang hỏi = tuần chứa ngày sau kỳ cuối. */
+  tuan: ThongTinTuan;
+  /** Kỳ cuối đã nằm trong tuần này (tuần đang dở) hay tuần chưa bắt đầu. */
+  daBatDau: boolean;
+  soKyDaXo: number;
+  laiDangCo: number;
+  luat: LuatNoiGi[];
+  ket: KetTuan;
+  lyDo: string;
+  /** Luật ăn tốt nhất 3 năm (không kể mốc) và nó nói gì cho tuần này. */
+  tot: LuatNoiGi | null;
+  /** 8 tuần trọn gần nhất, cũ → mới. */
+  tuanGan: Tuan[];
+}
+
+export function loiKhuyenTuan(pt: PhanTichTuan): LoiKhuyenTuan | null {
+  if (!pt.denNgay || !pt.tuan.length) return null;
+  const ngayXet = ymd(new Date(utc(pt.denNgay).getTime() + 86_400_000));
+  const tt = thuTuan(ngayXet);
+  const cuoi = pt.tuan[pt.tuan.length - 1];
+  const daBatDau = cuoi.khoa === tt.khoa;
+  const tron = daBatDau ? pt.tuan.slice(0, -1) : pt.tuan;
+  const gia: Tuan = { ...tt, soKy: 0, soNgayDanh: 0, xac: 0, trung: 0, lai: 0 };
+  const day = [...tron, gia];
+  const luat: LuatNoiGi[] = pt.luat.filter((l) => l.luat !== "luon").map((l) => ({
+    luat: l.luat, ten: l.ten, danh: chonTuan(day, l.luat)[day.length - 1], vuot: l.vuot, lai: l.lai, laiTB: l.laiTB, tuanDanh: l.tuanDanh, tuanAn: l.tuanAn, tuanThua: l.tuanThua, mayRui: l.mayRui,
+  }));
+  const coDanh = luat.filter((l) => l.tuanDanh >= 10);
+  const tot = coDanh.length ? coDanh.reduce((a, b) => (b.laiTB > a.laiTB ? b : a)) : null;
+  const vuot = luat.filter((l) => l.vuot);
+  const nhan = `${tien(Math.abs(pt.luat.find((l) => l.luat === "luon")?.laiTB ?? 0))}`;
+  const tuanChu = daBatDau ? "tuần này" : "tuần tới";
+  const totChu = tot ? ` Luật ăn nhất 3 năm là "${tot.ten}" (${tot.tuanAn} ăn / ${tot.tuanThua} thua, ${tien(tot.lai)}), ${tuanChu} nó bảo ${tot.danh ? "ĐÁNH" : "NGHỈ"}, nhưng may rủi đuổi kịp ${(tot.mayRui * 100).toFixed(0)}%, nên đó không phải dấu hiệu.` : "";
+  let ket: KetTuan, lyDo: string;
+  if (pt.tuan.length < 20) { ket = "nhuNhau"; lyDo = `Mới có ${pt.tuan.length} tuần, chưa đủ để nói gì.`; }
+  else if (!vuot.length) {
+    ket = "nhuNhau";
+    lyDo = `Thử ${pt.soPhepThu} luật trên ${tron.length} tuần: không luật nào vượt may rủi, nên ${tuanChu} ăn hay thua như gieo đồng xu. Mỗi tuần đánh trung bình ${pt.luat.find((l) => l.luat === "luon")!.laiTB >= 0 ? "ăn" : "thua"} ${nhan}.${totChu}`;
+  } else if (vuot.every((l) => l.danh)) {
+    ket = "danh";
+    lyDo = `${vuot.map((l) => `"${l.ten}"`).join(", ")} nổi lên trong 3 năm và bảo ${tuanChu} ĐÁNH. Nhưng thử ${pt.soPhepThu} luật thì ${Math.round(pt.xacSuatLotNgau * 100)}% là có một luật lọt ngưỡng chỉ do may rủi, nên chỉ tin vừa phải.`;
+  } else if (vuot.every((l) => !l.danh)) {
+    ket = "nghi";
+    lyDo = `${vuot.map((l) => `"${l.ten}"`).join(", ")} nổi lên trong 3 năm và bảo ${tuanChu} NGHỈ. Nhưng thử ${pt.soPhepThu} luật thì ${Math.round(pt.xacSuatLotNgau * 100)}% là có một luật lọt ngưỡng chỉ do may rủi, nên chỉ tin vừa phải.`;
+  } else {
+    ket = "nhuNhau";
+    lyDo = `Các luật nổi lên nói ngược nhau (${vuot.map((l) => `"${l.ten}": ${l.danh ? "đánh" : "nghỉ"}`).join("; ")}), nên ${tuanChu} không có dấu hiệu.`;
+  }
+  return { tuan: tt, daBatDau, soKyDaXo: daBatDau ? cuoi.soKy : 0, laiDangCo: daBatDau ? cuoi.lai : 0, luat, ket, lyDo, tot, tuanGan: tron.slice(-8) };
+}

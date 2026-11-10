@@ -12,7 +12,7 @@
  */
 import { GIA_DA, TRUNG_DA } from "../src/lib/da";
 import {
-  CAC_LUAT, chonTuan, chuoiDaiNhat, danhGiaLuat, docKhoDai, gomTuan, gopKho, laiNgayDeu, phanTichTuan, thuTuan, tuongQuanTre1, xacSuatMayRui,
+  CAC_LUAT, chonTuan, chuoiDaiNhat, danhGiaLuat, docKhoDai, gomTuan, gopKho, laiNgayDeu, loiKhuyenTuan, phanTichTuan, thuTuan, tuongQuanTre1, xacSuatMayRui,
   type NgayLai, type Tuan,
 } from "../src/lib/tuan";
 
@@ -127,6 +127,42 @@ console.log("\n===== 5. Kho dài =====");
   ok("đọc kho: 'lo:count' → hits", dai[0].hits["05"] === 1 && dai[0].hits["27"] === 2 && dai[1].hits["11"] === 1);
   const gop = gopKho(dai, [{ date: "2024-01-02", hits: { "99": 1 } }, { date: "2024-01-03", hits: { "01": 1 } }]);
   ok("gộp: trùng ngày lấy kho đang chạy, sắp theo ngày", gop.length === 3 && gop[0].date === "2024-01-01" && gop[1].hits["99"] === 1 && gop[1].hits["05"] === undefined && gop[2].date === "2024-01-03");
+}
+
+console.log("\n===== 6. Lời khuyên: tuần này / tuần tới có nên đánh =====");
+{
+  // 2024-01-01 là thứ 2. Kho ngẫu nhiên 40 tuần trọn (280 kỳ) → kỳ cuối là chủ nhật → hỏi "tuần tới"
+  const csDai = lichSu(283, Date.UTC(2024, 0, 1)), cs = csDai.slice(0, 280);
+  const pt = phanTichTuan(cs, "xsmn", "deu", "gui");
+  const lk = loiKhuyenTuan(pt)!;
+  ok("kỳ cuối chủ nhật 06/10/2024 → tuần hỏi là tuần tới 07/10 → 13/10, chưa bắt đầu, 8 tuần gần nhất là 8 tuần trọn cuối", lk.tuan.thu2 === "2024-10-07" && lk.tuan.cn === "2024-10-13" && !lk.daBatDau && lk.soKyDaXo === 0 && lk.tuanGan.length === 8 && lk.tuanGan[7].khoa === pt.tuan[pt.tuan.length - 1].khoa, `${lk.tuan.thu2} ${lk.daBatDau}`);
+  const tuanCuoi = pt.tuan[pt.tuan.length - 1], tuanKe = pt.tuan[pt.tuan.length - 2];
+  const noi = (k: string) => lk.luat.find((l) => l.luat === k)!;
+  ok("luật 'tuần trước ăn' bảo đánh ⇔ tuần trọn cuối lãi > 0; 'tuần trước thua' ngược lại", noi("sauAn").danh === tuanCuoi.lai > 0 && noi("sauThua").danh === tuanCuoi.lai < 0);
+  ok("'hai tuần ăn liền' ⇔ hai tuần trọn cuối đều > 0", noi("sau2An").danh === (tuanCuoi.lai > 0 && tuanKe.lai > 0));
+  ok("tuần 41 lẻ → 'tuần lẻ' đánh, 'tuần chẵn' nghỉ; thứ 2 = 07/10 rơi vào 1–7 → đầu tháng đánh, cuối tháng nghỉ", lk.tuan.so === 41 && noi("tuanLe").danh && !noi("tuanChan").danh && noi("tuanDauThang").danh && !noi("tuanCuoiThang").danh);
+  ok("8 luật, không có mốc 'luôn'", lk.luat.length === 8 && !lk.luat.some((l) => l.luat === "luon"));
+  if (!pt.luat.some((l) => l.vuot)) ok("không luật nào vượt → kết 'như nhau', lý do nhắc 'gieo đồng xu' và luật ăn nhất", lk.ket === "nhuNhau" && lk.lyDo.includes("gieo đồng xu") && (lk.tot === null || lk.lyDo.includes(lk.tot.ten)), lk.lyDo);
+  else ok("có luật vượt → kết đánh/nghỉ, lý do nhắc may rủi", lk.ket !== "nhuNhau" && lk.lyDo.includes("may rủi"), lk.lyDo);
+  // Kỳ cuối thứ 4 → tuần đang dở: đã xổ 3 kỳ, lãi đang có = lãi tuần dở, luật nhìn tuần trọn trước đó
+  const cs2 = csDai;
+  const pt2 = phanTichTuan(cs2, "xsmn", "deu", "gui");
+  const lk2 = loiKhuyenTuan(pt2)!;
+  const doDang = pt2.tuan[pt2.tuan.length - 1], tronCuoi = pt2.tuan[pt2.tuan.length - 2];
+  ok("kỳ cuối thứ 4 09/10 → tuần này 07/10 → 13/10 đã bắt đầu, đã xổ 3 kỳ, lãi đang có = lãi tuần dở", lk2.daBatDau && lk2.tuan.thu2 === "2024-10-07" && lk2.soKyDaXo === 3 && lk2.laiDangCo === doDang.lai);
+  ok("tuần dở không tính vào '8 tuần gần nhất'; luật 'tuần trước ăn' nhìn tuần trọn 30/09 → 06/10", lk2.tuanGan[7].khoa === tronCuoi.khoa && lk2.luat.find((l) => l.luat === "sauAn")!.danh === tronCuoi.lai > 0);
+  // Gài: tuần lẻ luôn ăn, tuần chẵn luôn thua (phía nhận) → tuần tới lẻ thì ĐÁNH, chẵn thì NGHỈ
+  const gai: NgayLai[] = [];
+  for (let i = 0; i < 280; i++) { const d = ngay(i, Date.UTC(2024, 0, 1)); const t = thuTuan(d); gai.push({ date: d, xac: 1_000_000, trung: t.so % 2 === 1 ? 500_000 : 1_500_000, danh: true }); }
+  const tuanG = gomTuan(gai, "nhan");
+  const ptG = { ...phanTichTuan(cs, "xsmn", "deu", "nhan"), tuan: tuanG, luat: CAC_LUAT.map((l) => danhGiaLuat(tuanG, l.khoa)) };
+  const lkG = loiKhuyenTuan(ptG)!;
+  ok("gài tuần lẻ ăn, chẵn thua: tuần tới 41 (lẻ) → ĐÁNH, luật 'tuần lẻ' nổi lên", lkG.ket === "danh" && lkG.luat.find((l) => l.luat === "tuanLe")!.vuot && lkG.lyDo.includes("ĐÁNH"), lkG.lyDo);
+  const gai2 = gai.concat(Array.from({ length: 7 }, (_, i) => ({ date: ngay(280 + i, Date.UTC(2024, 0, 1)), xac: 1_000_000, trung: 500_000, danh: true })));
+  const tuanG2 = gomTuan(gai2, "nhan");
+  const lkG2 = loiKhuyenTuan({ ...ptG, denNgay: "2024-10-13", tuan: tuanG2, luat: CAC_LUAT.map((l) => danhGiaLuat(tuanG2, l.khoa)) })!;
+  ok("thêm tuần 41 (ăn) → tuần tới 42 chẵn → NGHỈ", lkG2.tuan.so === 42 && lkG2.ket === "nghi", lkG2.lyDo);
+  ok("kho rỗng → null", loiKhuyenTuan({ ...pt, denNgay: null, tuan: [] }) === null);
 }
 
 console.log(`\n### ${pass} DAT - ${fail} HONG ###`);
