@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  CAC_MO_HINH, CAC_SO_CON, CUA_SO, NGUONG_MAY_RUI, SO_CON_MAC_DINH, SO_MO_PHONG, chayDuBao, chuoiDanh, duBaoKyToi, nhayCanDeLoi, nhayKyVong, phanTichDuBao, sapXep,
+  CAC_MO_HINH, CAC_SO_CON, CUA_SO, KY_TOI_THIEU_THU, NGUONG_MAY_RUI, SO_CON_MAC_DINH, SO_MO_PHONG, TEN_THU, chayDuBao, chuoiDanh, duBaoKyToi, nhayCanDeLoi, nhayKyVong, phanTichDuBao, sapXep,
   type KyDuBao, type MoHinh, type TongKetMoHinh,
 } from "@/lib/du-bao";
 import { STAKE_PRICE, WIN_PER_POINT, POSITIONS } from "@/lib/exposure";
@@ -99,8 +99,8 @@ export default function DuBaoPage({ region }: { region: Region }) {
 
   const sap = useMemo(() => (draws ? sapXep(draws) : null), [draws]);
   const theoNgay = useMemo(() => new Map((sap ?? []).map((d) => [d.date, d])), [sap]);
-  const pt = useMemo(() => (kyDuBao && sap ? phanTichDuBao(kyDuBao, sap, n, region) : null), [kyDuBao, sap, n, region]);
   const kyToi = useMemo(() => (sap ? duBaoKyToi(sap, region) : null), [sap, region]);
+  const pt = useMemo(() => (kyDuBao && sap ? phanTichDuBao(kyDuBao, sap, n, region, 20261110, kyToi?.date ?? null) : null), [kyDuBao, sap, n, region, kyToi]);
   const chonMh = pt?.moHinh.find((m) => m.moHinh === mh) ?? null;
   const vuot = pt ? pt.moHinh.filter((m) => m.vuot) : [];
   const trangThai = !pt ? "" : vuot.length === 0 ? "khong" : "co";
@@ -203,6 +203,36 @@ export default function DuBaoPage({ region }: { region: Region }) {
               <p className="text-[0.68rem] text-[var(--text-muted)]">
                 "Nháy TB / kỳ vọng": trung bình nháy mô hình trúng mỗi kỳ, so với may rủi {kv.toFixed(1).replace(".", ",")}. Bốc ngẫu nhiên {n} con cho đúng {so(pt.soKy)} kỳ này ra từ {tien(pt.mayRui.thap)} đến {tien(pt.mayRui.cao)} (90% số lần), trung bình {dau(pt.mayRui.tb)}. Bấm vào một mô hình để xem số dự báo và từng kỳ của nó.
               </p>
+
+              <div className="rounded-xl border border-[var(--hairline)] bg-white/[0.03] px-3 py-3 space-y-2" data-dubao-thu data-dubao-thu-ket={pt.theoThu.diToi.vuot ? "co" : "khong"}>
+                <div className="eyebrow">Theo thứ: mô hình nào ăn thứ mấy, ngày nào chơi mô hình nào</div>
+                <p className="text-[0.76rem] leading-relaxed text-[var(--text-secondary)]" data-dubao-thu-ket-luan>{pt.theoThu.ketLuan}</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                  <O nhan="Chơi thật: chọn mô hình theo thứ, đi tới" gt={dau(pt.theoThu.diToi.lai)} phu={`${pt.theoThu.diToi.kyAn} ăn / ${pt.theoThu.diToi.kyThua} thua trong ${so(pt.theoThu.diToi.soKy)} kỳ · may rủi đuổi kịp ${pct(pt.theoThu.diToi.mayRui)}`} m={mau(pt.theoThu.diToi.lai)} />
+                  <O nhan="Nhìn lại: biết trước rồi chọn" gt={dau(pt.theoThu.laiNhinLai)} phu="chọn sau khi đã biết kết quả 3 năm, chỉ là mốc trên, không đánh được" m="#cbd5e1" />
+                  <O nhan="Kỳ tới cách này sẽ chơi" gt={pt.theoThu.kyToi ? `${TEN_THU[pt.theoThu.kyToi.thu]} · ${pt.theoThu.kyToi.ten}` : "—"} phu={pt.theoThu.kyToi ? `${ddmmyy(pt.theoThu.kyToi.date)} · mô hình đang ăn nhất ở ${TEN_THU[pt.theoThu.kyToi.thu]} tính đến hôm nay` : ""} m="#c4b5fd" />
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[0.68rem]" data-dubao-bang-thu>
+                    <thead><tr className="text-[var(--text-muted)] text-left"><th className="py-1 pr-2">Lãi theo thứ</th>{[1, 2, 3, 4, 5, 6, 0].map((t) => <th key={t} className="py-1 pr-2 numeric">{TEN_THU[t]}</th>)}</tr></thead>
+                    <tbody>
+                      {pt.theoThu.bang.map((b) => (
+                        <tr key={b.moHinh} data-dubao-thu-mh={b.moHinh} className={`border-t border-[var(--hairline)] ${mh === b.moHinh ? "bg-[#7c3aed]/20" : ""}`}>
+                          <td className="py-1 pr-2 text-white whitespace-nowrap">{b.ten}</td>
+                          {[1, 2, 3, 4, 5, 6, 0].map((t) => {
+                            const o = b.thu[t], tot = pt.theoThu.nhinLai.find((x) => x.thu === t)?.moHinh === b.moHinh;
+                            return <td key={t} data-dubao-thu-o={o.lai} className={`py-1 pr-2 numeric whitespace-nowrap ${tot ? "font-extrabold" : ""}`} style={{ color: mau(o.lai) }} title={`${o.kyAn} ăn / ${o.kyThua} thua / ${o.soKy} kỳ`}>{o.soKy ? (tot ? "★" : "") + dau(o.lai) : "—"}</td>;
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[0.66rem] text-[var(--text-muted)]">
+                  ★ = mô hình ăn nhất ở thứ đó khi nhìn lại cả 3 năm. "Đi tới" = đến mỗi kỳ chỉ dùng các kỳ trước đó, chọn mô hình đang ăn nhất ở thứ đó (mỗi thứ phải đủ {KY_TOI_THIEU_THU} kỳ, chưa đủ thì dùng tổng hợp); đó là cách anh sẽ chơi thật nên mới đem so may rủi.
+                  {pt.theoThu.diToi.soLanDung.length ? ` Đi tới đã dùng: ${pt.theoThu.diToi.soLanDung.map((d) => `${d.ten} ${d.soKy} kỳ`).join(", ")}.` : ""}
+                </p>
+              </div>
 
               {chonMh && (
                 <>

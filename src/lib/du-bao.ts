@@ -385,6 +385,8 @@ export interface PhanTichDuBao {
   soPhepThu: number;
   xacSuatLotNgau: number;
   ketLuan: string;
+  /** Ăn thua theo thứ của từng mô hình + chiến lược "ngày nào chơi mô hình nào". */
+  theoThu: PhanTichTheoThu;
 }
 
 const soVN = (x: number, lePhan = 0) => x.toLocaleString("vi-VN", { minimumFractionDigits: lePhan, maximumFractionDigits: lePhan });
@@ -395,7 +397,7 @@ const tien = (x: number) => {
   return s + Math.round(a).toLocaleString("vi-VN") + "đ";
 };
 
-export function phanTichDuBao(kyDuBao: KyDuBao[], draws: DrawHits[], n: number, region: Region, seed = 20261110): PhanTichDuBao {
+export function phanTichDuBao(kyDuBao: KyDuBao[], draws: DrawHits[], n: number, region: Region, seed = 20261110, ngayKyToi: string | null = null): PhanTichDuBao {
   const theoNgay = new Map(draws.map((d) => [d.date, d]));
   const cacKy = kyDuBao.map((k) => theoNgay.get(k.date)).filter((d): d is DrawHits => !!d);
   const phanPhoi = phanPhoiMayRui(cacKy, n, region, SO_MO_PHONG, seed);
@@ -414,10 +416,113 @@ export function phanTichDuBao(kyDuBao: KyDuBao[], draws: DrawHits[], n: number, 
     if (!vuot.length) ketLuan = dau + ` Không mô hình nào trong ${CAC_MO_HINH.length} mô hình vượt may rủi: không có quy luật để "đánh là win"; số dự báo bên dưới chỉ để tham khảo, không phải cửa ăn.`;
     else ketLuan = dau + ` Mô hình nổi lên: ${vuot.map((m) => `"${m.ten}" (${tien(m.lai)}, may rủi ${soVN(m.mayRui * 100, 1)}%)`).join("; ")}. Nhưng thử ${CAC_MO_HINH.length} mô hình × ${CAC_SO_CON.length} mức số con = ${soPhepThu} phép thử thì xác suất ít nhất một cái lọt ngưỡng chỉ do may rủi đã là ${Math.round(xacSuatLotNgau * 100)}%, nên chưa được tin; giữ nguyên mô hình đó, theo dõi thêm 60 kỳ ngay trên tab này rồi mới kết luận.`;
   }
-  return { region, n, soKy: cacKy.length, tuNgay: cacKy[0]?.date ?? null, denNgay: cacKy[cacKy.length - 1]?.date ?? null, moHinh, tot, mayRui, soPhepThu, xacSuatLotNgau, ketLuan };
+  const theoThu = phanTichTheoThu(moHinh, region, phanPhoi, ngayKyToi);
+  return { region, n, soKy: cacKy.length, tuNgay: cacKy[0]?.date ?? null, denNgay: cacKy[cacKy.length - 1]?.date ?? null, moHinh, tot, mayRui, soPhepThu, xacSuatLotNgau, ketLuan, theoThu };
 }
 
 /** Chuỗi gửi đi cho N con: "2d23b1, 24b1, …" theo kiểu các tab khác (tiền tố tuỳ chọn). */
 export function chuoiDanh(chon: string[], tienTo = ""): string {
   return chon.map((lo, i) => `${i === 0 ? tienTo : ""}${lo}b1`).join(", ");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Theo thứ — khách 14/11/2026: "9 mô hình này phân tích kĩ từng mô hình nó thua
+// nhiều vào thứ mấy, ăn nhiều vào thứ mấy; ngày nào chơi mô hình nào tối ưu lợi
+// nhuận, không theo đuổi một mô hình cố định".
+//
+// Hai cách chấm, phải tách bạch:
+//  - "Nhìn lại": biết hết 3 năm rồi mới chọn mô hình tốt nhất cho từng thứ → luôn
+//    đẹp vì chọn sau khi biết kết quả; chỉ là mốc trên, không đánh được.
+//  - "Đi tới" (thật): đến kỳ nào chỉ dùng các kỳ TRƯỚC đó, chọn mô hình đang ăn
+//    nhất ở thứ đó rồi đánh kỳ ấy. Đây mới là cách khách sẽ chơi, đem so may rủi.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const TEN_THU = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+export const thuCuaNgay = (d: string) => new Date(d + "T00:00:00Z").getUTCDay();
+/** Số kỳ tối thiểu ở một thứ trước khi "đi tới" dám chọn theo thứ; chưa đủ thì dùng tổng hợp. */
+export const KY_TOI_THIEU_THU = 10;
+
+export interface OThu { thu: number; soKy: number; kyAn: number; kyThua: number; lai: number }
+export interface MoHinhTheoThu { moHinh: MoHinh; ten: string; thu: OThu[]; thuTot: number; thuXau: number }
+export interface KyTheoThu extends KetQuaKy { moHinh: MoHinh; thu: number }
+
+export interface ChienLuocTheoThu {
+  ky: KyTheoThu[];
+  soKy: number;
+  kyAn: number;
+  kyThua: number;
+  tongXac: number;
+  lai: number;
+  tiLe: number;
+  mayRui: number;
+  vuot: boolean;
+  /** Mô hình "đi tới" dùng bao nhiêu kỳ mỗi loại. */
+  soLanDung: { moHinh: MoHinh; ten: string; soKy: number }[];
+}
+
+export interface PhanTichTheoThu {
+  bang: MoHinhTheoThu[];
+  /** Mốc trên: biết trước, chọn mô hình tốt nhất từng thứ. */
+  nhinLai: { thu: number; moHinh: MoHinh; ten: string; lai: number }[];
+  laiNhinLai: number;
+  diToi: ChienLuocTheoThu;
+  /** Kỳ tới rơi vào thứ nào, "đi tới" sẽ chọn mô hình nào. */
+  kyToi: { date: string; thu: number; moHinh: MoHinh; ten: string } | null;
+  ketLuan: string;
+}
+
+export function phanTichTheoThu(moHinh: TongKetMoHinh[], region: Region, phanPhoi: number[], ngayKyToi: string | null): PhanTichTheoThu {
+  const ten = (k: MoHinh) => CAC_MO_HINH.find((m) => m.khoa === k)!.ten;
+  const bang: MoHinhTheoThu[] = moHinh.map((m) => {
+    const thu: OThu[] = Array.from({ length: 7 }, (_, t) => ({ thu: t, soKy: 0, kyAn: 0, kyThua: 0, lai: 0 }));
+    for (const k of m.ky) { const o = thu[thuCuaNgay(k.date)]; o.soKy++; o.lai += k.lai; if (k.lai > 0) o.kyAn++; else if (k.lai < 0) o.kyThua++; }
+    const co = thu.filter((o) => o.soKy > 0);
+    const thuTot = co.length ? co.reduce((a, b) => (b.lai > a.lai ? b : a)).thu : -1, thuXau = co.length ? co.reduce((a, b) => (b.lai < a.lai ? b : a)).thu : -1;
+    return { moHinh: m.moHinh, ten: m.ten, thu, thuTot, thuXau };
+  });
+  // Nhìn lại
+  const nhinLai = Array.from({ length: 7 }, (_, t) => {
+    const tot = bang.reduce((a, b) => (b.thu[t].lai > a.thu[t].lai ? b : a));
+    return { thu: t, moHinh: tot.moHinh, ten: tot.ten, lai: tot.thu[t].lai };
+  }).filter((x) => bang.some((b) => b.thu[x.thu].soKy > 0));
+  const laiNhinLai = nhinLai.reduce((s, x) => s + x.lai, 0);
+  // Đi tới: các mô hình có cùng danh sách kỳ (cùng kyDuBao), đi theo chỉ số
+  const soKy = moHinh[0]?.ky.length ?? 0;
+  const cong = moHinh.map(() => new Array<number>(7).fill(0)), dem = new Array<number>(7).fill(0);
+  const iTongHop = Math.max(0, moHinh.findIndex((m) => m.moHinh === "tongHop"));
+  const chonChoThu = (t: number): number => {
+    if (dem[t] < KY_TOI_THIEU_THU) return iTongHop;
+    let best = 0;
+    for (let i = 1; i < moHinh.length; i++) if (cong[i][t] > cong[best][t]) best = i;
+    return best;
+  };
+  const ky: KyTheoThu[] = [];
+  const dung = moHinh.map(() => 0);
+  for (let j = 0; j < soKy; j++) {
+    const date = moHinh[0].ky[j].date, t = thuCuaNgay(date);
+    const i = chonChoThu(t);
+    ky.push({ ...moHinh[i].ky[j], moHinh: moHinh[i].moHinh, thu: t });
+    dung[i]++;
+    for (let m = 0; m < moHinh.length; m++) cong[m][t] += moHinh[m].ky[j].lai;
+    dem[t]++;
+  }
+  const tongXac = ky.reduce((s, k) => s + k.xac, 0), lai = ky.reduce((s, k) => s + k.lai, 0);
+  const mayRui = ky.length ? xacSuatMayRui(phanPhoi, lai) : 1;
+  const diToi: ChienLuocTheoThu = {
+    ky, soKy: ky.length, kyAn: ky.filter((k) => k.lai > 0).length, kyThua: ky.filter((k) => k.lai < 0).length, tongXac, lai, tiLe: tongXac ? lai / tongXac : 0, mayRui,
+    vuot: lai > 0 && mayRui < NGUONG_MAY_RUI,
+    soLanDung: moHinh.map((m, i) => ({ moHinh: m.moHinh, ten: m.ten, soKy: dung[i] })).filter((x) => x.soKy > 0).sort((a, b) => b.soKy - a.soKy),
+  };
+  let kyToi: PhanTichTheoThu["kyToi"] = null;
+  if (ngayKyToi && moHinh.length) { const t = thuCuaNgay(ngayKyToi), i = chonChoThu(t); kyToi = { date: ngayKyToi, thu: t, moHinh: moHinh[i].moHinh, ten: moHinh[i].ten }; }
+  let ketLuan: string;
+  if (soKy < 70) ketLuan = `Mới ${soKy} kỳ, chưa đủ mỗi thứ 10 kỳ để nói gì.`;
+  else {
+    const dau = `Nhìn lại 3 năm rồi chọn mô hình tốt nhất cho từng thứ thì được ${tien(laiNhinLai)}, nhưng đó là chọn sau khi đã biết kết quả, không đánh được. ` +
+      `Chơi thật kiểu "đến kỳ nào chọn mô hình đang ăn nhất ở thứ đó" trên ${soVN(soKy)} kỳ: ${tien(lai)} (${soVN(diToi.tiLe * 100, 1)}% tiền xác), ${diToi.kyAn} kỳ ăn / ${diToi.kyThua} kỳ thua, may rủi đuổi kịp ${soVN(mayRui * 100, 1)}%.`;
+    ketLuan = diToi.vuot
+      ? dau + ` Cách này đang nổi lên, nhưng nó là một phép thử nữa chồng lên ${CAC_MO_HINH.length} mô hình, nên cũng chỉ tin vừa phải; theo dõi thêm 60 kỳ.`
+      : dau + ` Nghĩa là "ngày nào chơi mô hình nào" cũng không hơn bốc đại: mô hình ăn ở thứ này trong quá khứ không ăn tiếp ở thứ đó về sau. Ô xanh đỏ trong bảng là nhiễu của từng thứ, không phải quy luật.`;
+  }
+  return { bang, nhinLai, laiNhinLai, diToi, kyToi, ketLuan };
 }
