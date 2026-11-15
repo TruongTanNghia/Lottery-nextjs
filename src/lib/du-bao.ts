@@ -420,9 +420,40 @@ export function phanTichDuBao(kyDuBao: KyDuBao[], draws: DrawHits[], n: number, 
   return { region, n, soKy: cacKy.length, tuNgay: cacKy[0]?.date ?? null, denNgay: cacKy[cacKy.length - 1]?.date ?? null, moHinh, tot, mayRui, soPhepThu, xacSuatLotNgau, ketLuan, theoThu };
 }
 
-/** Chuỗi gửi đi cho N con: "2d23b1, 24b1, …" theo kiểu các tab khác (tiền tố tuỳ chọn). */
-export function chuoiDanh(chon: string[], tienTo = ""): string {
-  return chon.map((lo, i) => `${i === 0 ? tienTo : ""}${lo}b1`).join(", ");
+/**
+ * Chuỗi gửi đi cho N con: "2d23b1, 24b1, …" theo kiểu các tab khác; `diem` điểm mỗi con → "23b10".
+ * Tiền tố dính liền con đầu nên phải qua `docTienTo` trước (khách 15/11 gõ "10" thành "1062b1").
+ */
+export function chuoiDanh(chon: string[], tienTo = "", diem = 1): string {
+  return chon.map((lo, i) => `${i === 0 ? tienTo : ""}${lo}b${diem}`).join(", ");
+}
+
+/**
+ * Tiền tố đài ("2d", "mn", "mb ") đứng dính trước con đầu. Nếu nó tận cùng bằng chữ số thì
+ * dính vào con đầu thành số khác ("10" + "62" = "1062"), nên không nhận: trả lỗi để trang
+ * nói rõ "muốn đánh 10 điểm thì gõ vào ô Điểm". Bỏ khoảng trắng đầu, giữ khoảng trắng cuối ("mb ").
+ */
+export function docTienTo(nhap: string): { tienTo: string; loi: string | null } {
+  const s = nhap.replace(/^\s+/, "");
+  if (!s.trim()) return { tienTo: "", loi: null };
+  if (/\d$/.test(s)) {
+    const chiSo = /^\d+$/.test(s.trim());
+    return {
+      tienTo: "",
+      loi: chiSo
+        ? `Ô này chỉ để mã đài (2d, mn, mb). "${s.trim()}" là số nên không ghép vào chuỗi. Muốn đánh ${s.trim()} điểm mỗi con thì gõ ${s.trim()} vào ô Điểm.`
+        : `Tiền tố "${s}" tận cùng bằng số sẽ dính vào con đầu thành số khác. Bỏ số ở cuối, hoặc gõ điểm vào ô Điểm.`,
+    };
+  }
+  return { tienTo: s, loi: null };
+}
+
+/** Điểm mỗi con khách gõ: số nguyên 1–9.999, gõ bậy thì về 1 kèm lỗi. */
+export function docDiem(nhap: string): { diem: number; loi: string | null } {
+  const s = nhap.trim();
+  if (!s) return { diem: 1, loi: null };
+  if (!/^\d+$/.test(s) || Number(s) < 1 || Number(s) > 9999) return { diem: 1, loi: `Điểm phải là số nguyên từ 1 đến 9.999, đang tạm tính 1 điểm.` };
+  return { diem: Number(s), loi: null };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

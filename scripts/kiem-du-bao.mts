@@ -11,7 +11,7 @@
  */
 import { POSITIONS, STAKE_PRICE, WIN_PER_POINT } from "../src/lib/exposure";
 import {
-  CAC_MO_HINH, CUA_SO, LOS, chamKy, chayDuBao, chonKy, chuoiDanh, dao, duBaoKyToi, laiKyVongMoiDiem, mhChuyenTiep, mhDao, mhDiCap, mhGan, mhLienTiep,
+  CAC_MO_HINH, CUA_SO, LOS, chamKy, chayDuBao, chonKy, chuoiDanh, dao, docDiem, docTienTo, duBaoKyToi, laiKyVongMoiDiem, mhChuyenTiep, mhDao, mhDiCap, mhGan, mhLienTiep,
   mhNongLen, mhTheoThu, mhVeGan, mhVeNhieu, nhayCanDeLoi, nhayKyVong, phanPhoiMayRui, phanTichDuBao, phanTichTheoThu, thuCuaNgay, xacSuatMayRui, xepHang,
   KY_TOI_THIEU_THU, TEN_THU, type TongKetMoHinh,
 } from "../src/lib/du-bao";
@@ -88,6 +88,14 @@ console.log("\n===== 3. Chấm tiền =====");
   ok("10 con MN xác 270.000 → cần 4 nháy mới lời; 10 con MB xác 202.500 → cần 3 nháy; 20 con MN → 8", nhayCanDeLoi(10, "xsmn") === 4 && nhayCanDeLoi(10, "xsmb") === 3 && nhayCanDeLoi(20, "xsmn") === 8);
   ok("may rủi cho 10 con MN trung bình 3,6 nháy, MB 2,7", gan(nhayKyVong(10, "xsmn"), 3.6) && gan(nhayKyVong(10, "xsmb"), 2.7));
   ok("chuỗi gửi: '2d23b1, 45b1, 88b1'", chuoiDanh(["23", "45", "88"], "2d") === "2d23b1, 45b1, 88b1");
+  ok("chuỗi gửi 10 điểm: '2d23b10, 45b10'; MB tiền tố 'mb ' giữ khoảng trắng", chuoiDanh(["23", "45"], "2d", 10) === "2d23b10, 45b10" && chuoiDanh(["23"], docTienTo("mb ").tienTo, 3) === "mb 23b3");
+  // Khách 15/11: gõ "10" vào ô tiền tố thì ra "1062b1" — phải báo lỗi, không ghép
+  const t10 = docTienTo("10");
+  ok("tiền tố '10' (chỉ số): không ghép, lỗi bảo gõ vào ô Điểm", t10.tienTo === "" && t10.loi !== null && t10.loi.includes("ô Điểm") && chuoiDanh(["62", "69"], t10.tienTo) === "62b1, 69b1", t10.loi ?? "");
+  const t2d10 = docTienTo("2d10");
+  ok("tiền tố '2d10' (tận cùng bằng số): không ghép, có lỗi", t2d10.tienTo === "" && t2d10.loi !== null);
+  ok("tiền tố '2d', 'mn', '  2d', rỗng: nhận, không lỗi; khoảng trắng đầu bị bỏ", docTienTo("2d").tienTo === "2d" && docTienTo("mn").tienTo === "mn" && docTienTo("  2d").tienTo === "2d" && docTienTo("").tienTo === "" && [docTienTo("2d"), docTienTo("mn"), docTienTo("")].every((x) => x.loi === null));
+  ok("điểm: '10' → 10; rỗng → 1; '0', 'abc', '1.5', '10000' → 1 kèm lỗi", docDiem("10").diem === 10 && docDiem("10").loi === null && docDiem("").diem === 1 && ["0", "abc", "1.5", "10000"].every((x) => docDiem(x).diem === 1 && docDiem(x).loi !== null));
   ok("giá dùng đúng exposure.ts: MN 27.000, MB 20.250, 75.000/nháy", STAKE_PRICE.xsmn === 27_000 && STAKE_PRICE.xsmb === 20_250 && WIN_PER_POINT === 75_000);
 }
 

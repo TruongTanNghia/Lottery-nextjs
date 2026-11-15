@@ -13,10 +13,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  CAC_MO_HINH, CAC_SO_CON, CUA_SO, KY_TOI_THIEU_THU, NGUONG_MAY_RUI, SO_CON_MAC_DINH, SO_MO_PHONG, TEN_THU, chayDuBao, chuoiDanh, duBaoKyToi, nhayCanDeLoi, nhayKyVong, phanTichDuBao, sapXep,
+  CAC_MO_HINH, CAC_SO_CON, CUA_SO, KY_TOI_THIEU_THU, NGUONG_MAY_RUI, SO_CON_MAC_DINH, SO_MO_PHONG, TEN_THU, chayDuBao, chuoiDanh, docDiem, docTienTo, duBaoKyToi, nhayCanDeLoi, nhayKyVong, phanTichDuBao, sapXep,
   type KyDuBao, type MoHinh, type TongKetMoHinh,
 } from "@/lib/du-bao";
 import { STAKE_PRICE, WIN_PER_POINT, POSITIONS } from "@/lib/exposure";
+import { TIEN_TO_NHAN_MAC_DINH } from "@/lib/da-nhan";
 import { docKhoDai, gopKho, type KhoDai } from "@/lib/tuan";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
@@ -47,13 +48,14 @@ export default function DuBaoPage({ region }: { region: Region }) {
   const [tienDo, setTienDo] = useState<{ da: number; tong: number } | null>(null);
   const [n, setN] = useState<number>(SO_CON_MAC_DINH);
   const [mh, setMh] = useState<MoHinh>("tongHop");
-  const [tienTo, setTienTo] = useState("");
+  const [tienTo, setTienTo] = useState(TIEN_TO_NHAN_MAC_DINH[region]);
+  const [diemNhap, setDiemNhap] = useState("1");
   const [xemHet, setXemHet] = useState(false);
   const [daCopy, setDaCopy] = useState(false);
 
   useEffect(() => {
     let huy = false;
-    setDraws(null); setKho(null); setLoi(null); setKyDuBao(null); setTienDo(null); setXemHet(false);
+    setDraws(null); setKho(null); setLoi(null); setKyDuBao(null); setTienDo(null); setXemHet(false); setTienTo(TIEN_TO_NHAN_MAC_DINH[region]);
     (async () => {
       try {
         const [rDai, rMoi] = await Promise.all([fetch(`/kho-dai/${region}.json`, { cache: "no-store" }), fetch(`/api/history/hits?region=${region}`, { cache: "no-store" })]);
@@ -106,7 +108,8 @@ export default function DuBaoPage({ region }: { region: Region }) {
   const trangThai = !pt ? "" : vuot.length === 0 ? "khong" : "co";
   const gia = STAKE_PRICE[region], can = nhayCanDeLoi(n, region), kv = nhayKyVong(n, region);
   const chonToi = kyToi ? kyToi.chon[mh].slice(0, n) : [];
-  const chuoi = chuoiDanh(chonToi, tienTo.trim());
+  const tt = docTienTo(tienTo), dd = docDiem(diemNhap), diem = dd.diem;
+  const chuoi = chuoiDanh(chonToi, tt.tienTo, diem);
   /** Con được bao nhiêu mô hình chọn cho kỳ tới (đồng thuận). */
   const dongThuan = useMemo(() => {
     const m = new Map<string, number>();
@@ -268,14 +271,30 @@ export default function DuBaoPage({ region }: { region: Region }) {
                         Số nhỏ góc phải = bao nhiêu trong {CAC_MO_HINH.length} mô hình cùng chọn con đó.{" "}
                         {dongThuanCao.length ? <>Được từ 4 mô hình trở lên: <b className="text-white numeric">{dongThuanCao.map(([lo, c]) => `${lo} (${c})`).join(", ")}</b>.</> : "Không con nào được từ 4 mô hình trở lên."}
                       </div>
-                      <div className="text-[0.74rem] text-[var(--text-secondary)]" data-dubao-danh-sao>
-                        <b className="text-white">Đánh như nào:</b> {n} con trên, mỗi con 1 điểm, xác <b className="text-white numeric">{so(n * gia)}đ</b>. Về {can} nháy mới lời (+{so(can * WIN_PER_POINT - n * gia)}đ), về 0 nháy mất {so(n * gia)}đ.
-                        Muốn đánh nhiều điểm thì nhân lên, tỉ lệ lời lỗ không đổi.
+                      <div className="flex flex-wrap items-end gap-2" data-dubao-o-nhap>
+                        <label className="flex flex-col gap-0.5">
+                          <span className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">Điểm mỗi con</span>
+                          <input value={diemNhap} onChange={(e) => setDiemNhap(e.target.value)} inputMode="numeric" data-dubao-diem className="w-20 px-2 py-1 rounded-lg bg-white/[0.08] text-white text-sm font-bold numeric border border-[var(--hairline)]" />
+                        </label>
+                        <label className="flex flex-col gap-0.5">
+                          <span className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">Tiền tố đài (2d, mn, mb)</span>
+                          <input value={tienTo} onChange={(e) => setTienTo(e.target.value)} placeholder="để trống nếu không cần" data-dubao-tien-to className="w-36 px-2 py-1 rounded-lg bg-white/[0.08] text-white text-sm numeric border border-[var(--hairline)]" />
+                        </label>
                       </div>
+                      {(dd.loi || tt.loi) && (
+                        <div className="text-[0.72rem] text-[#ffd24a]" data-dubao-loi-nhap>{dd.loi ?? ""}{dd.loi && tt.loi ? " " : ""}{tt.loi ?? ""}</div>
+                      )}
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <input value={tienTo} onChange={(e) => setTienTo(e.target.value)} placeholder="tiền tố (vd 2d)" data-dubao-tien-to className="w-28 px-2 py-1 rounded-lg bg-white/[0.08] text-white text-xs numeric border border-[var(--hairline)]" />
                         <code className="flex-1 min-w-[12rem] px-2 py-1 rounded-lg bg-black/30 text-[#e2e8f0] text-xs break-all" data-dubao-chuoi>{chuoi}</code>
                         <button onClick={copy} data-dubao-copy className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#7c3aed] text-white">{daCopy ? "Đã copy" : "Copy"}</button>
+                      </div>
+                      <div className="text-[0.74rem] text-[var(--text-secondary)]" data-dubao-danh-sao data-dubao-xac={n * diem * gia}>
+                        <b className="text-white">Đánh như nào:</b> {n} con trên, mỗi con <b className="text-white numeric">{so(diem)}</b> điểm, xác <b className="text-white numeric">{so(n * diem * gia)}đ</b>.
+                        Về {can} nháy mới lời (+{so((can * WIN_PER_POINT - n * gia) * diem)}đ), về 0 nháy mất {so(n * diem * gia)}đ.
+                      </div>
+                      <div className="text-[0.72rem] text-[var(--text-secondary)]" data-dubao-gap data-dubao-gap-lai={chonMh.lai * diem} data-dubao-gap-sut={chonMh.thuaSauNhat * diem}>
+                        Nếu {so(chonMh.soKy)} kỳ qua đánh "{chonMh.ten}" {so(diem)} điểm mỗi con: lãi <b className="numeric" style={{ color: mau(chonMh.lai) }}>{dau(chonMh.lai * diem)}</b>,
+                        có lúc thua sâu <b className="numeric text-[#ff9d9d]">{tien(chonMh.thuaSauNhat * diem)}</b>, thua liền {chonMh.chuoiThua} kỳ. Gấp điểm thì tiền ăn và tiền thua cùng gấp lên, may rủi không đổi.
                       </div>
                     </div>
                   )}
