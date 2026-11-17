@@ -13,7 +13,7 @@ import { POSITIONS, STAKE_PRICE, WIN_PER_POINT } from "../src/lib/exposure";
 import {
   CAC_MO_HINH, CUA_SO, LOS, chamKy, chayDuBao, chonKy, chuoiDanh, dao, docDiem, docTienTo, duBaoKyToi, laiKyVongMoiDiem, mhChuyenTiep, mhDao, mhDiCap, mhGan, mhLienTiep,
   mhNongLen, mhTheoThu, mhVeGan, mhVeNhieu, nhayCanDeLoi, nhayKyVong, phanPhoiMayRui, phanTichDuBao, phanTichTheoThu, thuCuaNgay, xacSuatMayRui, xepHang,
-  KY_TOI_THIEU_THU, TEN_THU, type TongKetMoHinh,
+  KY_TOI_THIEU_THU, TEN_THU, type TongKetMoHinh, gopDiToi, gopNhinLai, gopSo, khoaO, oDangLoi, phanPhoiMayRuiCoCo,
 } from "../src/lib/du-bao";
 import type { Region } from "../src/lib/types";
 
@@ -171,6 +171,53 @@ console.log("\n===== 6. Theo thứ: ngày nào chơi mô hình nào =====");
   ok("gài: 10 tuần đầu toàn 'tongHop' (lãi 0), 10 tuần sau mỗi tuần +200.000 → đi tới = +2.000.000", g.diToi.ky.slice(0, 70).every((k) => k.moHinh === "tongHop") && g.diToi.lai === 2_000_000, String(g.diToi.lai));
   ok("gài: nhìn lại = 20 × 100.000 × 2 thứ + 0 × 5 thứ = +4.000.000, thứ 2 chọn frequency", g.laiNhinLai === 4_000_000 && g.nhinLai.find((x) => x.thu === 1)!.moHinh === "frequency");
   ok("gài: kỳ tới 20/05/2024 (thứ 2) → 'frequency'; bảng: frequency thứ tốt = T2, thứ xấu ≠ T2", g.kyToi!.thu === 1 && g.kyToi!.moHinh === "frequency" && g.bang[1].thuTot === 1 && g.bang[1].thuXau !== 1);
+}
+
+console.log("\n===== 7. Gộp số từ ô chọn (mô hình × thứ) =====");
+{
+  const g = gopSo([["frequency", ["01", "02", "03"]], ["poisson", ["02", "03", "04"]], ["markov", ["03", "05"]]]);
+  ok("gộp: 5 con khác nhau; 03 (3 mô hình) đứng đầu, rồi 02 (2), rồi 01, 04, 05", g.map((x) => x.lo).join(" ") === "03 02 01 04 05" && g[0].moHinh.length === 3 && g[1].moHinh.join() === "frequency,poisson");
+  ok("gộp lọc 'từ 2 mô hình': còn 03, 02; 'từ 4': rỗng; một mô hình chọn trùng con 2 lần vẫn tính 1", gopSo([["frequency", ["01", "02", "03"]], ["poisson", ["02", "03", "04"]], ["markov", ["03", "05"]]], 2).map((x) => x.lo).join(" ") === "03 02" && gopSo([["frequency", ["01"]]], 4).length === 0 && gopSo([["frequency", ["01", "01"]]])[0].moHinh.length === 1);
+  ok("khoaO('pair', 1) = 'pair:1'", khoaO("pair", 1) === "pair:1");
+
+  // Gài: 20 tuần (140 kỳ) từ thứ 2 01/01/2024. Mọi kỳ 'frequency' chọn 01–05, 'poisson' chọn 06–10, 'tongHop' chọn 11–15.
+  // Lãi dùng để CHỌN ô: frequency lời mọi thứ 2, lỗ ngày khác; poisson lời mọi thứ 3; tongHop lỗ mọi ngày.
+  // Kết quả xổ thật (để CHẤM): thứ 2 về 01 ×4, ngày khác về 50 ×36.
+  const soKy = 140, cs: D[] = [];
+  const lam = (moHinh: string, chon: string[], lai: (thu: number) => number): TongKetMoHinh => ({
+    moHinh: moHinh as TongKetMoHinh["moHinh"], ten: moHinh, moTa: "", soKy, kyAn: 0, kyThua: 0, kyHoa: 0, tongXac: 0, tongTra: 0, lai: 0, tiLe: 0, laiTBKy: 0, nhayTB: 0, nhayKyVong: 0, chuoiAn: 0, chuoiThua: 0, thuaSauNhat: 0, mayRui: 1, vuot: false,
+    ky: Array.from({ length: soKy }, (_, j) => { const date = ngay(j); const l = lai(thuCuaNgay(date)); return { date, chon, trung: [], soNhay: 0, xac: 0, tra: 0, lai: l }; }),
+  });
+  for (let j = 0; j < soKy; j++) { const date = ngay(j); cs.push({ date, hits: thuCuaNgay(date) === 1 ? { "01": 4, "50": 32 } : { "50": 36 } }); }
+  const theoNgay = new Map(cs.map((d) => [d.date, d]));
+  const mh = [
+    lam("tongHop", ["11", "12", "13", "14", "15"], () => -1),
+    lam("frequency", ["01", "02", "03", "04", "05"], (t) => (t === 1 ? 1 : -1)),
+    lam("poisson", ["06", "07", "08", "09", "10"], (t) => (t === 2 ? 1 : -1)),
+  ];
+  const dt = gopDiToi(mh, 1, "xsmn", theoNgay, 200, 7);
+  // 10 tuần đầu: chưa đủ 10 kỳ mỗi thứ → không đánh. Tuần 11–20: thứ 2 đánh frequency (01–05), thứ 3 đánh poisson (06–10), ngày khác nghỉ.
+  ok("đi tới: chỉ đánh từ tuần 11 (mỗi thứ đủ " + KY_TOI_THIEU_THU + " kỳ), 20 kỳ: 10 thứ 2 + 10 thứ 3", dt.soKyDanh === 20 && dt.ky.every((k) => k.date >= ngay(70)) && dt.ky.filter((k) => k.thu === 1).length === 10 && dt.ky.filter((k) => k.thu === 2).length === 10, String(dt.soKyDanh));
+  ok("đi tới: thứ 2 chỉ dùng 'frequency' (01–05), thứ 3 chỉ 'poisson' (06–10)", dt.ky.every((k) => (k.thu === 1 ? k.moHinh.join() === "frequency" && k.chon.join(" ") === "01 02 03 04 05" : k.moHinh.join() === "poisson" && k.chon.join(" ") === "06 07 08 09 10")));
+  // Thứ 2: 5 con xác 135.000, về 01×4 = 300.000 → +165.000; thứ 3: mất 135.000. Tổng 10 × 30.000 = 300.000
+  ok("đi tới chấm bằng kết quả thật: thứ 2 +165.000, thứ 3 −135.000; tổng +300.000, xác 20 × 135.000", dt.lai === 300_000 && dt.tongXac === 20 * 135_000 && dt.kyAn === 10 && dt.kyThua === 10 && dt.conTB === 5, String(dt.lai));
+  // Không nhìn trộm: nếu lãi dùng để chọn của kỳ j đổi dấu, quyết định ở chính kỳ j không đổi
+  const mh2 = mh.map((m) => ({ ...m, ky: m.ky.map((k, j) => (j === 77 ? { ...k, lai: -k.lai * 1000 } : k)) }));
+  const dt2 = gopDiToi(mh2, 1, "xsmn", theoNgay, 200, 7);
+  ok("không nhìn trộm: sửa lãi của chính kỳ 78 (thứ 2) thì quyết định kỳ 78 không đổi", JSON.stringify(dt2.ky.find((k) => k.date === ngay(77))) === JSON.stringify(dt.ky.find((k) => k.date === ngay(77))));
+  // Nhìn lại: chọn ô (frequency, T2) cố định → chấm 20 thứ 2
+  const nl = gopNhinLai(mh, new Set([khoaO("frequency", 1)]), 1, "xsmn", theoNgay);
+  ok("nhìn lại ô (Về nhiều, T2): chấm đủ 20 thứ 2, mỗi kỳ +165.000 = +3.300.000; không so may rủi", nl.soKyDanh === 20 && nl.soKyXet === 20 && nl.lai === 3_300_000 && Number.isNaN(nl.mayRui) && !nl.vuot);
+  // oDangLoi với bảng theo thứ
+  const bang = phanTichTheoThu(mh, "xsmn", [0], null).bang;
+  ok("ô đang lời: T2 chỉ 'frequency', T3 chỉ 'poisson', T4 không có", oDangLoi(bang, 1).join() === "frequency" && oDangLoi(bang, 2).join() === "poisson" && oDangLoi(bang, 3).length === 0);
+  // May rủi cỡ thay đổi
+  const pp = phanPhoiMayRuiCoCo(cs.slice(0, 20), Array.from({ length: 20 }, (_, j) => (j % 2 ? 0 : 10)), "xsmn", 300, 3);
+  ok("may rủi cỡ thay đổi: 300 lần, sắp tăng dần, kỳ cỡ 0 không tính tiền", pp.length === 300 && pp.every((v, k) => k === 0 || v >= pp[k - 1]) && pp[0] >= -10 * 10 * 27_000);
+  const cs3 = lichSu(CUA_SO + 150);
+  const pt3 = phanTichDuBao(chayDuBao(cs3, "xsmn"), cs3, 10, "xsmn");
+  const dtNgau = gopDiToi(pt3.moHinh, 1, "xsmn", new Map(cs3.map((d) => [d.date, d])), 200, 9);
+  ok("đi tới trên dữ liệu ngẫu nhiên: có đánh, lãi = cộng từng kỳ, may rủi trong (0,1]", dtNgau.soKyDanh > 0 && dtNgau.lai === dtNgau.ky.reduce((x, k) => x + k.lai, 0) && dtNgau.mayRui > 0 && dtNgau.mayRui <= 1, dtNgau.soKyDanh + " kỳ, p=" + dtNgau.mayRui.toFixed(3));
 }
 
 console.log(`\n### ${pass} DAT - ${fail} HONG ###`);

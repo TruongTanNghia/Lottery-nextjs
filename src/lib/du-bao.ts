@@ -557,3 +557,119 @@ export function phanTichTheoThu(moHinh: TongKetMoHinh[], region: Region, phanPho
   }
   return { bang, nhinLai, laiNhinLai, diToi, kyToi, ketLuan };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gộp số từ các ô chọn — khách 16/11/2026 (thứ 2): "nếu mình chọn hết các ô đang
+// lời này [cột T2] thì được tầm bao nhiêu số; bấm cho mình chọn, giống bên lô
+// ngày 1-2-3-4…". Ô = (mô hình, thứ). Kỳ tới rơi vào thứ nào thì chỉ ô cột đó
+// được tính: lấy số dự báo kỳ tới của các mô hình ấy, gộp lại (con nhiều mô hình
+// chọn đứng trước). Chấm hai kiểu, tách bạch như khối "Theo thứ":
+//  - nhìn lại: đúng các ô đang chọn, chấm mọi kỳ đã qua cùng thứ → đẹp vì ô được
+//    chọn sau khi đã thấy chúng lời;
+//  - đi tới: đến mỗi kỳ, chọn hết ô đang lời ở thứ đó tính bằng các kỳ TRƯỚC (mỗi
+//    thứ đủ KY_TOI_THIEU_THU kỳ), gộp số rồi đánh; đem so bốc ngẫu nhiên cùng số con.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const khoaO = (m: MoHinh, thu: number) => `${m}:${thu}`;
+
+export interface ConGop { lo: string; moHinh: MoHinh[] }
+
+/** Gộp số của nhiều mô hình; chỉ giữ con được từ `tu` mô hình trở lên; nhiều mô hình chọn đứng trước, bằng nhau thì con nhỏ trước. */
+export function gopSo(chon: [MoHinh, string[]][], tu = 1): ConGop[] {
+  const m = new Map<string, MoHinh[]>();
+  for (const [mh, ds] of chon) for (const lo of ds) { const a = m.get(lo) ?? []; if (!a.includes(mh)) a.push(mh); m.set(lo, a); }
+  return [...m].filter(([, a]) => a.length >= tu).map(([lo, a]) => ({ lo, moHinh: a })).sort((x, y) => y.moHinh.length - x.moHinh.length || x.lo.localeCompare(y.lo));
+}
+
+/** Ô đang lời ở một thứ (tính cả kho): lãi > 0 và đủ KY_TOI_THIEU_THU kỳ. */
+export function oDangLoi(bang: MoHinhTheoThu[], thu: number): MoHinh[] {
+  return bang.filter((b) => b.thu[thu].soKy >= KY_TOI_THIEU_THU && b.thu[thu].lai > 0).map((b) => b.moHinh);
+}
+
+export interface KyGop extends KetQuaKy { thu: number; moHinh: MoHinh[] }
+export interface KetQuaGop {
+  ky: KyGop[];
+  /** Số kỳ đã xét (cùng thứ với ô chọn, hoặc mọi kỳ với đi tới). */
+  soKyXet: number;
+  soKyDanh: number;
+  conTB: number;
+  tongXac: number;
+  lai: number;
+  tiLe: number;
+  kyAn: number;
+  kyThua: number;
+  thuaSauNhat: number;
+  /** NaN khi không so may rủi (nhìn lại). */
+  mayRui: number;
+  vuot: boolean;
+}
+
+function tongKetGop(ky: KyGop[], soKyXet: number, mayRui: number): KetQuaGop {
+  let tongXac = 0, lai = 0, kyAn = 0, kyThua = 0, con = 0, dinh = 0, cd = 0, sut = 0;
+  for (const k of ky) {
+    tongXac += k.xac; lai += k.lai; con += k.chon.length;
+    if (k.lai > 0) kyAn++; else if (k.lai < 0) kyThua++;
+    cd += k.lai; dinh = Math.max(dinh, cd); sut = Math.min(sut, cd - dinh);
+  }
+  return { ky, soKyXet, soKyDanh: ky.length, conTB: ky.length ? con / ky.length : 0, tongXac, lai, tiLe: tongXac ? lai / tongXac : 0, kyAn, kyThua, thuaSauNhat: sut, mayRui, vuot: lai > 0 && mayRui < NGUONG_MAY_RUI };
+}
+
+/** Nhìn lại: các ô đang chọn (cố định), chấm mọi kỳ đã qua đúng thứ của ô. Không so may rủi vì ô được chọn sau khi biết. */
+export function gopNhinLai(moHinh: TongKetMoHinh[], oChon: Set<string>, tu: number, region: Region, theoNgay: Map<string, DrawHits>): KetQuaGop {
+  const ky: KyGop[] = [];
+  const soKy = moHinh[0]?.ky.length ?? 0;
+  let soKyXet = 0;
+  for (let j = 0; j < soKy; j++) {
+    const date = moHinh[0].ky[j].date, t = thuCuaNgay(date);
+    const dung = moHinh.filter((m) => oChon.has(khoaO(m.moHinh, t)));
+    if (!dung.length) continue;
+    soKyXet++;
+    const gop = gopSo(dung.map((m) => [m.moHinh, m.ky[j].chon]), tu);
+    const d = theoNgay.get(date);
+    if (!gop.length || !d) continue;
+    ky.push({ ...chamKy(gop.map((g) => g.lo), d, region), thu: t, moHinh: dung.map((m) => m.moHinh) });
+  }
+  return tongKetGop(ky, soKyXet, NaN);
+}
+
+/** Bốc ngẫu nhiên đúng số con của từng kỳ (cỡ thay đổi theo kỳ), `soLan` lần; trả lãi đã sắp tăng dần. */
+export function phanPhoiMayRuiCoCo(cacKy: DrawHits[], coCo: number[], region: Region, soLan = SO_MO_PHONG, seed = 20261116): number[] {
+  const rnd = mulberry32(seed), out: number[] = [];
+  const nhayTheoKy = cacKy.map((k) => Int32Array.from(LOS, (lo) => Number(k.hits[lo]) || 0));
+  const xac = coCo.reduce((s, c) => s + c, 0) * STAKE_PRICE[region];
+  const idx = Int32Array.from({ length: 100 }, (_, i) => i);
+  for (let l = 0; l < soLan; l++) {
+    let nhay = 0;
+    for (let j = 0; j < nhayTheoKy.length; j++) {
+      const bang = nhayTheoKy[j], n = Math.min(100, coCo[j]);
+      for (let i = 0; i < n; i++) {
+        const r = i + Math.floor(rnd() * (100 - i));
+        const tmp = idx[i]; idx[i] = idx[r]; idx[r] = tmp;
+        nhay += bang[idx[i]];
+      }
+    }
+    out.push(nhay * WIN_PER_POINT - xac);
+  }
+  return out.sort((a, b) => a - b);
+}
+
+/** Đi tới: đến mỗi kỳ chọn hết ô đang lời ở thứ đó (chỉ dùng các kỳ trước), gộp số rồi đánh; không ô nào lời thì nghỉ. */
+export function gopDiToi(moHinh: TongKetMoHinh[], tu: number, region: Region, theoNgay: Map<string, DrawHits>, soLan = SO_MO_PHONG, seed = 20261116): KetQuaGop {
+  const soKy = moHinh[0]?.ky.length ?? 0;
+  const cong = moHinh.map(() => new Array<number>(7).fill(0)), dem = new Array<number>(7).fill(0);
+  const ky: KyGop[] = [], cacKy: DrawHits[] = [];
+  for (let j = 0; j < soKy; j++) {
+    const date = moHinh[0].ky[j].date, t = thuCuaNgay(date);
+    const dung = dem[t] >= KY_TOI_THIEU_THU ? moHinh.filter((_, i) => cong[i][t] > 0) : [];
+    const d = theoNgay.get(date);
+    if (dung.length && d) {
+      const gop = gopSo(dung.map((m) => [m.moHinh, m.ky[j].chon]), tu);
+      if (gop.length) { ky.push({ ...chamKy(gop.map((g) => g.lo), d, region), thu: t, moHinh: dung.map((m) => m.moHinh) }); cacKy.push(d); }
+    }
+    for (let i = 0; i < moHinh.length; i++) cong[i][t] += moHinh[i].ky[j].lai;
+    dem[t]++;
+  }
+  const lai = ky.reduce((s, k) => s + k.lai, 0);
+  const mayRui = ky.length ? xacSuatMayRui(phanPhoiMayRuiCoCo(cacKy, ky.map((k) => k.chon.length), region, soLan, seed), lai) : 1;
+  return tongKetGop(ky, soKy, mayRui);
+}

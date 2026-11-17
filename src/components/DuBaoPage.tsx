@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
-  CAC_MO_HINH, CAC_SO_CON, CUA_SO, KY_TOI_THIEU_THU, NGUONG_MAY_RUI, SO_CON_MAC_DINH, SO_MO_PHONG, TEN_THU, chayDuBao, chuoiDanh, docDiem, docTienTo, duBaoKyToi, nhayCanDeLoi, nhayKyVong, phanTichDuBao, sapXep,
+  CAC_MO_HINH, CAC_SO_CON, CUA_SO, KY_TOI_THIEU_THU, NGUONG_MAY_RUI, SO_CON_MAC_DINH, SO_MO_PHONG, TEN_THU, chayDuBao, chuoiDanh, docDiem, docTienTo, duBaoKyToi, gopDiToi, gopNhinLai, gopSo, khoaO, nhayCanDeLoi, nhayKyVong, oDangLoi, phanTichDuBao, sapXep, thuCuaNgay,
   type KyDuBao, type MoHinh, type TongKetMoHinh,
 } from "@/lib/du-bao";
 import { STAKE_PRICE, WIN_PER_POINT, POSITIONS } from "@/lib/exposure";
@@ -122,6 +122,43 @@ export default function DuBaoPage({ region }: { region: Region }) {
     try { await navigator.clipboard.writeText(chuoi); setDaCopy(true); setTimeout(() => setDaCopy(false), 1500); } catch { /* không có clipboard */ }
   };
 
+  // Ô chọn (mô hình × thứ) — khách 16/11: "chọn hết các ô đang lời thì được tầm bao nhiêu số; bấm cho mình chọn".
+  // Nhớ theo miền trên máy người xem (chỉ là tiện, mất cũng không sao).
+  const [oChon, setOChon] = useState<Set<string>>(new Set());
+  const [tuMh, setTuMh] = useState(1);
+  const [daCopyGop, setDaCopyGop] = useState(false);
+  useEffect(() => {
+    try { const s = localStorage.getItem(`dubao-o-chon:${region}`); setOChon(new Set(s ? (JSON.parse(s) as string[]) : [])); } catch { setOChon(new Set()); }
+    setTuMh(1);
+  }, [region]);
+  const doiO = (f: (s: Set<string>) => Set<string>) => {
+    const x = f(new Set(oChon));
+    setOChon(x);
+    try { localStorage.setItem(`dubao-o-chon:${region}`, JSON.stringify([...x])); } catch { /* không lưu được thì thôi */ }
+  };
+  const batO = (m: MoHinh, t: number) => doiO((s) => { const k = khoaO(m, t); if (s.has(k)) s.delete(k); else s.add(k); return s; });
+  /** Bấm tên cột: chọn đúng các ô đang lời của cột; bấm lần nữa (đã chọn đủ) thì bỏ cả cột. */
+  const chonCot = (t: number, epChon = false) => {
+    if (!pt) return;
+    const loi = oDangLoi(pt.theoThu.bang, t);
+    doiO((s) => {
+      const duRoi = loi.length > 0 && loi.every((m) => s.has(khoaO(m, t)));
+      for (const m of CAC_MO_HINH) s.delete(khoaO(m.khoa, t));
+      if (epChon || !duRoi) for (const m of loi) s.add(khoaO(m, t));
+      return s;
+    });
+  };
+  const thuToi = kyToi ? thuCuaNgay(kyToi.date) : null;
+  const mhChonToi: MoHinh[] = thuToi === null ? [] : CAC_MO_HINH.map((m) => m.khoa).filter((k) => oChon.has(khoaO(k, thuToi)));
+  const tuHieuLuc = Math.max(1, Math.min(tuMh, Math.max(1, mhChonToi.length)));
+  const gop = kyToi ? gopSo(mhChonToi.map((m) => [m, kyToi.chon[m].slice(0, n)]), tuHieuLuc) : [];
+  const chuoiGop = chuoiDanh(gop.map((g) => g.lo), tt.tienTo, diem);
+  const gopNL = useMemo(() => (pt && oChon.size ? gopNhinLai(pt.moHinh, oChon, tuHieuLuc, region, theoNgay) : null), [pt, oChon, tuHieuLuc, region, theoNgay]);
+  const gopDT = useMemo(() => (pt ? gopDiToi(pt.moHinh, tuHieuLuc, region, theoNgay) : null), [pt, tuHieuLuc, region, theoNgay]);
+  const copyGop = async () => {
+    try { await navigator.clipboard.writeText(chuoiGop); setDaCopyGop(true); setTimeout(() => setDaCopyGop(false), 1500); } catch { /* không có clipboard */ }
+  };
+
   return (
     <div className="space-y-4 md:space-y-6" data-dubao>
       <section className="plate rise rise-1">
@@ -217,14 +254,31 @@ export default function DuBaoPage({ region }: { region: Region }) {
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-[0.68rem]" data-dubao-bang-thu>
-                    <thead><tr className="text-[var(--text-muted)] text-left"><th className="py-1 pr-2">Lãi theo thứ</th>{[1, 2, 3, 4, 5, 6, 0].map((t) => <th key={t} className="py-1 pr-2 numeric">{TEN_THU[t]}</th>)}</tr></thead>
+                    <thead>
+                      <tr className="text-[var(--text-muted)] text-left">
+                        <th className="py-1 pr-2">Lãi theo thứ</th>
+                        {[1, 2, 3, 4, 5, 6, 0].map((t) => (
+                          <th key={t} className="py-1 pr-1 numeric">
+                            <button onClick={() => chonCot(t)} data-dubao-thu-cot-chon={t} title={`Chọn hết ô đang lời ở ${TEN_THU[t]}`} className={`px-1.5 py-0.5 rounded font-bold ${t === thuToi ? "bg-[#7c3aed] text-white" : "bg-white/[0.08] text-[#c2d4ea] hover:bg-white/[0.16]"}`}>
+                              {TEN_THU[t]}{t === thuToi ? " · kỳ tới" : ""}
+                            </button>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
                     <tbody>
                       {pt.theoThu.bang.map((b) => (
                         <tr key={b.moHinh} data-dubao-thu-mh={b.moHinh} className={`border-t border-[var(--hairline)] ${mh === b.moHinh ? "bg-[#7c3aed]/20" : ""}`}>
                           <td className="py-1 pr-2 text-white whitespace-nowrap">{b.ten}</td>
                           {[1, 2, 3, 4, 5, 6, 0].map((t) => {
-                            const o = b.thu[t], tot = pt.theoThu.nhinLai.find((x) => x.thu === t)?.moHinh === b.moHinh;
-                            return <td key={t} data-dubao-thu-o={o.lai} className={`py-1 pr-2 numeric whitespace-nowrap ${tot ? "font-extrabold" : ""}`} style={{ color: mau(o.lai) }} title={`${o.kyAn} ăn / ${o.kyThua} thua / ${o.soKy} kỳ`}>{o.soKy ? (tot ? "★" : "") + dau(o.lai) : "—"}</td>;
+                            const o = b.thu[t], tot = pt.theoThu.nhinLai.find((x) => x.thu === t)?.moHinh === b.moHinh, chon = oChon.has(khoaO(b.moHinh, t));
+                            return (
+                              <td key={t} data-dubao-thu-o={o.lai} data-dubao-thu-cot={t} data-dubao-thu-chon={chon ? "1" : "0"} onClick={() => o.soKy && batO(b.moHinh, t)}
+                                className={`py-1 px-1 numeric whitespace-nowrap cursor-pointer select-none rounded ${tot ? "font-extrabold" : ""} ${chon ? "bg-[#7c3aed]/45 ring-1 ring-[#c4b5fd]" : "hover:bg-white/[0.06]"}`}
+                                style={{ color: chon ? "#ffffff" : mau(o.lai) }} title={`${o.kyAn} ăn / ${o.kyThua} thua / ${o.soKy} kỳ · bấm để ${chon ? "bỏ" : "chọn"}`}>
+                                {o.soKy ? (chon ? "✓" : "") + (tot ? "★" : "") + dau(o.lai) : "—"}
+                              </td>
+                            );
                           })}
                         </tr>
                       ))}
@@ -235,6 +289,84 @@ export default function DuBaoPage({ region }: { region: Region }) {
                   ★ = mô hình ăn nhất ở thứ đó khi nhìn lại cả 3 năm. "Đi tới" = đến mỗi kỳ chỉ dùng các kỳ trước đó, chọn mô hình đang ăn nhất ở thứ đó (mỗi thứ phải đủ {KY_TOI_THIEU_THU} kỳ, chưa đủ thì dùng tổng hợp); đó là cách anh sẽ chơi thật nên mới đem so may rủi.
                   {pt.theoThu.diToi.soLanDung.length ? ` Đi tới đã dùng: ${pt.theoThu.diToi.soLanDung.map((d) => `${d.ten} ${d.soKy} kỳ`).join(", ")}.` : ""}
                 </p>
+
+                {kyToi && thuToi !== null && (
+                  <div className="rounded-xl border border-[#7c3aed]/60 bg-[#7c3aed]/10 px-3 py-3 space-y-2" data-dubao-gop data-dubao-gop-so-con={gop.length} data-dubao-gop-so-mh={mhChonToi.length}>
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="eyebrow">Gộp số từ các ô đã chọn · kỳ tới</span>
+                      <b className="text-white text-[0.8rem]">{TEN_THU[thuToi]} {ddmmyy(kyToi.date)}</b>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button onClick={() => chonCot(thuToi, true)} data-dubao-gop-chon-het className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#7c3aed] text-white">Chọn hết ô đang lời ở {TEN_THU[thuToi]}</button>
+                      <button onClick={() => doiO(() => new Set())} data-dubao-gop-bo-het className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16]">Bỏ chọn hết</button>
+                    </div>
+                    {mhChonToi.length === 0 ? (
+                      <p className="text-[0.74rem] text-[var(--text-secondary)]" data-dubao-gop-trong>
+                        Chưa chọn ô nào ở cột {TEN_THU[thuToi]}. Kỳ tới là {TEN_THU[thuToi]} nên chỉ ô cột {TEN_THU[thuToi]} được tính; ô các cột khác máy nhớ sẵn cho các ngày đó.
+                        Bấm từng ô trong bảng để chọn, hoặc bấm tên cột để chọn hết ô đang lời của cột.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="text-[0.76rem] text-[var(--text-secondary)]" data-dubao-gop-tom-tat>
+                          Đang lấy <b className="text-white">{mhChonToi.length}</b> mô hình: {mhChonToi.map((m) => CAC_MO_HINH.find((x) => x.khoa === m)!.ten).join(", ")}. Mỗi mô hình {n} con, gộp lại được{" "}
+                          <b className="text-white numeric text-[0.95rem]">{gop.length} con</b>{tuHieuLuc > 1 ? ` (chỉ lấy con được từ ${tuHieuLuc} mô hình trở lên)` : ""}.
+                        </div>
+                        {mhChonToi.length > 1 && (
+                          <div className="flex flex-wrap items-center gap-1.5" data-dubao-gop-tu>
+                            <span className="eyebrow">Lấy con được từ</span>
+                            {Array.from({ length: Math.min(5, mhChonToi.length) }, (_, i) => i + 1).map((k) => (
+                              <button key={k} onClick={() => setTuMh(k)} data-dubao-gop-tu-chon={k} className={`px-2 py-1 rounded-lg text-[0.7rem] font-bold ${tuHieuLuc === k ? "bg-[#7c3aed] text-white" : "bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16]"}`}>{k} mô hình</button>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-1.5" data-dubao-gop-con-ds>
+                          {gop.map((g) => (
+                            <span key={g.lo} data-dubao-gop-con={g.lo} data-dubao-gop-con-mh={g.moHinh.length} className="relative inline-flex items-center justify-center min-w-[2.2rem] px-1.5 py-1 rounded-lg bg-white/[0.10] text-white font-extrabold numeric text-[0.8rem]" title={g.moHinh.map((m) => CAC_MO_HINH.find((x) => x.khoa === m)!.ten).join(", ")}>
+                              {g.lo}<span className="absolute -top-1.5 -right-1.5 text-[0.52rem] px-1 rounded bg-[#7c3aed] text-white numeric">{g.moHinh.length}</span>
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <label className="flex flex-col gap-0.5">
+                            <span className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">Điểm mỗi con</span>
+                            <input value={diemNhap} onChange={(e) => setDiemNhap(e.target.value)} inputMode="numeric" data-dubao-gop-diem className="w-20 px-2 py-1 rounded-lg bg-white/[0.08] text-white text-sm font-bold numeric border border-[var(--hairline)]" />
+                          </label>
+                          <label className="flex flex-col gap-0.5">
+                            <span className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">Tiền tố đài (2d, mn, mb)</span>
+                            <input value={tienTo} onChange={(e) => setTienTo(e.target.value)} placeholder="để trống nếu không cần" data-dubao-gop-tien-to className="w-36 px-2 py-1 rounded-lg bg-white/[0.08] text-white text-sm numeric border border-[var(--hairline)]" />
+                          </label>
+                        </div>
+                        {(dd.loi || tt.loi) && <div className="text-[0.72rem] text-[#ffd24a]">{dd.loi ?? ""}{dd.loi && tt.loi ? " " : ""}{tt.loi ?? ""}</div>}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <code className="flex-1 min-w-[12rem] px-2 py-1 rounded-lg bg-black/30 text-[#e2e8f0] text-xs break-all" data-dubao-gop-chuoi>{chuoiGop}</code>
+                          <button onClick={copyGop} data-dubao-gop-copy className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#7c3aed] text-white">{daCopyGop ? "Đã copy" : "Copy"}</button>
+                        </div>
+                        <div className="text-[0.74rem] text-[var(--text-secondary)]" data-dubao-gop-tien data-dubao-gop-xac={gop.length * diem * gia}>
+                          <b className="text-white">Đánh như nào:</b> {gop.length} con × {so(diem)} điểm, xác <b className="text-white numeric">{so(gop.length * diem * gia)}đ</b>. Về từ {nhayCanDeLoi(gop.length, region)} nháy mới lời;
+                          may rủi cho {gop.length} con trung bình {nhayKyVong(gop.length, region).toFixed(1).replace(".", ",")} nháy, tức kỳ vọng vẫn tròn 0.
+                        </div>
+                      </>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                      {gopNL && gopNL.soKyDanh > 0 && (
+                        <O nhan="Nhìn lại: đúng các ô anh đang chọn" gt={dau(gopNL.lai)} phu={`${gopNL.kyAn} ăn / ${gopNL.kyThua} thua trong ${so(gopNL.soKyDanh)} kỳ cùng thứ · TB ${gopNL.conTB.toFixed(1).replace(".", ",")} con · 1 điểm. Ô chọn vì thấy đang lời nên số này luôn đẹp hơn thật.`} m="#cbd5e1" />
+                      )}
+                      {gopDT && (
+                        <div data-dubao-gop-di-toi data-dubao-gop-di-toi-lai={gopDT.lai} data-dubao-gop-di-toi-vuot={gopDT.vuot ? "1" : "0"}>
+                          <O nhan="Chơi thật: thứ nào cũng chọn hết ô đang lời" gt={dau(gopDT.lai)} phu={`${gopDT.kyAn} ăn / ${gopDT.kyThua} thua trong ${so(gopDT.soKyDanh)} kỳ · TB ${gopDT.conTB.toFixed(1).replace(".", ",")} con · thua sâu ${tien(gopDT.thuaSauNhat)} · may rủi đuổi kịp ${pct(gopDT.mayRui)}`} m={mau(gopDT.lai)} />
+                        </div>
+                      )}
+                    </div>
+                    {gopDT && (
+                      <p className="text-[0.7rem] leading-relaxed text-[var(--text-muted)]" data-dubao-gop-ket-luan>
+                        "Chơi thật" = đến mỗi kỳ chỉ dùng các kỳ trước, chọn hết ô đang lời ở thứ đó (đủ {KY_TOI_THIEU_THU} kỳ), gộp số{tuHieuLuc > 1 ? ` lấy con được từ ${tuHieuLuc} mô hình` : ""} rồi đánh 1 điểm mỗi con; so với bốc ngẫu nhiên đúng chừng ấy con mỗi kỳ.{" "}
+                        {gopDT.vuot
+                          ? `Kiểu này đang nổi lên (may rủi đuổi kịp ${pct(gopDT.mayRui)}), nhưng anh có ${CAC_SO_CON.length} mức số con × ${Math.min(5, Math.max(1, mhChonToi.length))} mức lọc để bấm thử, thử nhiều kiểu thì thế nào cũng có kiểu lọt ngưỡng; giữ nguyên một kiểu, theo dõi thêm 60 kỳ rồi mới tin.`
+                          : `Kiểu này không hơn bốc đại cùng số con: ô đang lời hôm nay không giữ được lời về sau.`}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {chonMh && (
