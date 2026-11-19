@@ -150,6 +150,21 @@ async function call(method: string, body: Record<string, unknown>): Promise<void
   if (!res.ok) console.error(`[telegram] ${method} failed:`, res.status, await res.text());
 }
 
+/** Bot tự rời một nhóm (lệnh /roinhom). Trả về có rời được không, để báo lại cho quản trị. */
+export async function leaveChat(chatId: number): Promise<{ ok: boolean; loi?: string }> {
+  try {
+    const res = await fetch(`${API_ROOT}/bot${token()}/leaveChat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId }),
+    });
+    if (res.ok) return { ok: true };
+    return { ok: false, loi: `Telegram ${res.status}: ${(await res.text()).slice(0, 160)}` };
+  } catch (e) {
+    return { ok: false, loi: e instanceof Error ? e.message : "lỗi mạng" };
+  }
+}
+
 /** The callback_query field of an update, for button taps. */
 export interface TelegramCallback {
   id: string;

@@ -16,14 +16,21 @@ import { NGHI_GIUA_TIN_MS, coTaiKhoanGui, guiBangTaiKhoan, guiNhieuBangTaiKhoan 
 import { khoKyToi } from "@/lib/da";
 import { bangHieuLuc, taiKyDaXo } from "@/lib/da-bang";
 import { capNhan, chuoiNhanDeu } from "@/lib/da-nhan";
+import { TEN_THU, CAC_MO_HINH, soGuiTheoThu } from "@/lib/du-bao";
+import { gopVoiKhoDai } from "@/lib/kho-dai-server";
 import {
   CAC_NHOM, batDauTu, chuanHoaBotGui, daGuiHomNay, gioVN, khoiLoGui, lenhNhom, phutConLai, soTinLuotNay, tenNhomSo, trongKhung,
   type CaiDatBotGui, type NoiDungGui, type SoNhom,
 } from "@/lib/bot-gui-thuan";
 import type { Region } from "@/lib/types";
 
-/** Nhóm 1 giữ khoá cũ "bot_gui" (cấu hình đang chạy không phải chuyển); nhóm 2 là "bot_gui_2". */
-const khoaNhom = (so: SoNhom) => (so === 1 ? "bot_gui" : `bot_gui_${so}`);
+/**
+ * Nhóm 1 giữ khoá cũ "bot_gui" (cấu hình đang chạy không phải chuyển). Nhóm 2:
+ * khoá "bot_gui_2b" — 19/11 tối khách báo đã thêm bot vào NHẦM nhóm, nhờ huỷ ở
+ * nhóm đó; đổi khoá là bỏ hẳn cấu hình nhóm 2 cũ (nhóm nhầm, bật/tắt, tiến độ),
+ * để nhóm nhầm chắc chắn không nhận gì cho tới khi gõ lại /nhomgui 2 ở nhóm đúng.
+ */
+const khoaNhom = (so: SoNhom) => (so === 1 ? "bot_gui" : "bot_gui_2b");
 const KHOA_GO_CUA = "bot_gui_go_cua";
 
 /** Lần gần nhất bộ hẹn giờ gọi vào (ISO), null = chưa từng. Để nhìn là biết bộ hẹn giờ còn sống. */
@@ -100,9 +107,11 @@ export interface XemTruocMien {
   khoi: string[];
   /** Cả nội dung nối lại, để xem trước. */
   chuoi: string;
-  /** "lo": số lô nhận; "da2": số cặp nhận. */
+  /** "lo": số lô nhận; "dubao": số con dự báo; "da2": số cặp nhận. */
   soLo: number;
   soCap: number;
+  /** "dubao": thứ, mô hình đã chọn và lãi của từng mô hình ở thứ đó (1 điểm). */
+  duBao?: { ngay: string; thu: string; moHinh: string[]; soKyThu: number; laiChon: number[] };
   /** "ok" mới gửi tự động; khác thì giữ lại. */
   duLieu: "ok" | "warn" | "alarm";
   duLieuChu: string;
@@ -126,6 +135,23 @@ export async function xemTruocGui(region: Region, cfg: CaiDatBotGui, now = new D
   const f = freshness(latest, now);
   const m = cfg.mien[region];
   const chung = { region, duLieu: f.level, duLieuChu: freshnessText(f) };
+  if (cfg.noiDung === "dubao") {
+    // Số dự báo theo thứ (tab Dự Báo): kỳ tới phải đúng là HÔM NAY — kho thiếu kỳ hôm qua thì kỳ tới tính lệch ngày, không gửi.
+    const g = soGuiTheoThu(gopVoiKhoDai(region, await taiKyDaXo(region)), region, cfg.duBao.cach, cfg.duBao.soCon);
+    const khoi = g ? khoiLoGui(g.con.map((lo) => ({ lo_number: lo, current_limit: cfg.duBao.diem })), m.tienTo, cfg.doDaiTin) : [];
+    const lechNgay = g && g.ngay !== gioVN(now).ngay;
+    const ten = (k: string) => CAC_MO_HINH.find((x) => x.khoa === k)?.ten ?? k;
+    return {
+      ...chung,
+      ...(lechNgay ? { duLieu: f.level === "ok" ? "warn" : f.level, duLieuChu: `kho mới tới ${latest ?? "?"} nên kỳ tới tính ra ${g!.ngay}, không phải hôm nay ${gioVN(now).ngay}` } : {}),
+      noiDung: "dubao",
+      khoi,
+      chuoi: khoi.join("\n"),
+      soLo: g?.con.length ?? 0,
+      soCap: 0,
+      ...(g ? { duBao: { ngay: g.ngay, thu: TEN_THU[g.thu], moHinh: g.moHinh.map(ten), soKyThu: g.soKyThu, laiChon: g.moHinh.map((k) => g.laiThu.find((x) => x.moHinh === k)!.lai) } } : {}),
+    };
+  }
   if (cfg.noiDung === "lo") {
     const rows = await getLimitSummary(region);
     const khoi = khoiLoGui(rows, m.tienTo, cfg.doDaiTin);
@@ -184,7 +210,8 @@ async function guiKhoiVaoNhom(chatId: number, khoi: string[], batDau: number, to
 }
 
 /** Giữ chỗ cho câu chữ: gửi gì. */
-const tenNoiDung = (nd: NoiDungGui) => (nd === "lo" ? "lệnh lô" : "số nhận đá PA2");
+const tenNoiDung = (nd: NoiDungGui) => (nd === "lo" ? "lệnh lô" : nd === "dubao" ? "số dự báo theo thứ" : "số nhận đá PA2");
+const trongRong = (nd: NoiDungGui) => (nd === "lo" ? "không lô nào đang nhận" : nd === "dubao" ? "không có số dự báo (không ô nào đang lời ở thứ này)" : "không cặp đá nào đang nhận");
 
 /** Trần cả một lượt gõ cửa cho MỌI nhóm cộng lại (route cron có 30 giây). */
 const HAN_CA_LUOT_MS = 22_000;
@@ -242,7 +269,7 @@ async function chayMotNhom(so: SoNhom, now: Date, thu: boolean, hetLuc: number):
       if (!thu) await baoQuanTri(`⚠️ Bot gửi ${ten(region)}: KHÔNG gửi ${tenNoiDung(cfg.noiDung)} vì ${xt.duLieuChu}. Bấm Cập nhật KQ rồi gõ ${lenh(region)}.`);
       continue;
     }
-    if (xt.khoi.length === 0) { ketQua.push({ nhom: so, region, viec: "bo-qua", lyDo: cfg.noiDung === "lo" ? "không lô nào đang nhận" : "không cặp đá nào đang nhận" }); continue; }
+    if (xt.khoi.length === 0) { ketQua.push({ nhom: so, region, viec: "bo-qua", lyDo: trongRong(cfg.noiDung) }); continue; }
     // Tiến độ hôm nay ghi theo số phần lúc đó; nội dung đổi (tổng khác) thì gửi lại từ đầu cho trọn.
     const tiepTu = batDau > 0 && cfg.tienDo[region]?.tong === xt.khoi.length ? batDau : 0;
     if (thu) { ketQua.push({ nhom: so, region, viec: "gui", soPhan: xt.khoi.length - tiepTu, kyTu: xt.chuoi.length, soLo: xt.soLo, soCap: xt.soCap }); continue; }
@@ -314,7 +341,7 @@ export async function guiNgay(region: Region, now = new Date(), ep = false, so: 
   }
   const xt = await xemTruocGui(region, cfg, now);
   if (xt.duLieu !== "ok") return { ok: false, chu: `Không gửi: ${xt.duLieuChu}.` };
-  if (xt.khoi.length === 0) return { ok: false, chu: cfg.noiDung === "lo" ? "Không lô nào đang nhận — không có gì để gửi." : "Không cặp đá nào đang nhận — không có gì để gửi." };
+  if (xt.khoi.length === 0) return { ok: false, chu: `${trongRong(cfg.noiDung)} — không có gì để gửi.` };
   const ngay = gioVN(now).ngay;
   const batDau = ep ? 0 : batDauTu(now, cfg.tienDo[region]);
   const tiepTu = batDau > 0 && cfg.tienDo[region]?.tong === xt.khoi.length ? batDau : 0;
@@ -331,7 +358,7 @@ export async function guiNgay(region: Region, now = new Date(), ep = false, so: 
     await luuBotGui(cfg, so);
     return { ok: false, chu: `KHÔNG RÕ phần ${daGui}/${xt.khoi.length} đã vào nhóm chưa: ${r.loi}. Mở nhóm xem; thiếu thì gõ ${lenh} để gửi tiếp các phần sau — bot sẽ không gửi lại phần đó.` };
   }
-  const noi = `${xt.noiDung === "lo" ? `${xt.soLo} lô` : `${xt.soCap.toLocaleString("vi-VN")} cặp đá PA2`}, ${xt.khoi.length} phần, ${xt.chuoi.length.toLocaleString("vi-VN")} ký tự`;
+  const noi = `${xt.noiDung === "lo" ? `${xt.soLo} lô` : xt.noiDung === "dubao" ? `${xt.soLo} con dự báo (${xt.duBao?.thu} · ${xt.duBao?.moHinh.join(", ")})` : `${xt.soCap.toLocaleString("vi-VN")} cặp đá PA2`}, ${xt.khoi.length} phần, ${xt.chuoi.length.toLocaleString("vi-VN")} ký tự`;
   const bang = r.bang === "tai-khoan" ? "tài khoản người" : "bot (bot nhận sẽ KHÔNG thấy)";
   if (daGui >= xt.khoi.length) {
     cfg.daGui[region] = now.toISOString();

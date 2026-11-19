@@ -673,3 +673,57 @@ export function gopDiToi(moHinh: TongKetMoHinh[], tu: number, region: Region, th
   const mayRui = ky.length ? xacSuatMayRui(phanPhoiMayRuiCoCo(cacKy, ky.map((k) => k.chon.length), region, soLan, seed), lai) : 1;
   return tongKetGop(ky, soKy, mayRui);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Số bot gửi theo thứ — khách 19/11/2026: "mặc định cho bot gửi là thứ nào gửi
+// [ô] lời nhất của thứ đó, từng miền; máy tự động được hay phải cài hằng ngày".
+// Máy tự làm mỗi ngày: kỳ tới rơi vào thứ t → cộng lãi từng mô hình ở MỌI kỳ đã
+// xổ cùng thứ t (đúng cột t của bảng "Theo thứ", cùng số con) → lấy mô hình lời
+// nhất (ô ★; chưa đủ KY_TOI_THIEU_THU kỳ thì tổng hợp, như "đi tới") hoặc gộp
+// hết ô đang lời ("loi") → số dự báo kỳ tới của (các) mô hình đó.
+// Chỉ chấm các kỳ cùng thứ (≈1/7 kho) nên nhẹ, chạy được trong lượt gõ cửa.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type CachGui = "tot" | "loi";
+
+export interface SoGuiTheoThu {
+  /** Ngày kỳ tới (YYYY-MM-DD) = kỳ cuối trong kho + 1. */
+  ngay: string;
+  thu: number;
+  cach: CachGui;
+  n: number;
+  /** Số kỳ cùng thứ đã chấm. */
+  soKyThu: number;
+  /** Lãi (1 điểm, n con) của từng mô hình ở thứ này, theo thứ tự CAC_MO_HINH. */
+  laiThu: { moHinh: MoHinh; ten: string; lai: number }[];
+  /** Mô hình được chọn. */
+  moHinh: MoHinh[];
+  /** Con sẽ gửi, gộp lại, sắp tăng dần. */
+  con: string[];
+}
+
+export function soGuiTheoThu(draws: DrawHits[], region: Region, cach: CachGui, n: number): SoGuiTheoThu | null {
+  const sap = sapXep(draws);
+  const toi = duBaoKyToi(sap, region);
+  if (!toi) return null;
+  const t = thuCuaNgay(toi.date);
+  const lai = new Map<MoHinh, number>(CAC_MO_HINH.map((m) => [m.khoa, 0]));
+  let soKyThu = 0;
+  for (let i = CUA_SO; i < sap.length; i++) {
+    if (thuCuaNgay(sap[i].date) !== t) continue;
+    soKyThu++;
+    const chon = chonKy(sap.slice(i - CUA_SO, i), sap[i].date, region);
+    for (const m of CAC_MO_HINH) lai.set(m.khoa, lai.get(m.khoa)! + chamKy(chon[m.khoa].slice(0, n), sap[i], region).lai);
+  }
+  let moHinh: MoHinh[];
+  if (cach === "tot") {
+    // Cùng luật với ô ★ / "kỳ tới cách này sẽ chơi" trên tab: lãi lớn nhất, bằng nhau thì mô hình đứng trước.
+    let tot: MoHinh = CAC_MO_HINH[0].khoa;
+    for (const m of CAC_MO_HINH.slice(1)) if (lai.get(m.khoa)! > lai.get(tot)!) tot = m.khoa;
+    moHinh = [soKyThu < KY_TOI_THIEU_THU ? "tongHop" : tot];
+  } else {
+    moHinh = soKyThu < KY_TOI_THIEU_THU ? [] : CAC_MO_HINH.map((m) => m.khoa).filter((k) => lai.get(k)! > 0);
+  }
+  const con = gopSo(moHinh.map((m) => [m, toi.chon[m].slice(0, n)])).map((g) => g.lo).sort();
+  return { ngay: toi.date, thu: t, cach, n, soKyThu, laiThu: CAC_MO_HINH.map((m) => ({ moHinh: m.khoa, ten: m.ten, lai: lai.get(m.khoa)! })), moHinh, con };
+}

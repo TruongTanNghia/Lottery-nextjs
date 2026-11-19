@@ -22,8 +22,19 @@ export interface KhungGio {
   den: string;
 }
 
-/** Gửi gì: "da2" = số nhận đá phương án 2 (khách chốt), "lo" = chuỗi lô theo hạn mức. */
-export type NoiDungGui = "lo" | "da2";
+/**
+ * Gửi gì: "da2" = số nhận đá phương án 2 (khách chốt), "lo" = chuỗi lô theo hạn mức,
+ * "dubao" = số dự báo theo thứ của tab Dự Báo (khách 19/11, nhóm 2).
+ */
+export type NoiDungGui = "lo" | "da2" | "dubao";
+/** Số dự báo gửi đi: chọn ô nào ("tot" = ô lời nhất của thứ hôm đó, "loi" = gộp hết ô đang lời), mỗi mô hình mấy con, mỗi con mấy điểm. */
+export interface CaiDatDuBaoGui {
+  cach: "tot" | "loi";
+  soCon: number;
+  diem: number;
+}
+export const SO_CON_GUI = [5, 10, 20] as const;
+export const DU_BAO_GUI_MAC_DINH: CaiDatDuBaoGui = { cach: "tot", soCon: 10, diem: 1 };
 /** Mỗi tin dài tối đa ngần này ký tự — "chia tin ngắn lại". Telegram cho 4.096; để dư cho an toàn. */
 export const DO_DAI_TIN_MAC_DINH = 2000;
 export const DO_DAI_TIN_MIN = 500;
@@ -66,6 +77,8 @@ export interface CaiDatBotGui {
   tinMoiPhut: number;
   /** Tiến độ của ngày đang gửi dở — xem `batDauTu`. */
   tienDo: Partial<Record<Region, TienDoGui>>;
+  /** Nội dung "dubao": chọn ô, số con, điểm. */
+  duBao: CaiDatDuBaoGui;
 }
 
 /** Khung giờ khách chốt 22/10/2026 (các khung cũ: xem KHUNG_CU). Tiền tố: chữ đầu HP79 nhận, thử ngày 21/10. */
@@ -83,6 +96,7 @@ export const MAC_DINH_BOT_GUI: CaiDatBotGui = {
   soTin: SO_TIN_MAC_DINH,
   tinMoiPhut: TIN_MOI_PHUT_MAC_DINH,
   tienDo: {},
+  duBao: DU_BAO_GUI_MAC_DINH,
 };
 /**
  * Khung mặc định cũ. Bản lưu nào còn đúng y khung cũ là chưa ai đặt tay (lệnh
@@ -91,9 +105,11 @@ export const MAC_DINH_BOT_GUI: CaiDatBotGui = {
  */
 /**
  * Nhóm 2 — khách 19/11/2026: "cho bot gửi thêm vào 1 nhóm mới" (nhóm cũ vẫn nhận
- * đá PA2 như trước), "lô 2 số cho nó gửi từ 3h00 cũng được". Nên nhóm 2 mặc định
- * gửi CHUỖI LÔ, khung bắt đầu 15:00 cả ba miền, kết thúc như nhóm 1 (trước giờ
- * xổ), tiền tố như nhóm 1; mặc định TẮT, chưa chọn nhóm.
+ * đá PA2 như trước), "lô 2 số cho nó gửi từ 3h00 cũng được", rồi tối cùng ngày:
+ * "mặc định cho bot gửi là thứ nào gửi [ô] lời nhất của thứ đó từng miền" — tức
+ * SỐ DỰ BÁO theo thứ của tab Dự Báo. Nên nhóm 2 mặc định gửi "dubao" (ô lời nhất,
+ * 10 con, 1 điểm), khung bắt đầu 15:00 cả ba miền, kết thúc như nhóm 1 (trước
+ * giờ xổ), tiền tố như nhóm 1; mặc định TẮT, chưa chọn nhóm.
  */
 export const MAC_DINH_NHOM_2: CaiDatBotGui = {
   ...MAC_DINH_BOT_GUI,
@@ -102,10 +118,18 @@ export const MAC_DINH_NHOM_2: CaiDatBotGui = {
     xsmt: { bat: false, tu: "15:00", den: "17:08", tienTo: "Mt 2d" },
     xsmb: { bat: false, tu: "15:00", den: "18:08", tienTo: "Mb " },
   },
-  noiDung: "lo",
+  noiDung: "dubao",
   daGui: {},
   tienDo: {},
 };
+/** Tên nội dung để hiện trong /lichgui, /nhomgui… */
+export function tenNoiDungGui(cfg: Pick<CaiDatBotGui, "noiDung" | "duBao">): string {
+  if (cfg.noiDung === "lo") return "chuỗi lô (hạn mức)";
+  if (cfg.noiDung === "da2") return "số nhận đá phương án 2";
+  const d = cfg.duBao;
+  return `số dự báo theo thứ (${d.cach === "tot" ? "ô lời nhất của thứ hôm đó" : "gộp hết ô đang lời của thứ hôm đó"}, ${d.soCon} con × ${d.diem} điểm)`;
+}
+
 /** Các nhóm bot gửi. Nhóm 1 là nhóm có từ đầu (khoá cấu hình cũ, không đổi). */
 export const CAC_NHOM = [1, 2] as const;
 export type SoNhom = (typeof CAC_NHOM)[number];
@@ -232,11 +256,22 @@ export function chuanHoaBotGui(raw: unknown, so: SoNhom = 1): CaiDatBotGui {
     tenNhom: typeof o.tenNhom === "string" ? o.tenNhom : null,
     mien,
     daGui,
-    noiDung: o.noiDung === "lo" || o.noiDung === "da2" ? o.noiDung : goc.noiDung,
+    noiDung: o.noiDung === "lo" || o.noiDung === "da2" || o.noiDung === "dubao" ? o.noiDung : goc.noiDung,
     doDaiTin: Number.isFinite(dd) ? Math.min(DO_DAI_TIN_MAX, Math.max(DO_DAI_TIN_MIN, Math.round(dd))) : DO_DAI_TIN_MAC_DINH,
     soTin: Number.isInteger(st) && st >= 1 && st <= SO_TIN_MAX ? st : SO_TIN_MAC_DINH,
     tinMoiPhut: Number.isInteger(tp) && tp >= 1 && tp <= TIN_MOI_PHUT_MAX ? tp : TIN_MOI_PHUT_MAC_DINH,
     tienDo,
+    duBao: chuanHoaDuBao(o.duBao),
+  };
+}
+
+function chuanHoaDuBao(raw: unknown): CaiDatDuBaoGui {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const soCon = Number(o.soCon), diem = Number(o.diem);
+  return {
+    cach: o.cach === "loi" ? "loi" : "tot",
+    soCon: (SO_CON_GUI as readonly number[]).includes(soCon) ? soCon : DU_BAO_GUI_MAC_DINH.soCon,
+    diem: Number.isInteger(diem) && diem >= 1 && diem <= 9999 ? diem : DU_BAO_GUI_MAC_DINH.diem,
   };
 }
 

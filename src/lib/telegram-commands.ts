@@ -26,7 +26,7 @@ import { chuoiChanLo, luatChanLo } from "@/lib/chan-lo";
 import { docBuoc, trangThaiChanNgay } from "@/lib/chan-ngay-server";
 import { docBotGui, docGoCua, guiNgay, luuBotGui, thuTaiKhoan, xemTruocGui } from "@/lib/bot-gui";
 import { coTaiKhoanGui } from "@/lib/tele-user";
-import { CAC_NHOM, daGuiHomNay, gioVN, laGioHopLe, lenhNhom, tachNhom, tenNhomSo, type CaiDatBotGui, type SoNhom } from "@/lib/bot-gui-thuan";
+import { CAC_NHOM, daGuiHomNay, gioVN, laGioHopLe, lenhNhom, tachNhom, tenNhomSo, tenNoiDungGui, type CaiDatBotGui, type SoNhom } from "@/lib/bot-gui-thuan";
 import { SO_O_DA, chiaKhoiChanDa, dongChanLq, khoKyToi, khoiChanLq, nhomChanDa } from "@/lib/da";
 
 // Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
@@ -115,7 +115,9 @@ export function helpText(isAdmin = false): string {
         "<code>/sotin 50</code> — mỗi miền chia thành bao nhiêu tin · <code>/tinphut 2</code> — mỗi phút gửi mấy tin",
         "<code>/dodaigui 2000</code> — trần ký tự một tin (500–3400)",
         "<code>/khunggio mn 15:50 16:05</code> · <code>/tiento mn 2d</code>",
-        "<i>Nhóm 2 (gửi thêm một nhóm nữa, mặc định chuỗi lô từ 15:00): thêm số 2 sau lệnh — <code>/nhomgui 2</code> (gõ trong nhóm đó), <code>/xemgui 2 mn</code>, <code>/thutk 2 Mn 2d16b1</code>, <code>/batgui 2 all</code>, <code>/guingay 2 mn</code>, <code>/noidunggui 2 lo</code>, <code>/khunggio 2 mn 15:00 16:08</code>, <code>/tiento 2 mn 2d</code></i>",
+        "<code>/noidunggui dubao</code> — gửi số dự báo theo thứ (tab Dự Báo): <code>/dubaogui tot</code> ô lời nhất của thứ hôm đó · <code>/dubaogui loi</code> gộp hết ô đang lời · <code>/socongui 10</code> (5/10/20) · <code>/diemgui 1</code>",
+        "<i>Nhóm 2 (gửi thêm một nhóm nữa, mặc định số dự báo theo thứ từ 15:00): thêm số 2 sau lệnh — <code>/nhomgui 2</code> (gõ trong nhóm đó), <code>/xemgui 2 mn</code>, <code>/thutk 2 Mn 2d16b1</code>, <code>/batgui 2 all</code>, <code>/guingay 2 mn</code>, <code>/dubaogui 2 tot</code>, <code>/diemgui 2 5</code>, <code>/khunggio 2 mn 15:00 16:08</code>, <code>/tiento 2 mn 2d</code></i>",
+        "<code>/roinhom</code> — gõ TRONG nhóm bị thêm nhầm: bot và tài khoản gửi rời nhóm đó (nếu đang là nhóm gửi 2 thì bỏ chọn)",
       ]
     : [];
   return [
@@ -666,7 +668,7 @@ function dongLichNhom(cfg: CaiDatBotGui, so: SoNhom, now: Date): string[] {
     return `<b>${TEN_NGAN[r]}</b> · ${m.bat ? "✅ BẬT" : "⭕ tắt"} · ${m.tu}–${m.den} · tiền tố <code>${esc(m.tienTo)}</code> · hôm nay ${da ? `đã gửi đủ lúc ${gioVN(new Date(cfg.daGui[r]!)).gio}` : "chưa gửi"}${doDang}`;
   });
   return [
-    `<b>📮 Nhóm gửi ${so} — ${cfg.noiDung === "lo" ? "chuỗi lô" : "số nhận đá phương án 2"}</b>${cfg.noiDung === "lo" ? "" : ` · mỗi miền ${cfg.soTin} tin · ${cfg.tinMoiPhut} tin/phút`}`,
+    `<b>📮 Nhóm gửi ${so} — ${esc(tenNoiDungGui(cfg))}</b>${cfg.noiDung === "da2" ? ` · mỗi miền ${cfg.soTin} tin · ${cfg.tinMoiPhut} tin/phút` : ""}`,
     cfg.nhom == null ? `Nhóm nhận: <b>CHƯA CHỌN</b> — vào nhóm có bot nhận rồi gõ <code>/nhomgui${so === 1 ? "" : ` ${so}`}</code>` :`Nhóm nhận: <b>${esc(cfg.tenNhom ?? String(cfg.nhom))}</b>`,
     ...dong,
   ];
@@ -699,25 +701,56 @@ export async function lichGui(): Promise<string> {
 export async function xemGui(region: Region, so: SoNhom = 1): Promise<string> {
   const cfg = await docBotGui(so);
   const xt = await xemTruocGui(region, cfg);
-  const dau = xt.noiDung === "lo" ? `chuỗi lô sẽ gửi · ${xt.soLo} lô` : `số nhận đá PA2 sẽ gửi · ${xt.soCap.toLocaleString("vi-VN")} cặp`;
+  const dau =
+    xt.noiDung === "lo"
+      ? `chuỗi lô sẽ gửi · ${xt.soLo} lô`
+      : xt.noiDung === "dubao"
+        ? `số dự báo sẽ gửi · ${xt.soLo} con × ${cfg.duBao.diem} điểm`
+        : `số nhận đá PA2 sẽ gửi · ${xt.soCap.toLocaleString("vi-VN")} cặp`;
+  const db = xt.duBao;
+  const tienVN = (x: number) => `${x >= 0 ? "+" : "−"}${(Math.abs(x) / 1e6).toFixed(1).replace(".", ",")}tr`;
   return [
-    `<b>Nhóm gửi ${so} · ${label(region)} · ${dau}</b> · ${xt.khoi.length} tin · ${xt.chuoi.length.toLocaleString("vi-VN")} ký tự${xt.noiDung === "lo" ? "" : ` · ${cfg.tinMoiPhut} tin/phút → ${Math.ceil(xt.khoi.length / cfg.tinMoiPhut)} phút`}`,
+    `<b>Nhóm gửi ${so} · ${label(region)} · ${dau}</b> · ${xt.khoi.length} tin · ${xt.chuoi.length.toLocaleString("vi-VN")} ký tự${xt.noiDung === "da2" ? ` · ${cfg.tinMoiPhut} tin/phút → ${Math.ceil(xt.khoi.length / cfg.tinMoiPhut)} phút` : ""}`,
+    db
+      ? `Kỳ ${ddmm(db.ngay)} là <b>${db.thu}</b> · ${cfg.duBao.cach === "tot" ? "ô lời nhất" : "các ô đang lời"} ở ${db.thu} (${db.soKyThu} kỳ ${db.thu} đã xổ, ${cfg.duBao.soCon} con, 1 điểm): ${db.moHinh.length ? db.moHinh.map((t, i) => `<b>${esc(t)}</b> ${tienVN(db.laiChon[i])}`).join(" · ") : "không có"}`
+      : "",
     xt.duLieu === "ok" ? "" : `<b>⚠️ ${esc(xt.duLieuChu)}</b> — lúc này bot sẽ KHÔNG tự gửi`,
     "",
     ...(xt.khoi.length
       ? [...xt.khoi.slice(0, 3).map((k, i) => `<i>tin ${i + 1}/${xt.khoi.length}</i>\n<code>${esc(k)}</code>`), ...(xt.khoi.length > 3 ? [`<i>… và ${xt.khoi.length - 3} tin nữa, cùng dạng</i>`] : [])]
-      : [xt.noiDung === "lo" ? "<i>không lô nào đang nhận</i>" : "<i>không cặp đá nào đang nhận</i>"]),
+      : [xt.noiDung === "lo" ? "<i>không lô nào đang nhận</i>" : xt.noiDung === "dubao" ? "<i>không có số dự báo (không ô nào đang lời ở thứ này)</i>" : "<i>không cặp đá nào đang nhận</i>"]),
   ].filter((x) => x !== "").join("\n");
 }
 
-/** /noidunggui [2] da2|lo — gửi số nhận đá phương án 2 hay chuỗi lô. */
+/** /noidunggui [2] da2|lo|dubao — gửi số nhận đá PA2, chuỗi lô hạn mức, hay số dự báo theo thứ. */
 async function datNoiDung(arg: string | undefined, so: SoNhom = 1): Promise<string> {
-  const nd = arg === "lo" ? "lo" : arg === "da2" || arg === "da" ? "da2" : null;
-  if (!nd) return `Cú pháp: <code>/noidunggui ${lenhNhom(so)}da2</code> (số nhận đá phương án 2) hoặc <code>/noidunggui ${lenhNhom(so)}lo</code> (chuỗi lô)`;
+  const nd = arg === "lo" ? "lo" : arg === "da2" || arg === "da" ? "da2" : arg === "dubao" || arg === "db" ? "dubao" : null;
+  if (!nd) return `Cú pháp: <code>/noidunggui ${lenhNhom(so)}dubao</code> (số dự báo theo thứ), <code>/noidunggui ${lenhNhom(so)}lo</code> (chuỗi lô hạn mức) hoặc <code>/noidunggui ${lenhNhom(so)}da2</code> (số nhận đá phương án 2)`;
   const cfg = await docBotGui(so);
   cfg.noiDung = nd;
   await luuBotGui(cfg, so);
-  return `Đã đặt nội dung gửi${tenNhomSo(so)}: <b>${nd === "lo" ? "chuỗi lô" : "số nhận đá phương án 2"}</b>.\n\n${await lichGui()}`;
+  return `Đã đặt nội dung gửi${tenNhomSo(so)}: <b>${esc(tenNoiDungGui(cfg))}</b>.\n\n${await lichGui()}`;
+}
+
+/** /dubaogui [2] tot|loi · /socongui [2] 5|10|20 · /diemgui [2] N — số dự báo gửi đi chọn ô nào, mấy con, mấy điểm. */
+async function datDuBaoGui(viec: "cach" | "soCon" | "diem", arg: string | undefined, so: SoNhom = 1): Promise<string> {
+  const cfg = await docBotGui(so);
+  if (viec === "cach") {
+    const c = arg === "tot" || arg === "lointhat" || arg === "1" ? "tot" : arg === "loi" || arg === "het" || arg === "gop" ? "loi" : null;
+    if (!c) return `Cú pháp: <code>/dubaogui ${lenhNhom(so)}tot</code> (ô lời nhất của thứ hôm đó) hoặc <code>/dubaogui ${lenhNhom(so)}loi</code> (gộp hết ô đang lời)`;
+    cfg.duBao.cach = c;
+  } else if (viec === "soCon") {
+    const n = Number(arg);
+    if (![5, 10, 20].includes(n)) return `Cú pháp: <code>/socongui ${lenhNhom(so)}10</code> (mỗi mô hình 5, 10 hoặc 20 con — như nút trên tab Dự Báo)`;
+    cfg.duBao.soCon = n;
+  } else {
+    const n = Number(arg);
+    if (!Number.isInteger(n) || n < 1 || n > 9999) return `Cú pháp: <code>/diemgui ${lenhNhom(so)}1</code> (mỗi con 1–9.999 điểm)`;
+    cfg.duBao.diem = n;
+  }
+  await luuBotGui(cfg, so);
+  const nhac = cfg.noiDung === "dubao" ? "" : `\n<i>Nhóm này đang gửi ${esc(tenNoiDungGui(cfg))}; muốn gửi số dự báo thì gõ <code>/noidunggui ${lenhNhom(so)}dubao</code>.</i>`;
+  return `Đã đặt số dự báo gửi${tenNhomSo(so)}: <b>${esc(tenNoiDungGui({ noiDung: "dubao", duBao: cfg.duBao }))}</b>.${nhac}\nXem trước: <code>/xemgui ${lenhNhom(so)}mn</code>`;
 }
 
 /** /sotin [2] N — mỗi miền chia thành N tin. */
@@ -1141,6 +1174,19 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
       if (!isAdmin) break;
       const { so, con } = tachNhom(args);
       return datNoiDung(con[0], so);
+    }
+
+    case "/dubaogui": {
+      if (!isAdmin) break;
+      const { so, con } = tachNhom(args);
+      return datDuBaoGui("cach", con[0], so);
+    }
+
+    case "/socongui":
+    case "/diemgui": {
+      if (!isAdmin) break;
+      const { so, con } = tachNhom(args, true);
+      return datDuBaoGui(cmd === "/socongui" ? "soCon" : "diem", con[0], so);
     }
 
     case "/dodaigui":

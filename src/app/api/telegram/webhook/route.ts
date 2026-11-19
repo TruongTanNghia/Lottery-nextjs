@@ -16,14 +16,16 @@ import {
   answerCallback,
   editMessageText,
   esc,
+  leaveChat,
   sendMessage,
   type TelegramCallback,
   type TelegramMessage,
 } from "@/lib/telegram";
+import { coTaiKhoanGui, roiNhomBangTaiKhoan } from "@/lib/tele-user";
 import { answer } from "@/lib/telegram-commands";
 import { adminIds, canUse, isAdmin, requestAccess, setStatus } from "@/lib/telegram-users";
 import { docBotGui, luuBotGui } from "@/lib/bot-gui";
-import type { SoNhom } from "@/lib/bot-gui-thuan";
+import { tenNoiDungGui, type SoNhom } from "@/lib/bot-gui-thuan";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -93,11 +95,51 @@ async function handleMessage(msg: TelegramMessage, text: string) {
       await luuBotGui(cfg, so);
       const khac = await docBotGui(so === 1 ? 2 : 1);
       const trung = khac.nhom === chatId ? `\n⚠️ Nhóm này cũng đang là nhóm ${so === 1 ? 2 : 1} — hai nhóm cùng bật thì tin vào đây hai lần.` : "";
-      const noi = cfg.noiDung === "lo" ? "chuỗi lô" : "số nhận đá PA2";
+      const noi = tenNoiDungGui(cfg);
       await sendMessage(
         chatId,
         `✅ Đã chọn ${msg.chat.type === "private" ? "chat này" : "nhóm này"} làm nhóm gửi ${so} (gửi ${noi}). Các miền vẫn TẮT cho tới khi bật: /batgui ${so === 1 ? "" : "2 "}all. Xem lịch: /lichgui${trung}`,
         { replyTo: msg.message_id }
+      );
+      return;
+    }
+    // /roinhom: khách 19/11 "nãy em cho vào lộn nhóm… anh huỷ bot ở nhóm hồi nãy dùm em".
+    // Gõ TRONG nhóm nhầm: bot Gà Con và tài khoản gửi cùng rời nhóm; nếu nhóm đó đang
+    // là nhóm gửi 2 thì bỏ chọn và tắt. Không bao giờ rời nhóm gửi 1 (đá PA2 đang chạy).
+    if (/^\/roinhom(?:@\w+)?\s*$/i.test(text)) {
+      if (!msg.from || !isAdmin(msg.from.id)) {
+        await sendMessage(chatId, "Chỉ quản trị mới cho bot rời nhóm được.", { replyTo: msg.message_id });
+        return;
+      }
+      if (msg.chat.type === "private") {
+        await sendMessage(chatId, "Gõ <code>/roinhom</code> TRONG nhóm muốn bot rời.", { replyTo: msg.message_id });
+        return;
+      }
+      const [c1, c2] = await Promise.all([docBotGui(1), docBotGui(2)]);
+      if (c1.nhom === chatId) {
+        await sendMessage(chatId, "Đây là nhóm gửi 1 (đá PA2 đang chạy) nên bot KHÔNG rời. Muốn đổi nhóm 1 thì gõ <code>/nhomgui</code> trong nhóm mới trước.", { replyTo: msg.message_id });
+        return;
+      }
+      let boChon = false;
+      if (c2.nhom === chatId) {
+        c2.nhom = null;
+        c2.tenNhom = null;
+        for (const r of ["xsmn", "xsmt", "xsmb"] as const) c2.mien[r].bat = false;
+        await luuBotGui(c2, 2);
+        boChon = true;
+      }
+      const ten = msg.chat.title ?? String(chatId);
+      await sendMessage(chatId, `👋 Theo lệnh quản trị, bot Gà Con${coTaiKhoanGui() ? " và tài khoản gửi" : ""} rời nhóm này.`);
+      const tk = coTaiKhoanGui() ? await roiNhomBangTaiKhoan(chatId) : null;
+      const bot = await leaveChat(chatId);
+      await sendMessage(
+        msg.from.id,
+        [
+          `<b>Rời nhóm "${esc(ten)}"</b>`,
+          `Bot Gà Con: ${bot.ok ? "đã rời" : `KHÔNG rời được — ${esc(bot.loi ?? "")}`}`,
+          tk ? `Tài khoản gửi: ${tk.ok ? (tk.loi ? esc(tk.loi) : "đã rời") : `KHÔNG rời được — ${esc(tk.loi ?? "")} (nhờ chủ nhóm xoá tay)`}` : "Tài khoản gửi: chưa cài nên không có gì để rời",
+          boChon ? "Nhóm này đang là nhóm gửi 2 → đã bỏ chọn và tắt. Vào nhóm đúng gõ <code>/nhomgui 2</code>." : "Nhóm này không phải nhóm gửi nào.",
+        ].join("\n")
       );
       return;
     }

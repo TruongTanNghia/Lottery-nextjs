@@ -250,7 +250,18 @@ export default function DuBaoPage({ region }: { region: Region }) {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
                   <O nhan="Chơi thật: chọn mô hình theo thứ, đi tới" gt={dau(pt.theoThu.diToi.lai)} phu={`${pt.theoThu.diToi.kyAn} ăn / ${pt.theoThu.diToi.kyThua} thua trong ${so(pt.theoThu.diToi.soKy)} kỳ · may rủi đuổi kịp ${pct(pt.theoThu.diToi.mayRui)}`} m={mau(pt.theoThu.diToi.lai)} />
                   <O nhan="Nhìn lại: biết trước rồi chọn" gt={dau(pt.theoThu.laiNhinLai)} phu="chọn sau khi đã biết kết quả 3 năm, chỉ là mốc trên, không đánh được" m="#cbd5e1" />
-                  <O nhan="Kỳ tới cách này sẽ chơi" gt={pt.theoThu.kyToi ? `${TEN_THU[pt.theoThu.kyToi.thu]} · ${pt.theoThu.kyToi.ten}` : "—"} phu={pt.theoThu.kyToi ? `${ddmmyy(pt.theoThu.kyToi.date)} · mô hình đang ăn nhất ở ${TEN_THU[pt.theoThu.kyToi.thu]} tính đến hôm nay` : ""} m="#c4b5fd" />
+                  <div data-dubao-thu-ky-toi-so={kyToi && pt.theoThu.kyToi ? [...kyToi.chon[pt.theoThu.kyToi.moHinh].slice(0, n)].sort().join(" ") : ""}>
+                    <O
+                      nhan="Kỳ tới cách này sẽ chơi"
+                      gt={pt.theoThu.kyToi ? `${TEN_THU[pt.theoThu.kyToi.thu]} · ${pt.theoThu.kyToi.ten}` : "—"}
+                      phu={
+                        pt.theoThu.kyToi && kyToi
+                          ? `${ddmmyy(pt.theoThu.kyToi.date)} · ô lời nhất ở ${TEN_THU[pt.theoThu.kyToi.thu]} tính đến hôm nay · số: ${[...kyToi.chon[pt.theoThu.kyToi.moHinh].slice(0, n)].sort().join(" ")}. Bot gửi nhóm 2 tự chọn đúng ô này mỗi ngày (theo số con cài cho bot, mặc định 10).`
+                          : ""
+                      }
+                      m="#c4b5fd"
+                    />
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-[0.68rem]" data-dubao-bang-thu>

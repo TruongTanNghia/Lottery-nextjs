@@ -13,7 +13,7 @@ import { POSITIONS, STAKE_PRICE, WIN_PER_POINT } from "../src/lib/exposure";
 import {
   CAC_MO_HINH, CUA_SO, LOS, chamKy, chayDuBao, chonKy, chuoiDanh, dao, docDiem, docTienTo, duBaoKyToi, laiKyVongMoiDiem, mhChuyenTiep, mhDao, mhDiCap, mhGan, mhLienTiep,
   mhNongLen, mhTheoThu, mhVeGan, mhVeNhieu, nhayCanDeLoi, nhayKyVong, phanPhoiMayRui, phanTichDuBao, phanTichTheoThu, thuCuaNgay, xacSuatMayRui, xepHang,
-  KY_TOI_THIEU_THU, TEN_THU, type TongKetMoHinh, gopDiToi, gopNhinLai, gopSo, khoaO, oDangLoi, phanPhoiMayRuiCoCo,
+  KY_TOI_THIEU_THU, TEN_THU, type TongKetMoHinh, gopDiToi, gopNhinLai, gopSo, khoaO, oDangLoi, phanPhoiMayRuiCoCo, soGuiTheoThu,
 } from "../src/lib/du-bao";
 import type { Region } from "../src/lib/types";
 
@@ -218,6 +218,26 @@ console.log("\n===== 7. Gộp số từ ô chọn (mô hình × thứ) =====");
   const pt3 = phanTichDuBao(chayDuBao(cs3, "xsmn"), cs3, 10, "xsmn");
   const dtNgau = gopDiToi(pt3.moHinh, 1, "xsmn", new Map(cs3.map((d) => [d.date, d])), 200, 9);
   ok("đi tới trên dữ liệu ngẫu nhiên: có đánh, lãi = cộng từng kỳ, may rủi trong (0,1]", dtNgau.soKyDanh > 0 && dtNgau.lai === dtNgau.ky.reduce((x, k) => x + k.lai, 0) && dtNgau.mayRui > 0 && dtNgau.mayRui <= 1, dtNgau.soKyDanh + " kỳ, p=" + dtNgau.mayRui.toFixed(3));
+}
+
+console.log("\n===== 8. Số bot gửi theo thứ (khách 19/11: thứ nào gửi ô lời nhất của thứ đó) =====");
+{
+  const cs = lichSu(CUA_SO + 210);
+  for (const n of [5, 10]) {
+    const pt = phanTichDuBao(chayDuBao(cs, "xsmn"), cs, n, "xsmn", 20261110, ngay(CUA_SO + 210));
+    const g = soGuiTheoThu(cs, "xsmn", "tot", n)!, gl = soGuiTheoThu(cs, "xsmn", "loi", n)!;
+    const toi = duBaoKyToi(cs, "xsmn")!;
+    ok("N=" + n + ": kỳ tới = ngày cuối + 1, đúng thứ; đã chấm 30 kỳ cùng thứ (210 kỳ / 7)", g.ngay === ngay(CUA_SO + 210) && g.thu === thuCuaNgay(g.ngay) && g.soKyThu === 30, g.ngay + " " + TEN_THU[g.thu] + " " + g.soKyThu);
+    ok("N=" + n + ": lãi từng mô hình ở thứ đó = đúng cột của bảng Theo thứ trên tab", g.laiThu.every((x, k) => x.lai === pt.theoThu.bang[k].thu[g.thu].lai));
+    ok("N=" + n + ": 'tot' chọn đúng mô hình tab ghi 'kỳ tới cách này sẽ chơi' (ô ★ của cột)", g.moHinh.length === 1 && g.moHinh[0] === pt.theoThu.kyToi!.moHinh, g.moHinh[0]);
+    ok("N=" + n + ": 'tot' gửi đúng " + n + " con dự báo kỳ tới của mô hình đó, sắp tăng dần", g.con.join() === [...toi.chon[g.moHinh[0]].slice(0, n)].sort().join());
+    ok("N=" + n + ": 'loi' = đúng các ô đang lời của cột (oDangLoi), con = gộp số của chúng", gl.moHinh.join() === oDangLoi(pt.theoThu.bang, g.thu).join() && gl.con.join() === gopSo(gl.moHinh.map((m) => [m, toi.chon[m].slice(0, n)])).map((x) => x.lo).sort().join(), gl.moHinh.length + " mô hình, " + gl.con.length + " con");
+  }
+  // Mới có dưới 10 kỳ cùng thứ: dùng tổng hợp (như 'đi tới'); 'loi' thì không gửi gì
+  const it = lichSu(CUA_SO + 30);
+  const g = soGuiTheoThu(it, "xsmn", "tot", 10)!, gl = soGuiTheoThu(it, "xsmn", "loi", 10)!;
+  ok("dưới " + KY_TOI_THIEU_THU + " kỳ cùng thứ: 'tot' dùng tổng hợp, 'loi' rỗng; kho dưới 60 kỳ → null", g.soKyThu < KY_TOI_THIEU_THU && g.moHinh.join() === "tongHop" && gl.moHinh.length === 0 && gl.con.length === 0 && soGuiTheoThu(lichSu(40), "xsmn", "tot", 10) === null);
+  ok("kho đưa vào lộn thứ tự vẫn ra cùng kết quả", JSON.stringify(soGuiTheoThu([...cs].reverse(), "xsmn", "tot", 10)) === JSON.stringify(soGuiTheoThu(cs, "xsmn", "tot", 10)));
 }
 
 console.log(`\n### ${pass} DAT - ${fail} HONG ###`);
