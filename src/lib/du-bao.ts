@@ -727,3 +727,65 @@ export function soGuiTheoThu(draws: DrawHits[], region: Region, cach: CachGui, n
   const con = gopSo(moHinh.map((m) => [m, toi.chon[m].slice(0, n)])).map((g) => g.lo).sort();
   return { ngay: toi.date, thu: t, cach, n, soKyThu, laiThu: CAC_MO_HINH.map((m) => ({ moHinh: m.khoa, ten: m.ten, lai: lai.get(m.khoa)! })), moHinh, con };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cài đặt tab Dự Báo LƯU TRÊN MÁY CHỦ, và bot gửi theo ô đã chọn — khách 20/11:
+// "phần dự đoán chưa lưu được số tiền và cách chơi; em lựa 20 số và cài tiền thì
+// lúc sau vào lại reset như cũ", "thứ nào, ô nào em chọn thì bot gửi; vd T6 em
+// chọn ô thứ 6 thì bot gửi ô của T6 thôi", "ô tiền em cài máy lưu giùm".
+// Mỗi miền một bộ: ô chọn (mô hình × thứ), số con, điểm, tiền tố chuỗi copy, lọc
+// "lấy con được từ k mô hình". Tab đọc/ghi qua /api/config/dubao; bot đọc đúng
+// bộ này để gửi y như khung "Gộp số" của tab.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CaiDatDuBaoTab {
+  /** Ô đã chọn, dạng khoaO: "frequency:5". */
+  o: string[];
+  soCon: number;
+  diem: number;
+  /** Tiền tố chuỗi copy trên tab; null = theo miền ("2d", Bắc "mb "). */
+  tienTo: string | null;
+  /** Lọc: chỉ lấy con được từ ngần này mô hình trở lên (1–5). */
+  tu: number;
+}
+export const CAI_DAT_DU_BAO_MAC_DINH: CaiDatDuBaoTab = { o: [], soCon: SO_CON_MAC_DINH, diem: 1, tienTo: null, tu: 1 };
+
+const KHOA_MO_HINH = new Set<string>(CAC_MO_HINH.map((m) => m.khoa));
+/** Dọn một bộ cài đặt đọc từ ngoài (trình duyệt hay DB): thứ gì lạ thì về mặc định, ô lạ thì bỏ. */
+export function chuanHoaCaiDatDuBao(raw: unknown): CaiDatDuBaoTab {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const oChon = Array.isArray(o.o)
+    ? [...new Set(o.o.filter((x): x is string => typeof x === "string" && /^[a-zA-Z]+:[0-6]$/.test(x) && KHOA_MO_HINH.has(x.split(":")[0])))].sort()
+    : [];
+  const soCon = Number(o.soCon), diem = Number(o.diem), tu = Number(o.tu);
+  return {
+    o: oChon,
+    soCon: (CAC_SO_CON as readonly number[]).includes(soCon) ? soCon : CAI_DAT_DU_BAO_MAC_DINH.soCon,
+    diem: Number.isInteger(diem) && diem >= 1 && diem <= 9999 ? diem : 1,
+    tienTo: typeof o.tienTo === "string" && o.tienTo.length <= 20 ? o.tienTo : null,
+    tu: Number.isInteger(tu) && tu >= 1 && tu <= 5 ? tu : 1,
+  };
+}
+
+export interface SoGuiTheoO {
+  /** Ngày kỳ tới = kỳ cuối + 1. */
+  ngay: string;
+  thu: number;
+  /** Mô hình có ô được chọn ở cột thứ của kỳ tới, theo thứ tự CAC_MO_HINH. */
+  moHinh: MoHinh[];
+  /** Lọc thật sự dùng (như tab: không vượt số mô hình đã chọn). */
+  tu: number;
+  /** Con gộp, ĐÚNG thứ tự khung "Gộp số" trên tab (nhiều mô hình chọn trước, rồi con nhỏ trước). */
+  con: ConGop[];
+}
+
+/** Số bot gửi theo ô đã chọn: y như khung "Gộp số từ các ô đã chọn · kỳ tới" của tab. */
+export function soGuiTheoO(draws: DrawHits[], region: Region, cd: CaiDatDuBaoTab): SoGuiTheoO | null {
+  const toi = duBaoKyToi(draws, region);
+  if (!toi) return null;
+  const thu = thuCuaNgay(toi.date);
+  const chon = new Set(cd.o);
+  const moHinh = CAC_MO_HINH.map((m) => m.khoa).filter((k) => chon.has(khoaO(k, thu)));
+  const tu = Math.max(1, Math.min(cd.tu, Math.max(1, moHinh.length)));
+  return { ngay: toi.date, thu, moHinh, tu, con: gopSo(moHinh.map((m) => [m, toi.chon[m].slice(0, cd.soCon)]), tu) };
+}

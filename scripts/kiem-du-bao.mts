@@ -13,7 +13,7 @@ import { POSITIONS, STAKE_PRICE, WIN_PER_POINT } from "../src/lib/exposure";
 import {
   CAC_MO_HINH, CUA_SO, LOS, chamKy, chayDuBao, chonKy, chuoiDanh, dao, docDiem, docTienTo, duBaoKyToi, laiKyVongMoiDiem, mhChuyenTiep, mhDao, mhDiCap, mhGan, mhLienTiep,
   mhNongLen, mhTheoThu, mhVeGan, mhVeNhieu, nhayCanDeLoi, nhayKyVong, phanPhoiMayRui, phanTichDuBao, phanTichTheoThu, thuCuaNgay, xacSuatMayRui, xepHang,
-  KY_TOI_THIEU_THU, TEN_THU, type TongKetMoHinh, gopDiToi, gopNhinLai, gopSo, khoaO, oDangLoi, phanPhoiMayRuiCoCo, soGuiTheoThu,
+  KY_TOI_THIEU_THU, TEN_THU, type TongKetMoHinh, gopDiToi, gopNhinLai, gopSo, khoaO, oDangLoi, phanPhoiMayRuiCoCo, soGuiTheoThu, soGuiTheoO, chuanHoaCaiDatDuBao,
 } from "../src/lib/du-bao";
 import type { Region } from "../src/lib/types";
 
@@ -238,6 +238,26 @@ console.log("\n===== 8. Số bot gửi theo thứ (khách 19/11: thứ nào gử
   const g = soGuiTheoThu(it, "xsmn", "tot", 10)!, gl = soGuiTheoThu(it, "xsmn", "loi", 10)!;
   ok("dưới " + KY_TOI_THIEU_THU + " kỳ cùng thứ: 'tot' dùng tổng hợp, 'loi' rỗng; kho dưới 60 kỳ → null", g.soKyThu < KY_TOI_THIEU_THU && g.moHinh.join() === "tongHop" && gl.moHinh.length === 0 && gl.con.length === 0 && soGuiTheoThu(lichSu(40), "xsmn", "tot", 10) === null);
   ok("kho đưa vào lộn thứ tự vẫn ra cùng kết quả", JSON.stringify(soGuiTheoThu([...cs].reverse(), "xsmn", "tot", 10)) === JSON.stringify(soGuiTheoThu(cs, "xsmn", "tot", 10)));
+}
+
+console.log("\n===== 9. Cài đặt tab lưu máy chủ + bot gửi theo ô chọn (khách 20/11) =====");
+{
+  const a = chuanHoaCaiDatDuBao({ o: ["frequency:5", "poisson:5", "frequency:5", "xyz:1", "pair:9", 3], soCon: 20, diem: 15, tienTo: "2d", tu: 2 });
+  ok("dọn cài đặt: bỏ ô trùng / mô hình lạ / thứ lạ, giữ 20 con, 15 điểm, tiền tố, lọc 2", a.o.join() === "frequency:5,poisson:5" && a.soCon === 20 && a.diem === 15 && a.tienTo === "2d" && a.tu === 2);
+  const b = chuanHoaCaiDatDuBao({ soCon: 7, diem: 0, tu: 9, tienTo: 5 });
+  ok("dọn cài đặt: 7 con / 0 điểm / lọc 9 / tiền tố số → 10 con, 1 điểm, lọc 1, tiền tố theo miền (null); rỗng → mặc định", b.soCon === 10 && b.diem === 1 && b.tu === 1 && b.tienTo === null && JSON.stringify(chuanHoaCaiDatDuBao(null)) === JSON.stringify({ o: [], soCon: 10, diem: 1, tienTo: null, tu: 1 }));
+  const cs = lichSu(CUA_SO + 30);
+  const toi = duBaoKyToi(cs, "xsmn")!, t = thuCuaNgay(toi.date), t2 = (t + 1) % 7;
+  const cd = chuanHoaCaiDatDuBao({ o: ["frequency:" + t, "recency:" + t, "poisson:" + t2], soCon: 20, diem: 3, tu: 1 });
+  const g = soGuiTheoO(cs, "xsmn", cd)!;
+  const tay = gopSo([["frequency", toi.chon.frequency.slice(0, 20)], ["recency", toi.chon.recency.slice(0, 20)]], 1);
+  ok("theo ô chọn: chỉ lấy ô ở cột thứ của kỳ tới (" + TEN_THU[t] + "), bỏ ô cột khác; con = gộp 20 con của 2 mô hình, ĐÚNG thứ tự khung Gộp số", g.thu === t && g.moHinh.join() === "frequency,recency" && JSON.stringify(g.con) === JSON.stringify(tay), g.con.length + " con");
+  const g2 = soGuiTheoO(cs, "xsmn", { ...cd, tu: 2 })!;
+  ok("lọc 'từ 2 mô hình': chỉ con cả hai cùng chọn", g2.tu === 2 && g2.con.every((x) => x.moHinh.length === 2) && g2.con.length === tay.filter((x) => x.moHinh.length >= 2).length);
+  const g3 = soGuiTheoO(cs, "xsmn", { ...cd, o: ["frequency:" + t], tu: 3 })!;
+  ok("chọn 1 ô mà lọc 3: lọc tự hạ về 1 (như tab), vẫn đủ 20 con", g3.tu === 1 && g3.con.length === 20);
+  const g4 = soGuiTheoO(cs, "xsmn", { ...cd, o: ["poisson:" + t2] })!;
+  ok("không chọn ô nào ở cột kỳ tới: không có mô hình, không con nào", g4.moHinh.length === 0 && g4.con.length === 0);
 }
 
 console.log(`\n### ${pass} DAT - ${fail} HONG ###`);

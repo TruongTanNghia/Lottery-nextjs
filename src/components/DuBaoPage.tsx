@@ -10,7 +10,7 @@
  * ngẫu nhiên. Có số dự báo kỳ tới, chuỗi gửi, và bảng "số dự báo – số ra"
  * từng kỳ. Chỉ đọc; không chạm tab nào khác.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DrawHits } from "@/lib/backtest";
 import {
   CAC_MO_HINH, CAC_SO_CON, CUA_SO, KY_TOI_THIEU_THU, NGUONG_MAY_RUI, SO_CON_MAC_DINH, SO_MO_PHONG, TEN_THU, chayDuBao, chuoiDanh, docDiem, docTienTo, duBaoKyToi, gopDiToi, gopNhinLai, gopSo, khoaO, nhayCanDeLoi, nhayKyVong, oDangLoi, phanTichDuBao, sapXep, thuCuaNgay,
@@ -55,7 +55,7 @@ export default function DuBaoPage({ region }: { region: Region }) {
 
   useEffect(() => {
     let huy = false;
-    setDraws(null); setKho(null); setLoi(null); setKyDuBao(null); setTienDo(null); setXemHet(false); setTienTo(TIEN_TO_NHAN_MAC_DINH[region]);
+    setDraws(null); setKho(null); setLoi(null); setKyDuBao(null); setTienDo(null); setXemHet(false);
     (async () => {
       try {
         const [rDai, rMoi] = await Promise.all([fetch(`/kho-dai/${region}.json`, { cache: "no-store" }), fetch(`/api/history/hits?region=${region}`, { cache: "no-store" })]);
@@ -123,19 +123,65 @@ export default function DuBaoPage({ region }: { region: Region }) {
   };
 
   // Ô chọn (mô hình × thứ) — khách 16/11: "chọn hết các ô đang lời thì được tầm bao nhiêu số; bấm cho mình chọn".
-  // Nhớ theo miền trên máy người xem (chỉ là tiện, mất cũng không sao).
+  // Khách 20/11: "vào lại máy lại reset như cũ", "ô tiền em cài máy lưu giùm", "ô nào em chọn thì bot gửi" →
+  // ô chọn, số con, điểm, tiền tố, lọc đều LƯU TRÊN MÁY CHỦ theo miền (/api/config/dubao); bot gửi nhóm 2 đọc đúng bộ này.
   const [oChon, setOChon] = useState<Set<string>>(new Set());
   const [tuMh, setTuMh] = useState(1);
   const [daCopyGop, setDaCopyGop] = useState(false);
-  useEffect(() => {
-    try { const s = localStorage.getItem(`dubao-o-chon:${region}`); setOChon(new Set(s ? (JSON.parse(s) as string[]) : [])); } catch { setOChon(new Set()); }
-    setTuMh(1);
-  }, [region]);
-  const doiO = (f: (s: Set<string>) => Set<string>) => {
-    const x = f(new Set(oChon));
-    setOChon(x);
-    try { localStorage.setItem(`dubao-o-chon:${region}`, JSON.stringify([...x])); } catch { /* không lưu được thì thôi */ }
+  const [daTai, setDaTai] = useState(false);
+  const [luuTT, setLuuTT] = useState<{ tt: "dang" | "da" | "loi"; luc?: string | null } | null>(null);
+  const daLuu = useRef("");
+  const choLuu = useRef<{ region: Region; body: string; hen: ReturnType<typeof setTimeout> } | null>(null);
+  const regionNay = useRef(region);
+  regionNay.current = region;
+  const thanLuu = (rg: Region, o: Set<string>, soCon: number, diem: number, tt: string, tu: number) =>
+    JSON.stringify({ o: [...o].sort(), soCon, diem, tienTo: tt === TIEN_TO_NHAN_MAC_DINH[rg] ? null : tt, tu });
+  const guiLuu = async (rg: Region, body: string) => {
+    if (rg === regionNay.current) setLuuTT({ tt: "dang" });
+    try {
+      const r = await fetch(`/api/config/dubao?region=${rg}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body });
+      if (!r.ok) throw new Error(String(r.status));
+      const j = await r.json();
+      if (rg === regionNay.current) { daLuu.current = body; setLuuTT({ tt: "da", luc: j?.data?.luuLuc ?? null }); }
+    } catch {
+      if (rg === regionNay.current) setLuuTT({ tt: "loi" });
+    }
   };
+  // Đổi miền: lưu ngay phần đang chờ của miền cũ, rồi tải cài đặt của miền mới.
+  useEffect(() => {
+    if (choLuu.current) { clearTimeout(choLuu.current.hen); void guiLuu(choLuu.current.region, choLuu.current.body); choLuu.current = null; }
+    let huy = false;
+    setDaTai(false); setLuuTT(null);
+    (async () => {
+      let cd = { o: [] as string[], soCon: SO_CON_MAC_DINH, diem: 1, tienTo: null as string | null, tu: 1, luuLuc: null as string | null };
+      try {
+        const r = await fetch(`/api/config/dubao?region=${region}`, { cache: "no-store" });
+        if (r.ok) cd = { ...cd, ...((await r.json())?.data ?? {}) };
+      } catch { /* không tải được: dùng mặc định, vẫn cho lưu */ }
+      if (huy) return;
+      const tt = cd.tienTo ?? TIEN_TO_NHAN_MAC_DINH[region];
+      const o = new Set(cd.o);
+      setOChon(o); setN(cd.soCon); setDiemNhap(String(cd.diem)); setTienTo(tt); setTuMh(cd.tu);
+      daLuu.current = thanLuu(region, o, cd.soCon, cd.diem, tt, cd.tu);
+      setLuuTT(cd.luuLuc ? { tt: "da", luc: cd.luuLuc } : null);
+      setDaTai(true);
+    })();
+    return () => { huy = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [region]);
+  // Mỗi lần đổi: chờ 0,7 giây không đổi nữa thì lưu (điểm gõ bậy thì chưa lưu).
+  useEffect(() => {
+    if (!daTai) return;
+    const d = docDiem(diemNhap);
+    if (d.loi) return;
+    const body = thanLuu(region, oChon, n, d.diem, tienTo, tuMh);
+    if (body === daLuu.current) { if (choLuu.current) { clearTimeout(choLuu.current.hen); choLuu.current = null; } return; }
+    if (choLuu.current) clearTimeout(choLuu.current.hen);
+    const rg = region;
+    choLuu.current = { region: rg, body, hen: setTimeout(() => { choLuu.current = null; void guiLuu(rg, body); }, 700) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [daTai, oChon, n, diemNhap, tienTo, tuMh]);
+  const doiO = (f: (s: Set<string>) => Set<string>) => setOChon(f(new Set(oChon)));
   const batO = (m: MoHinh, t: number) => doiO((s) => { const k = khoaO(m, t); if (s.has(k)) s.delete(k); else s.add(k); return s; });
   /** Bấm tên cột: chọn đúng các ô đang lời của cột; bấm lần nữa (đã chọn đủ) thì bỏ cả cột. */
   const chonCot = (t: number, epChon = false) => {
@@ -158,6 +204,25 @@ export default function DuBaoPage({ region }: { region: Region }) {
   const copyGop = async () => {
     try { await navigator.clipboard.writeText(chuoiGop); setDaCopyGop(true); setTimeout(() => setDaCopyGop(false), 1500); } catch { /* không có clipboard */ }
   };
+  const gioLuu = (iso?: string | null) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+  };
+  /** Dòng "đã lưu": khách 20/11 sợ vào lại bị reset — nói rõ đã lưu lúc nào, và bot gửi theo đúng bộ này. */
+  const dongLuu = (
+    <div className="text-[0.68rem] leading-snug" data-dubao-luu={!daTai ? "tai" : luuTT?.tt ?? "chua"} style={{ color: luuTT?.tt === "loi" ? "#ffd24a" : "#a5b4fc" }}>
+      {!daTai
+        ? "Đang tải cài đặt đã lưu…"
+        : luuTT?.tt === "dang"
+          ? "☁ Đang lưu…"
+          : luuTT?.tt === "loi"
+            ? "⚠ Lưu không được (mạng?) — đổi lại một ô hay số bất kỳ để lưu lại."
+            : luuTT?.tt === "da"
+              ? `☁ Đã lưu lúc ${gioLuu(luuTT.luc)} — vào lại vẫn giữ ô chọn, số con, điểm. Bot gửi nhóm 2 gửi đúng khung Gộp số này.`
+              : "☁ Ô chọn, số con, điểm, tiền tố, lọc: đổi là tự lưu theo miền."}
+    </div>
+  );
 
   return (
     <div className="space-y-4 md:space-y-6" data-dubao>
@@ -311,6 +376,7 @@ export default function DuBaoPage({ region }: { region: Region }) {
                       <button onClick={() => chonCot(thuToi, true)} data-dubao-gop-chon-het className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#7c3aed] text-white">Chọn hết ô đang lời ở {TEN_THU[thuToi]}</button>
                       <button onClick={() => doiO(() => new Set())} data-dubao-gop-bo-het className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white/[0.09] text-[#c2d4ea] hover:bg-white/[0.16]">Bỏ chọn hết</button>
                     </div>
+                    {dongLuu}
                     {mhChonToi.length === 0 ? (
                       <p className="text-[0.74rem] text-[var(--text-secondary)]" data-dubao-gop-trong>
                         Chưa chọn ô nào ở cột {TEN_THU[thuToi]}. Kỳ tới là {TEN_THU[thuToi]} nên chỉ ô cột {TEN_THU[thuToi]} được tính; ô các cột khác máy nhớ sẵn cho các ngày đó.
@@ -414,6 +480,7 @@ export default function DuBaoPage({ region }: { region: Region }) {
                         Số nhỏ góc phải = bao nhiêu trong {CAC_MO_HINH.length} mô hình cùng chọn con đó.{" "}
                         {dongThuanCao.length ? <>Được từ 4 mô hình trở lên: <b className="text-white numeric">{dongThuanCao.map(([lo, c]) => `${lo} (${c})`).join(", ")}</b>.</> : "Không con nào được từ 4 mô hình trở lên."}
                       </div>
+                      {dongLuu}
                       <div className="flex flex-wrap items-end gap-2" data-dubao-o-nhap>
                         <label className="flex flex-col gap-0.5">
                           <span className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">Điểm mỗi con</span>

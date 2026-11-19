@@ -27,14 +27,21 @@ export interface KhungGio {
  * "dubao" = số dự báo theo thứ của tab Dự Báo (khách 19/11, nhóm 2).
  */
 export type NoiDungGui = "lo" | "da2" | "dubao";
-/** Số dự báo gửi đi: chọn ô nào ("tot" = ô lời nhất của thứ hôm đó, "loi" = gộp hết ô đang lời), mỗi mô hình mấy con, mỗi con mấy điểm. */
+/**
+ * Số dự báo gửi đi, chọn ô nào:
+ *  - "chon" (mặc định từ 20/11 — khách: "thứ nào, ô nào em chọn thì bot gửi"): đúng các ô khách
+ *    chọn ở cột thứ hôm đó trên tab Dự Báo, cùng số con, điểm, lọc khách đã lưu trên tab;
+ *  - "tot" = ô lời nhất của thứ hôm đó; "loi" = gộp hết ô đang lời (hai cách này dùng soCon, diem dưới).
+ */
 export interface CaiDatDuBaoGui {
-  cach: "tot" | "loi";
+  cach: "chon" | "tot" | "loi";
   soCon: number;
   diem: number;
+  /** Phiên bản cấu hình — xem chuanHoaDuBao. */
+  v: 2;
 }
 export const SO_CON_GUI = [5, 10, 20] as const;
-export const DU_BAO_GUI_MAC_DINH: CaiDatDuBaoGui = { cach: "tot", soCon: 10, diem: 1 };
+export const DU_BAO_GUI_MAC_DINH: CaiDatDuBaoGui = { cach: "chon", soCon: 10, diem: 1, v: 2 };
 /** Mỗi tin dài tối đa ngần này ký tự — "chia tin ngắn lại". Telegram cho 4.096; để dư cho an toàn. */
 export const DO_DAI_TIN_MAC_DINH = 2000;
 export const DO_DAI_TIN_MIN = 500;
@@ -127,6 +134,7 @@ export function tenNoiDungGui(cfg: Pick<CaiDatBotGui, "noiDung" | "duBao">): str
   if (cfg.noiDung === "lo") return "chuỗi lô (hạn mức)";
   if (cfg.noiDung === "da2") return "số nhận đá phương án 2";
   const d = cfg.duBao;
+  if (d.cach === "chon") return "số dự báo theo ô anh chọn trên tab Dự Báo (cột thứ hôm đó; số con, điểm, lọc theo tab)";
   return `số dự báo theo thứ (${d.cach === "tot" ? "ô lời nhất của thứ hôm đó" : "gộp hết ô đang lời của thứ hôm đó"}, ${d.soCon} con × ${d.diem} điểm)`;
 }
 
@@ -159,6 +167,11 @@ export function khoiLoGui(rows: { lo_number: string; current_limit: number }[], 
     .filter((r) => Number(r.current_limit) > 0)
     .sort((a, b) => a.lo_number.localeCompare(b.lo_number))
     .map((r) => `${r.lo_number}b${Number(r.current_limit)}`);
+  return chiaTin(muc, tienTo, doDaiTin);
+}
+
+/** Các mục "23b1" GIỮ NGUYÊN THỨ TỰ, chia thành tin ≤ doDaiTin, mỗi tin mở bằng tiền tố. */
+export function chiaTin(muc: string[], tienTo: string, doDaiTin: number): string[] {
   const out: string[] = [];
   let hien: string[] = [];
   for (const x of muc) {
@@ -268,10 +281,14 @@ export function chuanHoaBotGui(raw: unknown, so: SoNhom = 1): CaiDatBotGui {
 function chuanHoaDuBao(raw: unknown): CaiDatDuBaoGui {
   const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const soCon = Number(o.soCon), diem = Number(o.diem);
+  // Bản lưu trước 20/11 (chưa có v = 2): "tot" khi đó chỉ là mặc định, chưa ai chọn — khách giờ muốn
+  // bot gửi theo ô mình chọn, nên đọc lên thành "chon". Sau 20/11 ai gõ /dubaogui 2 tot thì giữ "tot".
+  const moi = o.v === 2;
   return {
-    cach: o.cach === "loi" ? "loi" : "tot",
+    cach: o.cach === "loi" ? "loi" : o.cach === "tot" && moi ? "tot" : "chon",
     soCon: (SO_CON_GUI as readonly number[]).includes(soCon) ? soCon : DU_BAO_GUI_MAC_DINH.soCon,
     diem: Number.isInteger(diem) && diem >= 1 && diem <= 9999 ? diem : DU_BAO_GUI_MAC_DINH.diem,
+    v: 2,
   };
 }
 

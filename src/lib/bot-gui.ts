@@ -16,10 +16,11 @@ import { NGHI_GIUA_TIN_MS, coTaiKhoanGui, guiBangTaiKhoan, guiNhieuBangTaiKhoan 
 import { khoKyToi } from "@/lib/da";
 import { bangHieuLuc, taiKyDaXo } from "@/lib/da-bang";
 import { capNhan, chuoiNhanDeu } from "@/lib/da-nhan";
-import { TEN_THU, CAC_MO_HINH, soGuiTheoThu } from "@/lib/du-bao";
+import { TEN_THU, CAC_MO_HINH, soGuiTheoO, soGuiTheoThu } from "@/lib/du-bao";
+import { docCaiDatDuBao } from "@/lib/du-bao-luu";
 import { gopVoiKhoDai } from "@/lib/kho-dai-server";
 import {
-  CAC_NHOM, batDauTu, chuanHoaBotGui, daGuiHomNay, gioVN, khoiLoGui, lenhNhom, phutConLai, soTinLuotNay, tenNhomSo, trongKhung,
+  CAC_NHOM, batDauTu, chiaTin, chuanHoaBotGui, daGuiHomNay, gioVN, khoiLoGui, lenhNhom, phutConLai, soTinLuotNay, tenNhomSo, trongKhung,
   type CaiDatBotGui, type NoiDungGui, type SoNhom,
 } from "@/lib/bot-gui-thuan";
 import type { Region } from "@/lib/types";
@@ -110,8 +111,13 @@ export interface XemTruocMien {
   /** "lo": số lô nhận; "dubao": số con dự báo; "da2": số cặp nhận. */
   soLo: number;
   soCap: number;
-  /** "dubao": thứ, mô hình đã chọn và lãi của từng mô hình ở thứ đó (1 điểm). */
-  duBao?: { ngay: string; thu: string; moHinh: string[]; soKyThu: number; laiChon: number[] };
+  /**
+   * "dubao": thứ, mô hình đã chọn và lãi của từng mô hình ở thứ đó (1 điểm; cách "tot"/"loi"),
+   * hoặc với cách "chon": số con, điểm, lọc lấy từ cài đặt tab Dự Báo đã lưu.
+   */
+  duBao?: { ngay: string; thu: string; moHinh: string[]; soKyThu: number; laiChon: number[]; tab?: { soCon: number; diem: number; tu: number; luuLuc: string | null } };
+  /** Vì sao không có gì để gửi (nếu khoi rỗng). */
+  lyDoRong?: string;
   /** "ok" mới gửi tự động; khác thì giữ lại. */
   duLieu: "ok" | "warn" | "alarm";
   duLieuChu: string;
@@ -135,9 +141,31 @@ export async function xemTruocGui(region: Region, cfg: CaiDatBotGui, now = new D
   const f = freshness(latest, now);
   const m = cfg.mien[region];
   const chung = { region, duLieu: f.level, duLieuChu: freshnessText(f) };
+  if (cfg.noiDung === "dubao" && cfg.duBao.cach === "chon") {
+    // Khách 20/11: "thứ nào, ô nào em chọn thì bot gửi" — đúng khung "Gộp số" của tab: ô đã chọn ở cột thứ của kỳ tới,
+    // số con, điểm, lọc khách đã lưu. Thứ tự con y như chuỗi trên tab. Kỳ tới phải là HÔM NAY.
+    const cd = await docCaiDatDuBao(region);
+    const g = soGuiTheoO(gopVoiKhoDai(region, await taiKyDaXo(region)), region, cd);
+    const khoi = g ? chiaTin(g.con.map((x) => `${x.lo}b${cd.diem}`), m.tienTo, cfg.doDaiTin) : [];
+    const lechNgay = g && g.ngay !== gioVN(now).ngay;
+    const ten = (k: string) => CAC_MO_HINH.find((x) => x.khoa === k)?.ten ?? k;
+    return {
+      ...chung,
+      ...(lechNgay ? { duLieu: f.level === "ok" ? "warn" : f.level, duLieuChu: `kho mới tới ${latest ?? "?"} nên kỳ tới tính ra ${g!.ngay}, không phải hôm nay ${gioVN(now).ngay}` } : {}),
+      noiDung: "dubao",
+      khoi,
+      chuoi: khoi.join("\n"),
+      soLo: g?.con.length ?? 0,
+      soCap: 0,
+      ...(g ? { duBao: { ngay: g.ngay, thu: TEN_THU[g.thu], moHinh: g.moHinh.map(ten), soKyThu: 0, laiChon: [], tab: { soCon: cd.soCon, diem: cd.diem, tu: g.tu, luuLuc: cd.luuLuc } } } : {}),
+      ...(g && khoi.length === 0
+        ? { lyDoRong: g.moHinh.length ? `các ô đã chọn ở ${TEN_THU[g.thu]} không còn con nào sau lọc "từ ${g.tu} mô hình"` : `chưa chọn ô nào ở cột ${TEN_THU[g.thu]} trên tab Dự Báo` }
+        : {}),
+    };
+  }
   if (cfg.noiDung === "dubao") {
     // Số dự báo theo thứ (tab Dự Báo): kỳ tới phải đúng là HÔM NAY — kho thiếu kỳ hôm qua thì kỳ tới tính lệch ngày, không gửi.
-    const g = soGuiTheoThu(gopVoiKhoDai(region, await taiKyDaXo(region)), region, cfg.duBao.cach, cfg.duBao.soCon);
+    const g = soGuiTheoThu(gopVoiKhoDai(region, await taiKyDaXo(region)), region, cfg.duBao.cach === "loi" ? "loi" : "tot", cfg.duBao.soCon);
     const khoi = g ? khoiLoGui(g.con.map((lo) => ({ lo_number: lo, current_limit: cfg.duBao.diem })), m.tienTo, cfg.doDaiTin) : [];
     const lechNgay = g && g.ngay !== gioVN(now).ngay;
     const ten = (k: string) => CAC_MO_HINH.find((x) => x.khoa === k)?.ten ?? k;
@@ -269,7 +297,7 @@ async function chayMotNhom(so: SoNhom, now: Date, thu: boolean, hetLuc: number):
       if (!thu) await baoQuanTri(`⚠️ Bot gửi ${ten(region)}: KHÔNG gửi ${tenNoiDung(cfg.noiDung)} vì ${xt.duLieuChu}. Bấm Cập nhật KQ rồi gõ ${lenh(region)}.`);
       continue;
     }
-    if (xt.khoi.length === 0) { ketQua.push({ nhom: so, region, viec: "bo-qua", lyDo: trongRong(cfg.noiDung) }); continue; }
+    if (xt.khoi.length === 0) { ketQua.push({ nhom: so, region, viec: "bo-qua", lyDo: xt.lyDoRong ?? trongRong(cfg.noiDung) }); continue; }
     // Tiến độ hôm nay ghi theo số phần lúc đó; nội dung đổi (tổng khác) thì gửi lại từ đầu cho trọn.
     const tiepTu = batDau > 0 && cfg.tienDo[region]?.tong === xt.khoi.length ? batDau : 0;
     if (thu) { ketQua.push({ nhom: so, region, viec: "gui", soPhan: xt.khoi.length - tiepTu, kyTu: xt.chuoi.length, soLo: xt.soLo, soCap: xt.soCap }); continue; }
@@ -341,7 +369,7 @@ export async function guiNgay(region: Region, now = new Date(), ep = false, so: 
   }
   const xt = await xemTruocGui(region, cfg, now);
   if (xt.duLieu !== "ok") return { ok: false, chu: `Không gửi: ${xt.duLieuChu}.` };
-  if (xt.khoi.length === 0) return { ok: false, chu: `${trongRong(cfg.noiDung)} — không có gì để gửi.` };
+  if (xt.khoi.length === 0) return { ok: false, chu: `${xt.lyDoRong ?? trongRong(cfg.noiDung)} — không có gì để gửi.` };
   const ngay = gioVN(now).ngay;
   const batDau = ep ? 0 : batDauTu(now, cfg.tienDo[region]);
   const tiepTu = batDau > 0 && cfg.tienDo[region]?.tong === xt.khoi.length ? batDau : 0;
