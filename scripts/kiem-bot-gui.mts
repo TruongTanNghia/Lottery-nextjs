@@ -6,7 +6,7 @@
  *   npm run test:botgui
  */
 import {
-  DO_DAI_TIN_MAC_DINH, MAC_DINH_BOT_GUI, batDauTu, chuanHoaBotGui, chuoiLoGui, daGuiHomNay, gioVN, phutConLai, soTinLuotNay, trongKhung,
+  DO_DAI_TIN_MAC_DINH, MAC_DINH_BOT_GUI, MAC_DINH_NHOM_2, batDauTu, chuanHoaBotGui, chuoiLoGui, daGuiHomNay, gioVN, khoiLoGui, lenhNhom, phutConLai, soTinLuotNay, tachNhom, tenNhomSo, trongKhung,
 } from "../src/lib/bot-gui-thuan";
 import { chuoiNhanDeu, chuoiNhanMien, nhomNhanDa } from "../src/lib/da-nhan";
 
@@ -89,6 +89,35 @@ console.log("\n===== Gửi từ từ (khách 22/10): 50 tin mỗi miền, 2 tin/
 
 console.log("\n===== Chuỗi lô (nội dung 'lo') vẫn như cũ =====");
 ok("2d16b100, 15b50 — lô 0 điểm bị bỏ", chuoiLoGui([{ lo_number: "16", current_limit: 100 }, { lo_number: "15", current_limit: 50 }, { lo_number: "01", current_limit: 0 }], "2d") === "2d15b50, 16b100");
+
+console.log("\n===== Nhóm 2 (khách 19/11: gửi thêm 1 nhóm, lô 2 số từ 15:00) =====");
+{
+  const n2 = chuanHoaBotGui(null, 2);
+  ok("nhóm 2 mặc định: chuỗi lô, chưa chọn nhóm, cả 3 miền TẮT, khung 15:00 → 16:08 / 17:08 / 18:08, tiền tố như nhóm 1", n2.noiDung === "lo" && n2.nhom === null && !n2.mien.xsmn.bat && !n2.mien.xsmt.bat && !n2.mien.xsmb.bat && n2.mien.xsmn.tu === "15:00" && n2.mien.xsmt.tu === "15:00" && n2.mien.xsmb.tu === "15:00" && n2.mien.xsmn.den === "16:08" && n2.mien.xsmt.den === "17:08" && n2.mien.xsmb.den === "18:08" && n2.mien.xsmn.tienTo === "Mn 2d" && n2.mien.xsmb.tienTo === "Mb ");
+  const n1 = chuanHoaBotGui(null);
+  ok("nhóm 1 mặc định KHÔNG đổi: đá PA2, khung 15:40 / 16:40 / 17:40", n1.noiDung === "da2" && n1.mien.xsmn.tu === "15:40" && n1.mien.xsmt.tu === "16:40" && n1.mien.xsmb.tu === "17:40" && JSON.stringify(n1) === JSON.stringify(chuanHoaBotGui(null, 1)));
+  ok("15:00 trong khung Mn nhóm 2, 14:59 ngoài; 15:00 vẫn ngoài khung nhóm 1", trongKhung(luc("15:00"), n2.mien.xsmn) && !trongKhung(luc("14:59"), n2.mien.xsmn) && !trongKhung(luc("15:00"), n1.mien.xsmn));
+  const da = chuanHoaBotGui({ noiDung: "da2", nhom: -5001, tenNhom: "Mới", mien: { xsmn: { bat: true, tu: "15:30", den: "16:05", tienTo: "Mn 2d" } } }, 2);
+  ok("nhóm 2 lưu 'da2' thì giữ da2; khung 15:30–16:05 KHÔNG bị đổi như khung cũ nhóm 1; giữ nhóm, bật", da.noiDung === "da2" && da.mien.xsmn.tu === "15:30" && da.mien.xsmn.den === "16:05" && da.nhom === -5001 && da.mien.xsmn.bat && da.mien.xsmt.tu === "15:00");
+  ok("nhóm 2 lưu nội dung lạ → về mặc định của nhóm 2 (lo); nhóm 1 lạ → da2", chuanHoaBotGui({ noiDung: "x" }, 2).noiDung === "lo" && chuanHoaBotGui({ noiDung: "x" }).noiDung === "da2");
+  ok("MAC_DINH_NHOM_2 không dính tiến độ / đã gửi của nhóm 1", JSON.stringify(MAC_DINH_NHOM_2.daGui) === "{}" && JSON.stringify(MAC_DINH_NHOM_2.tienDo) === "{}");
+  ok("câu chữ: nhóm 1 để trống như cũ, nhóm 2 ghi ' nhóm 2'; lệnh gợi ý '/guingay 2 mn'", tenNhomSo(1) === "" && tenNhomSo(2) === " nhóm 2" && "/guingay " + lenhNhom(2) + "mn" === "/guingay 2 mn" && "/guingay " + lenhNhom(1) + "mn" === "/guingay mn");
+}
+{
+  const t = (a: string[], laSo = false) => { const r = tachNhom(a, laSo); return r.so + ":" + r.con.join(","); };
+  ok("tách nhóm: '2 all' → 2:all; 'n2 mn' → 2:mn; 'nhom2 mn' → 2:mn; 'mn' → 1:mn; '1 mn' → 1:mn", t(["2", "all"]) === "2:all" && t(["n2", "mn"]) === "2:mn" && t(["nhom2", "mn"]) === "2:mn" && t(["mn"]) === "1:mn" && t(["1", "mn"]) === "1:mn");
+  ok("lệnh giá trị là số: '/sotin 2' = nhóm 1 giá trị 2; '/sotin 2 50' = nhóm 2 giá trị 50; '3' không phải nhóm", t(["2"], true) === "1:2" && t(["2", "50"], true) === "2:50" && t(["3", "mn"]) === "1:3,mn" && t([]) === "1:");
+}
+{
+  const rows = Array.from({ length: 100 }, (_, i) => ({ lo_number: String(i).padStart(2, "0"), current_limit: i % 3 === 0 ? 0 : (i % 7) + 1 }));
+  const nhan = rows.filter((r) => r.current_limit > 0);
+  const mot = khoiLoGui(rows, "Mn 2d", 2000);
+  ok("lô một tin khi đủ ngắn: = chuoiLoGui cũ", mot.length === 1 && mot[0] === chuoiLoGui(rows, "Mn 2d"), mot[0].length + " ký tự");
+  const nhieu = khoiLoGui(rows, "Mn 2d", 120);
+  const doc = nhieu.flatMap((k) => k.replace(/^Mn 2d/, "").split(", "));
+  ok("độ dài 120: nhiều tin, mỗi tin ≤ 120 và mở bằng 'Mn 2d'; ghép lại đúng " + nhan.length + " lô, đúng điểm, không trùng", nhieu.length > 1 && nhieu.every((k) => k.length <= 120 && k.startsWith("Mn 2d")) && doc.length === nhan.length && new Set(doc).size === doc.length && nhan.every((r) => doc.includes(r.lo_number + "b" + r.current_limit)), nhieu.length + " tin");
+  ok("không lô nào nhận → không tin nào", khoiLoGui(rows.map((r) => ({ ...r, current_limit: 0 })), "Mn 2d", 2000).length === 0);
+}
 
 console.log(`\n### ${pass} DAT - ${fail} HONG ###`);
 process.exit(fail ? 1 : 0);

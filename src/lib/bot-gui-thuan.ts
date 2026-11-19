@@ -89,6 +89,62 @@ export const MAC_DINH_BOT_GUI: CaiDatBotGui = {
  * /nhomgui, /batgui lưu cả cấu hình kể cả khung), nên đọc lên thành khung mới
  * luôn — khách đổi giờ là đổi cho cả hệ, không bắt gõ lại /khunggio ba lần.
  */
+/**
+ * Nhóm 2 — khách 19/11/2026: "cho bot gửi thêm vào 1 nhóm mới" (nhóm cũ vẫn nhận
+ * đá PA2 như trước), "lô 2 số cho nó gửi từ 3h00 cũng được". Nên nhóm 2 mặc định
+ * gửi CHUỖI LÔ, khung bắt đầu 15:00 cả ba miền, kết thúc như nhóm 1 (trước giờ
+ * xổ), tiền tố như nhóm 1; mặc định TẮT, chưa chọn nhóm.
+ */
+export const MAC_DINH_NHOM_2: CaiDatBotGui = {
+  ...MAC_DINH_BOT_GUI,
+  mien: {
+    xsmn: { bat: false, tu: "15:00", den: "16:08", tienTo: "Mn 2d" },
+    xsmt: { bat: false, tu: "15:00", den: "17:08", tienTo: "Mt 2d" },
+    xsmb: { bat: false, tu: "15:00", den: "18:08", tienTo: "Mb " },
+  },
+  noiDung: "lo",
+  daGui: {},
+  tienDo: {},
+};
+/** Các nhóm bot gửi. Nhóm 1 là nhóm có từ đầu (khoá cấu hình cũ, không đổi). */
+export const CAC_NHOM = [1, 2] as const;
+export type SoNhom = (typeof CAC_NHOM)[number];
+export const macDinhNhom = (so: SoNhom): CaiDatBotGui => (so === 2 ? MAC_DINH_NHOM_2 : MAC_DINH_BOT_GUI);
+/** Tên nhóm trong câu chữ: nhóm 1 để trống cho giống trước, nhóm 2 ghi rõ. */
+export const tenNhomSo = (so: SoNhom): string => (so === 1 ? "" : ` nhóm ${so}`);
+/** Chữ chèn vào lệnh gợi ý: "/guingay 2 mn". */
+export const lenhNhom = (so: SoNhom): string => (so === 1 ? "" : `${so} `);
+
+/**
+ * Tách số nhóm ở đầu tham số lệnh: "/batgui 2 all" → nhóm 2, ["all"]. Chấp nhận
+ * "2", "n2", "nhom2". Lệnh mà giá trị cũng là số ("/sotin 2" = 2 tin) thì chỉ
+ * coi là số nhóm khi còn tham số theo sau ("/sotin 2 50").
+ */
+export function tachNhom(args: string[], giaTriLaSo = false): { so: SoNhom; con: string[] } {
+  const m = (args[0] ?? "").toLowerCase().match(/^(?:n|nhom)?([12])$/);
+  if (m && (!giaTriLaSo || args.length >= 2)) return { so: Number(m[1]) as SoNhom, con: args.slice(1) };
+  return { so: 1, con: args };
+}
+
+/**
+ * Chuỗi lô chia thành các tin ≤ `doDaiTin`, mỗi tin tự đứng được (mở bằng tiền tố):
+ * "Mn 2d00b10, 01b5, …". Một miền thường chỉ một tin; chia ra cho chắc khi nhận nhiều lô.
+ */
+export function khoiLoGui(rows: { lo_number: string; current_limit: number }[], tienTo: string, doDaiTin: number): string[] {
+  const muc = rows
+    .filter((r) => Number(r.current_limit) > 0)
+    .sort((a, b) => a.lo_number.localeCompare(b.lo_number))
+    .map((r) => `${r.lo_number}b${Number(r.current_limit)}`);
+  const out: string[] = [];
+  let hien: string[] = [];
+  for (const x of muc) {
+    if (hien.length && (tienTo + [...hien, x].join(", ")).length > doDaiTin) { out.push(tienTo + hien.join(", ")); hien = []; }
+    hien.push(x);
+  }
+  if (hien.length) out.push(tienTo + hien.join(", "));
+  return out;
+}
+
 const KHUNG_CU: Record<Region, KhungGio[]> = {
   xsmn: [{ tu: "15:30", den: "16:05" }, { tu: "15:50", den: "16:05" }],
   xsmt: [{ tu: "16:40", den: "17:05" }, { tu: "16:50", den: "17:05" }],
@@ -137,17 +193,18 @@ export function chuoiLoGui(rows: { lo_number: string; current_limit: number }[],
   return nhan.length ? `${tienTo}${nhan.join(", ")}` : "";
 }
 
-/** Dọn một cấu hình đọc từ ngoài; thứ gì lạ thì về mặc định. */
-export function chuanHoaBotGui(raw: unknown): CaiDatBotGui {
+/** Dọn một cấu hình đọc từ ngoài; thứ gì lạ thì về mặc định CỦA NHÓM ĐÓ. */
+export function chuanHoaBotGui(raw: unknown, so: SoNhom = 1): CaiDatBotGui {
+  const goc = macDinhNhom(so);
   const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const mienRaw = o.mien && typeof o.mien === "object" ? (o.mien as Record<string, unknown>) : {};
   const mien = {} as Record<Region, CaiDatMien>;
   for (const r of ["xsmn", "xsmt", "xsmb"] as Region[]) {
-    const md = MAC_DINH_BOT_GUI.mien[r];
+    const md = goc.mien[r];
     const m = mienRaw[r] && typeof mienRaw[r] === "object" ? (mienRaw[r] as Record<string, unknown>) : {};
     let tu = laGioHopLe(m.tu) ? m.tu : md.tu;
     let den = laGioHopLe(m.den) ? m.den : md.den;
-    if (KHUNG_CU[r].some((k) => k.tu === tu && k.den === den)) { tu = md.tu; den = md.den; }
+    if (so === 1 && KHUNG_CU[r].some((k) => k.tu === tu && k.den === den)) { tu = md.tu; den = md.den; }
     mien[r] = {
       bat: m.bat === true,
       // Khung ngược (đến trước từ) là vô nghĩa — về mặc định cả cặp.
@@ -175,7 +232,7 @@ export function chuanHoaBotGui(raw: unknown): CaiDatBotGui {
     tenNhom: typeof o.tenNhom === "string" ? o.tenNhom : null,
     mien,
     daGui,
-    noiDung: o.noiDung === "lo" ? "lo" : "da2",
+    noiDung: o.noiDung === "lo" || o.noiDung === "da2" ? o.noiDung : goc.noiDung,
     doDaiTin: Number.isFinite(dd) ? Math.min(DO_DAI_TIN_MAX, Math.max(DO_DAI_TIN_MIN, Math.round(dd))) : DO_DAI_TIN_MAC_DINH,
     soTin: Number.isInteger(st) && st >= 1 && st <= SO_TIN_MAX ? st : SO_TIN_MAC_DINH,
     tinMoiPhut: Number.isInteger(tp) && tp >= 1 && tp <= TIN_MOI_PHUT_MAX ? tp : TIN_MOI_PHUT_MAC_DINH,

@@ -26,7 +26,7 @@ import { chuoiChanLo, luatChanLo } from "@/lib/chan-lo";
 import { docBuoc, trangThaiChanNgay } from "@/lib/chan-ngay-server";
 import { docBotGui, docGoCua, guiNgay, luuBotGui, thuTaiKhoan, xemTruocGui } from "@/lib/bot-gui";
 import { coTaiKhoanGui } from "@/lib/tele-user";
-import { daGuiHomNay, gioVN, laGioHopLe } from "@/lib/bot-gui-thuan";
+import { CAC_NHOM, daGuiHomNay, gioVN, laGioHopLe, lenhNhom, tachNhom, tenNhomSo, type CaiDatBotGui, type SoNhom } from "@/lib/bot-gui-thuan";
 import { SO_O_DA, chiaKhoiChanDa, dongChanLq, khoKyToi, khoiChanLq, nhomChanDa } from "@/lib/da";
 
 // Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
@@ -115,6 +115,7 @@ export function helpText(isAdmin = false): string {
         "<code>/sotin 50</code> — mỗi miền chia thành bao nhiêu tin · <code>/tinphut 2</code> — mỗi phút gửi mấy tin",
         "<code>/dodaigui 2000</code> — trần ký tự một tin (500–3400)",
         "<code>/khunggio mn 15:50 16:05</code> · <code>/tiento mn 2d</code>",
+        "<i>Nhóm 2 (gửi thêm một nhóm nữa, mặc định chuỗi lô từ 15:00): thêm số 2 sau lệnh — <code>/nhomgui 2</code> (gõ trong nhóm đó), <code>/xemgui 2 mn</code>, <code>/thutk 2 Mn 2d16b1</code>, <code>/batgui 2 all</code>, <code>/guingay 2 mn</code>, <code>/noidunggui 2 lo</code>, <code>/khunggio 2 mn 15:00 16:08</code>, <code>/tiento 2 mn 2d</code></i>",
       ]
     : [];
   return [
@@ -655,15 +656,8 @@ export async function chanNgayBot(regions: Region[]): Promise<string> {
 
 // ---- bot gửi tự động (lô) -------------------------------------------------
 
-/** /lichgui — lịch và tình trạng của bot gửi. */
-export async function lichGui(): Promise<string> {
-  const [cfg, goCua] = await Promise.all([docBotGui(), docGoCua()]);
-  const now = new Date();
-  const phutTruoc = goCua ? Math.round((now.getTime() - new Date(goCua).getTime()) / 60_000) : null;
-  const dongGoCua =
-    goCua == null
-      ? "Bộ hẹn giờ: <b>CHƯA từng gõ cửa</b> — chưa cài khoá CRON_SECRET trên GitHub nên bật lên cũng chưa tự gửi"
-      : `Bộ hẹn giờ: gõ cửa lần cuối ${gioVN(new Date(goCua)).gio} ngày ${ddmm(gioVN(new Date(goCua)).ngay)} (${phutTruoc! < 120 ? `${phutTruoc} phút` : `${Math.round(phutTruoc! / 60)} giờ`} trước)`;
+/** Các dòng lịch của MỘT nhóm gửi. */
+function dongLichNhom(cfg: CaiDatBotGui, so: SoNhom, now: Date): string[] {
   const dong = REGIONS.map((r) => {
     const m = cfg.mien[r];
     const da = daGuiHomNay(now, cfg.daGui[r]);
@@ -672,27 +666,42 @@ export async function lichGui(): Promise<string> {
     return `<b>${TEN_NGAN[r]}</b> · ${m.bat ? "✅ BẬT" : "⭕ tắt"} · ${m.tu}–${m.den} · tiền tố <code>${esc(m.tienTo)}</code> · hôm nay ${da ? `đã gửi đủ lúc ${gioVN(new Date(cfg.daGui[r]!)).gio}` : "chưa gửi"}${doDang}`;
   });
   return [
-    `<b>🤖 Bot gửi tự động — ${cfg.noiDung === "lo" ? "chuỗi lô" : "số nhận đá phương án 2"}</b>${cfg.noiDung === "lo" ? "" : ` · mỗi miền ${cfg.soTin} tin · ${cfg.tinMoiPhut} tin/phút`}`,
-    cfg.nhom == null ? "Nhóm nhận: <b>CHƯA CHỌN</b> — vào nhóm có bot nhận rồi gõ <code>/nhomgui</code>" : `Nhóm nhận: <b>${esc(cfg.tenNhom ?? String(cfg.nhom))}</b>`,
+    `<b>📮 Nhóm gửi ${so} — ${cfg.noiDung === "lo" ? "chuỗi lô" : "số nhận đá phương án 2"}</b>${cfg.noiDung === "lo" ? "" : ` · mỗi miền ${cfg.soTin} tin · ${cfg.tinMoiPhut} tin/phút`}`,
+    cfg.nhom == null ? `Nhóm nhận: <b>CHƯA CHỌN</b> — vào nhóm có bot nhận rồi gõ <code>/nhomgui${so === 1 ? "" : ` ${so}`}</code>` :`Nhóm nhận: <b>${esc(cfg.tenNhom ?? String(cfg.nhom))}</b>`,
+    ...dong,
+  ];
+}
+
+/** /lichgui — lịch và tình trạng của bot gửi, cả hai nhóm. */
+export async function lichGui(): Promise<string> {
+  const [goCua, ...cfgs] = await Promise.all([docGoCua(), ...CAC_NHOM.map((so) => docBotGui(so))]);
+  const now = new Date();
+  const phutTruoc = goCua ? Math.round((now.getTime() - new Date(goCua).getTime()) / 60_000) : null;
+  const dongGoCua =
+    goCua == null
+      ? "Bộ hẹn giờ: <b>CHƯA từng gõ cửa</b> — chưa cài khoá CRON_SECRET trên GitHub nên bật lên cũng chưa tự gửi"
+      : `Bộ hẹn giờ: gõ cửa lần cuối ${gioVN(new Date(goCua)).gio} ngày ${ddmm(gioVN(new Date(goCua)).ngay)} (${phutTruoc! < 120 ? `${phutTruoc} phút` : `${Math.round(phutTruoc! / 60)} giờ`} trước)`;
+  const nhom = CAC_NHOM.flatMap((so, i) => ["", ...dongLichNhom(cfgs[i] as CaiDatBotGui, so, now)]);
+  return [
+    "<b>🤖 Bot gửi tự động</b>",
     `Bây giờ: ${gioVN(now).gio} (giờ VN)`,
     coTaiKhoanGui()
       ? "Gửi bằng: <b>tài khoản người</b> (bot nhận đọc được)"
       : "Gửi bằng: <b>bot</b> — bot nhận sẽ KHÔNG thấy. Cài tài khoản gửi: xem <code>scripts/telegram-user-login.mjs</code>",
     dongGoCua,
+    ...nhom,
     "",
-    ...dong,
-    "",
-    "<i>Mỗi miền mỗi ngày gửi một bộ, rải đều trong khung giờ (bộ hẹn giờ gõ cửa mỗi phút, mỗi lượt gửi ngần ấy tin); lỡ lượt thì lượt sau gửi bù, không gửi lại phần đã đi. Dữ liệu thiếu kỳ thì không gửi mà báo quản trị.</i>",
+    "<i>Mỗi nhóm, mỗi miền, mỗi ngày gửi một bộ, rải đều trong khung giờ (bộ hẹn giờ gõ cửa mỗi phút); lỡ lượt thì lượt sau gửi bù, không gửi lại phần đã đi. Dữ liệu thiếu kỳ thì không gửi mà báo quản trị. Lệnh cho nhóm 2: thêm số 2 sau lệnh, ví dụ <code>/batgui 2 all</code>.</i>",
   ].join("\n");
 }
 
-/** /xemgui <miền> — nội dung sẽ gửi, hiện ngay tại đây (từng phần một khối), không gửi vào nhóm. */
-export async function xemGui(region: Region): Promise<string> {
-  const cfg = await docBotGui();
+/** /xemgui [2] <miền> — nội dung sẽ gửi, hiện ngay tại đây (từng phần một khối), không gửi vào nhóm. */
+export async function xemGui(region: Region, so: SoNhom = 1): Promise<string> {
+  const cfg = await docBotGui(so);
   const xt = await xemTruocGui(region, cfg);
   const dau = xt.noiDung === "lo" ? `chuỗi lô sẽ gửi · ${xt.soLo} lô` : `số nhận đá PA2 sẽ gửi · ${xt.soCap.toLocaleString("vi-VN")} cặp`;
   return [
-    `<b>${label(region)} · ${dau}</b> · ${xt.khoi.length} tin · ${xt.chuoi.length.toLocaleString("vi-VN")} ký tự${xt.noiDung === "lo" ? "" : ` · ${cfg.tinMoiPhut} tin/phút → ${Math.ceil(xt.khoi.length / cfg.tinMoiPhut)} phút`}`,
+    `<b>Nhóm gửi ${so} · ${label(region)} · ${dau}</b> · ${xt.khoi.length} tin · ${xt.chuoi.length.toLocaleString("vi-VN")} ký tự${xt.noiDung === "lo" ? "" : ` · ${cfg.tinMoiPhut} tin/phút → ${Math.ceil(xt.khoi.length / cfg.tinMoiPhut)} phút`}`,
     xt.duLieu === "ok" ? "" : `<b>⚠️ ${esc(xt.duLieuChu)}</b> — lúc này bot sẽ KHÔNG tự gửi`,
     "",
     ...(xt.khoi.length
@@ -701,76 +710,76 @@ export async function xemGui(region: Region): Promise<string> {
   ].filter((x) => x !== "").join("\n");
 }
 
-/** /noidunggui da2|lo — gửi số nhận đá phương án 2 hay chuỗi lô. */
-async function datNoiDung(arg: string | undefined): Promise<string> {
+/** /noidunggui [2] da2|lo — gửi số nhận đá phương án 2 hay chuỗi lô. */
+async function datNoiDung(arg: string | undefined, so: SoNhom = 1): Promise<string> {
   const nd = arg === "lo" ? "lo" : arg === "da2" || arg === "da" ? "da2" : null;
-  if (!nd) return "Cú pháp: <code>/noidunggui da2</code> (số nhận đá phương án 2) hoặc <code>/noidunggui lo</code> (chuỗi lô)";
-  const cfg = await docBotGui();
+  if (!nd) return `Cú pháp: <code>/noidunggui ${lenhNhom(so)}da2</code> (số nhận đá phương án 2) hoặc <code>/noidunggui ${lenhNhom(so)}lo</code> (chuỗi lô)`;
+  const cfg = await docBotGui(so);
   cfg.noiDung = nd;
-  await luuBotGui(cfg);
-  return `Đã đặt nội dung gửi: <b>${nd === "lo" ? "chuỗi lô" : "số nhận đá phương án 2"}</b>.\n\n${await lichGui()}`;
+  await luuBotGui(cfg, so);
+  return `Đã đặt nội dung gửi${tenNhomSo(so)}: <b>${nd === "lo" ? "chuỗi lô" : "số nhận đá phương án 2"}</b>.\n\n${await lichGui()}`;
 }
 
-/** /sotin N — mỗi miền chia thành N tin. */
-async function datSoTin(arg: string | undefined): Promise<string> {
+/** /sotin [2] N — mỗi miền chia thành N tin. */
+async function datSoTin(arg: string | undefined, so: SoNhom = 1): Promise<string> {
   const n = Number(arg);
-  if (!Number.isInteger(n) || n < 1 || n > 200) return "Cú pháp: <code>/sotin 50</code> (1–200 tin mỗi miền)";
-  const cfg = await docBotGui();
+  if (!Number.isInteger(n) || n < 1 || n > 200) return `Cú pháp: <code>/sotin ${lenhNhom(so)}50</code> (1–200 tin mỗi miền)`;
+  const cfg = await docBotGui(so);
   cfg.soTin = n;
-  await luuBotGui(cfg);
-  return `Đã đặt mỗi miền chia thành <b>${n}</b> tin (${cfg.tinMoiPhut} tin/phút → chừng ${Math.ceil(n / cfg.tinMoiPhut)} phút). Gõ <code>/xemgui mn</code> để xem.`;
+  await luuBotGui(cfg, so);
+  return `Đã đặt${tenNhomSo(so)} mỗi miền chia thành <b>${n}</b> tin (${cfg.tinMoiPhut} tin/phút → chừng ${Math.ceil(n / cfg.tinMoiPhut)} phút). Gõ <code>/xemgui ${lenhNhom(so)}mn</code> để xem.`;
 }
 
-/** /tinphut N — mỗi phút gửi N tin. */
-async function datTinPhut(arg: string | undefined): Promise<string> {
+/** /tinphut [2] N — mỗi phút gửi N tin. */
+async function datTinPhut(arg: string | undefined, so: SoNhom = 1): Promise<string> {
   const n = Number(arg);
-  if (!Number.isInteger(n) || n < 1 || n > 10) return "Cú pháp: <code>/tinphut 2</code> (1–10 tin mỗi phút)";
-  const cfg = await docBotGui();
+  if (!Number.isInteger(n) || n < 1 || n > 10) return `Cú pháp: <code>/tinphut ${lenhNhom(so)}2</code> (1–10 tin mỗi phút)`;
+  const cfg = await docBotGui(so);
   cfg.tinMoiPhut = n;
-  await luuBotGui(cfg);
-  return `Đã đặt mỗi phút gửi <b>${n}</b> tin (${cfg.soTin} tin → chừng ${Math.ceil(cfg.soTin / n)} phút). Khung mỗi miền phải dài hơn số phút đó.`;
+  await luuBotGui(cfg, so);
+  return `Đã đặt${tenNhomSo(so)} mỗi phút gửi <b>${n}</b> tin (${cfg.soTin} tin → chừng ${Math.ceil(cfg.soTin / n)} phút). Khung mỗi miền phải dài hơn số phút đó.`;
 }
 
-/** /dodaigui N — mỗi tin dài tối đa N ký tự. */
-async function datDoDai(arg: string | undefined): Promise<string> {
+/** /dodaigui [2] N — mỗi tin dài tối đa N ký tự. */
+async function datDoDai(arg: string | undefined, so: SoNhom = 1): Promise<string> {
   const n = Number(arg);
-  if (!Number.isInteger(n) || n < 500 || n > 3400) return "Cú pháp: <code>/dodaigui 2000</code> (từ 500 tới 3400 ký tự)";
-  const cfg = await docBotGui();
+  if (!Number.isInteger(n) || n < 500 || n > 3400) return `Cú pháp: <code>/dodaigui ${lenhNhom(so)}2000</code> (từ 500 tới 3400 ký tự)`;
+  const cfg = await docBotGui(so);
   cfg.doDaiTin = n;
-  await luuBotGui(cfg);
-  return `Đã đặt mỗi tin ≤ <b>${n.toLocaleString("vi-VN")}</b> ký tự. Gõ <code>/xemgui mn</code> để xem chia thành mấy phần.`;
+  await luuBotGui(cfg, so);
+  return `Đã đặt${tenNhomSo(so)} mỗi tin ≤ <b>${n.toLocaleString("vi-VN")}</b> ký tự. Gõ <code>/xemgui ${lenhNhom(so)}mn</code> để xem chia thành mấy phần.`;
 }
 
-async function batTatGui(arg: string | undefined, bat: boolean): Promise<string> {
-  const cfg = await docBotGui();
+async function batTatGui(arg: string | undefined, bat: boolean, so: SoNhom = 1): Promise<string> {
+  const cfg = await docBotGui(so);
   const tatCa = arg === "all" || arg === "tatca";
   const region = parseRegion([arg]);
-  if (!tatCa && !region) return `Thiếu miền. Ví dụ: <code>/${bat ? "batgui" : "tatgui"} mn</code> hoặc <code>all</code>`;
-  if (bat && cfg.nhom == null) return "Chưa chọn nhóm nhận. Vào nhóm có bot nhận rồi gõ <code>/nhomgui</code> trước đã.";
+  if (!tatCa && !region) return `Thiếu miền. Ví dụ: <code>/${bat ? "batgui" : "tatgui"} ${lenhNhom(so)}mn</code> hoặc <code>all</code>`;
+  if (bat && cfg.nhom == null) return `Chưa chọn nhóm nhận${tenNhomSo(so)}. Vào nhóm đó rồi gõ <code>/nhomgui${so === 1 ? "" : " 2"}</code> trước đã.`;
   for (const r of tatCa ? REGIONS : [region!]) cfg.mien[r].bat = bat;
-  await luuBotGui(cfg);
-  return `${bat ? "✅ Đã BẬT" : "⭕ Đã tắt"} tự gửi ${tatCa ? "cả 3 miền" : label(region!)}.\n\n${await lichGui()}`;
+  await luuBotGui(cfg, so);
+  return `${bat ? "✅ Đã BẬT" : "⭕ Đã tắt"} tự gửi${tenNhomSo(so)} ${tatCa ? "cả 3 miền" : label(region!)}.\n\n${await lichGui()}`;
 }
 
-async function datKhungGio(args: string[]): Promise<string> {
+async function datKhungGio(args: string[], so: SoNhom = 1): Promise<string> {
   const region = parseRegion([args[0]]);
   if (!region || !laGioHopLe(args[1]) || !laGioHopLe(args[2]) || args[1] > args[2]) {
-    return "Cú pháp: <code>/khunggio mn 15:50 16:05</code> (giờ VN, dạng HH:MM, giờ đầu trước giờ cuối)";
+    return `Cú pháp: <code>/khunggio ${lenhNhom(so)}mn 15:50 16:05</code> (giờ VN, dạng HH:MM, giờ đầu trước giờ cuối)`;
   }
-  const cfg = await docBotGui();
+  const cfg = await docBotGui(so);
   cfg.mien[region].tu = args[1];
   cfg.mien[region].den = args[2];
-  await luuBotGui(cfg);
-  return `Đã đặt khung ${label(region)}: ${args[1]}–${args[2]}.\n<i>Lưu ý: máy gõ cửa theo lịch cố định quanh khung cũ; đổi khung lệch nhiều thì báo để chỉnh lịch gõ.</i>`;
+  await luuBotGui(cfg, so);
+  return `Đã đặt khung${tenNhomSo(so)} ${label(region)}: ${args[1]}–${args[2]}.\n<i>Lưu ý: máy gõ cửa mỗi phút trong 15:00–18:59; khung ngoài giờ đó thì báo để chỉnh lịch gõ.</i>`;
 }
 
-async function datTienTo(region: Region | null, chuoi: string): Promise<string> {
-  if (!region) return "Cú pháp: <code>/tiento mn 2d</code>";
+async function datTienTo(region: Region | null, chuoi: string, so: SoNhom = 1): Promise<string> {
+  if (!region) return `Cú pháp: <code>/tiento ${lenhNhom(so)}mn 2d</code>`;
   if (chuoi.length > 20) return "Tiền tố dài quá 20 ký tự.";
-  const cfg = await docBotGui();
+  const cfg = await docBotGui(so);
   cfg.mien[region].tienTo = chuoi;
-  await luuBotGui(cfg);
-  return `Đã đặt tiền tố ${label(region)}: <code>${esc(chuoi)}</code>\n\n${await xemGui(region)}`;
+  await luuBotGui(cfg, so);
+  return `Đã đặt tiền tố${tenNhomSo(so)} ${label(region)}: <code>${esc(chuoi)}</code>\n\n${await xemGui(region, so)}`;
 }
 
 /**
@@ -1112,64 +1121,70 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
       if (isAdmin) return lichGui();
       break;
 
+    // Lệnh bot gửi: số nhóm (1 mặc định, 2 = nhóm thêm 19/11) đứng ngay sau lệnh — "/batgui 2 all".
     case "/xemgui": {
       if (!isAdmin) break;
-      const region = parseRegion(args);
-      if (!region) return "Thiếu miền. Ví dụ: <code>/xemgui mn</code>";
-      return xemGui(region);
+      const { so, con } = tachNhom(args);
+      const region = parseRegion(con);
+      if (!region) return `Thiếu miền. Ví dụ: <code>/xemgui ${lenhNhom(so)}mn</code>`;
+      return xemGui(region, so);
     }
 
     case "/batgui":
-      if (isAdmin) return batTatGui(args[0], true);
-      break;
+    case "/tatgui": {
+      if (!isAdmin) break;
+      const { so, con } = tachNhom(args);
+      return batTatGui(con[0], cmd === "/batgui", so);
+    }
 
-    case "/tatgui":
-      if (isAdmin) return batTatGui(args[0], false);
-      break;
-
-    case "/noidunggui":
-      if (isAdmin) return datNoiDung(args[0]);
-      break;
+    case "/noidunggui": {
+      if (!isAdmin) break;
+      const { so, con } = tachNhom(args);
+      return datNoiDung(con[0], so);
+    }
 
     case "/dodaigui":
-      if (isAdmin) return datDoDai(args[0]);
-      break;
-
     case "/sotin":
-      if (isAdmin) return datSoTin(args[0]);
-      break;
-
-    case "/tinphut":
-      if (isAdmin) return datTinPhut(args[0]);
-      break;
+    case "/tinphut": {
+      if (!isAdmin) break;
+      // Giá trị cũng là số: "/sotin 2" = 2 tin cho nhóm 1; "/sotin 2 50" = nhóm 2, 50 tin.
+      const { so, con } = tachNhom(args, true);
+      return cmd === "/dodaigui" ? datDoDai(con[0], so) : cmd === "/sotin" ? datSoTin(con[0], so) : datTinPhut(con[0], so);
+    }
 
     case "/guingay": {
       if (!isAdmin) break;
-      const region = parseRegion(args);
-      if (!region) return "Thiếu miền. Ví dụ: <code>/guingay mn</code>";
-      const r = await guiNgay(region, new Date(), args.some((a) => /^(lai|again|ep)$/.test(fold(a))));
-      return `${r.ok ? "✅" : "⚠️"} ${label(region)}: ${esc(r.chu)}`;
+      const { so, con } = tachNhom(args);
+      const region = parseRegion(con);
+      if (!region) return `Thiếu miền. Ví dụ: <code>/guingay ${lenhNhom(so)}mn</code>`;
+      const r = await guiNgay(region, new Date(), con.some((a) => /^(lai|again|ep)$/.test(fold(a))), so);
+      return `${r.ok ? "✅" : "⚠️"}${tenNhomSo(so) ? ` Nhóm ${so} ·` : ""} ${label(region)}: ${esc(r.chu)}`;
     }
 
     case "/thutk": {
       if (!isAdmin) break;
-      // Lấy chuỗi từ chữ gốc (giữ hoa thường, dấu phẩy, xuống dòng).
-      const m = text.trim().match(/^\S+\s+([\s\S]+)$/);
-      const r = await thuTaiKhoan(m ? m[1] : "");
+      // Lấy chuỗi từ chữ gốc (giữ hoa thường, dấu phẩy, xuống dòng). "/thutk 2 <chuỗi>" = nhóm 2;
+      // chuỗi lệnh không bao giờ mở bằng một chữ số đứng riêng ("2d16b1", "24 95dx1n").
+      const m = text.trim().match(/^\S+\s+(?:(?:n|nhom)?([12])\s+)?([\s\S]+)$/i);
+      const so = (m?.[1] === "2" ? 2 : 1) as SoNhom;
+      const r = await thuTaiKhoan(m ? m[2] : "", so);
       return `${r.ok ? "✅" : "⚠️"} ${esc(r.chu)}`;
     }
 
-    case "/khunggio":
-      if (isAdmin) return datKhungGio(args);
-      break;
+    case "/khunggio": {
+      if (!isAdmin) break;
+      const { so, con } = tachNhom(args);
+      return datKhungGio(con, so);
+    }
 
     case "/tiento": {
       if (!isAdmin) break;
+      const { so, con } = tachNhom(args);
       // Lấy tiền tố từ CHỮ GỐC (giữ hoa thường và dấu cách cuối do người gõ để trong ngoặc kép).
-      const m = text.trim().match(/^\S+\s+\S+\s+([\s\S]+)$/);
+      const m = text.trim().match(so === 1 && con === args ? /^\S+\s+\S+\s+([\s\S]+)$/ : /^\S+\s+\S+\s+\S+\s+([\s\S]+)$/);
       const tho = m ? m[1] : "";
       const chuoi = /^".*"$/.test(tho) ? tho.slice(1, -1) : tho;
-      return datTienTo(parseRegion([args[0]]), chuoi);
+      return datTienTo(parseRegion([con[0]]), chuoi, so);
     }
 
     case "/ai":

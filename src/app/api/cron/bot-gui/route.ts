@@ -26,7 +26,7 @@ export async function GET(req: Request) {
     // Ghi dấu "đã có người gõ cửa" bằng giờ THẬT (không phải giờ giả lập) — /lichgui đọc để biết bộ hẹn giờ còn chạy.
     if (q.get("thu") !== "1") await ghiGoCua();
     const kq = await chayBotGui(now, q.get("thu") === "1");
-    console.log(`[bot-gui] ${kq.luc}: ${kq.ketQua.map((k) => `${k.region}=${k.viec}`).join(" ")}`);
+    console.log(`[bot-gui] ${kq.luc}: ${kq.ketQua.map((k) => `${k.nhom}:${k.region}=${k.viec}`).join(" ")}`);
     return NextResponse.json({ status: "success", thu: q.get("thu") === "1", ...kq });
   } catch (err) {
     return jsonError(err);

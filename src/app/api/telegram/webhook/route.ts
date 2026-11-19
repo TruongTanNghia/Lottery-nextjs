@@ -23,6 +23,7 @@ import {
 import { answer } from "@/lib/telegram-commands";
 import { adminIds, canUse, isAdmin, requestAccess, setStatus } from "@/lib/telegram-users";
 import { docBotGui, luuBotGui } from "@/lib/bot-gui";
+import type { SoNhom } from "@/lib/bot-gui-thuan";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,16 +79,26 @@ async function handleMessage(msg: TelegramMessage, text: string) {
     // /nhomgui: chọn CHÍNH nhóm này làm nơi bot gửi lệnh tự động. Phải xét người
     // gõ chứ không xét chat: trong nhóm, chat id là id nhóm nên không bao giờ là
     // quản trị — mà chọn nhóm nhận lệnh thì chỉ quản trị mới được làm.
-    if (/^\/nhomgui(?:@\w+)?\s*$/i.test(text)) {
+    // "/nhomgui" = nhóm 1 (nhóm có từ đầu); "/nhomgui 2" = nhóm 2 (khách 19/11: "gửi thêm vào 1 nhóm mới").
+    const nhomGui = text.match(/^\/nhomgui(?:@\w+)?(?:\s+(?:n|nhom)?([12]))?\s*$/i);
+    if (nhomGui) {
       if (!msg.from || !isAdmin(msg.from.id)) {
         await sendMessage(chatId, "Chỉ quản trị mới chọn được nhóm nhận lệnh.", { replyTo: msg.message_id });
         return;
       }
-      const cfg = await docBotGui();
+      const so = (nhomGui[1] === "2" ? 2 : 1) as SoNhom;
+      const cfg = await docBotGui(so);
       cfg.nhom = chatId;
       cfg.tenNhom = msg.chat.title ?? (msg.chat.type === "private" ? "chat riêng" : null);
-      await luuBotGui(cfg);
-      await sendMessage(chatId, `✅ Đã chọn ${msg.chat.type === "private" ? "chat này" : "nhóm này"} làm nơi bot gửi lệnh tự động. Xem lịch: /lichgui`, { replyTo: msg.message_id });
+      await luuBotGui(cfg, so);
+      const khac = await docBotGui(so === 1 ? 2 : 1);
+      const trung = khac.nhom === chatId ? `\n⚠️ Nhóm này cũng đang là nhóm ${so === 1 ? 2 : 1} — hai nhóm cùng bật thì tin vào đây hai lần.` : "";
+      const noi = cfg.noiDung === "lo" ? "chuỗi lô" : "số nhận đá PA2";
+      await sendMessage(
+        chatId,
+        `✅ Đã chọn ${msg.chat.type === "private" ? "chat này" : "nhóm này"} làm nhóm gửi ${so} (gửi ${noi}). Các miền vẫn TẮT cho tới khi bật: /batgui ${so === 1 ? "" : "2 "}all. Xem lịch: /lichgui${trung}`,
+        { replyTo: msg.message_id }
+      );
       return;
     }
     const thu = text.match(/^\/guithu(?:@\w+)?\s+([\s\S]+)$/i);

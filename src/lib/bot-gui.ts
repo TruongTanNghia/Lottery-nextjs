@@ -17,12 +17,13 @@ import { khoKyToi } from "@/lib/da";
 import { bangHieuLuc, taiKyDaXo } from "@/lib/da-bang";
 import { capNhan, chuoiNhanDeu } from "@/lib/da-nhan";
 import {
-  batDauTu, chuanHoaBotGui, chuoiLoGui, daGuiHomNay, gioVN, phutConLai, soTinLuotNay, trongKhung,
-  type CaiDatBotGui, type NoiDungGui,
+  CAC_NHOM, batDauTu, chuanHoaBotGui, daGuiHomNay, gioVN, khoiLoGui, lenhNhom, phutConLai, soTinLuotNay, tenNhomSo, trongKhung,
+  type CaiDatBotGui, type NoiDungGui, type SoNhom,
 } from "@/lib/bot-gui-thuan";
 import type { Region } from "@/lib/types";
 
-const KHOA = "bot_gui";
+/** Nhóm 1 giữ khoá cũ "bot_gui" (cấu hình đang chạy không phải chuyển); nhóm 2 là "bot_gui_2". */
+const khoaNhom = (so: SoNhom) => (so === 1 ? "bot_gui" : `bot_gui_${so}`);
 const KHOA_GO_CUA = "bot_gui_go_cua";
 
 /** Lần gần nhất bộ hẹn giờ gọi vào (ISO), null = chưa từng. Để nhìn là biết bộ hẹn giờ còn sống. */
@@ -35,18 +36,18 @@ export async function ghiGoCua(now = new Date()): Promise<void> {
 const MIEN: Region[] = ["xsmn", "xsmt", "xsmb"];
 const TEN: Record<Region, string> = { xsmn: "Mn", xsmt: "Mt", xsmb: "Mb" };
 
-export async function docBotGui(): Promise<CaiDatBotGui> {
-  const raw = await getConfigValue(KHOA);
-  if (!raw) return chuanHoaBotGui(null);
+export async function docBotGui(so: SoNhom = 1): Promise<CaiDatBotGui> {
+  const raw = await getConfigValue(khoaNhom(so));
+  if (!raw) return chuanHoaBotGui(null, so);
   try {
-    return chuanHoaBotGui(JSON.parse(raw));
+    return chuanHoaBotGui(JSON.parse(raw), so);
   } catch {
-    return chuanHoaBotGui(null);
+    return chuanHoaBotGui(null, so);
   }
 }
 
-export async function luuBotGui(cfg: CaiDatBotGui): Promise<void> {
-  await setConfigValue(KHOA, JSON.stringify(chuanHoaBotGui(cfg)));
+export async function luuBotGui(cfg: CaiDatBotGui, so: SoNhom = 1): Promise<void> {
+  await setConfigValue(khoaNhom(so), JSON.stringify(chuanHoaBotGui(cfg, so)));
 }
 
 /** Gửi một tin văn bản trơn (không định dạng) và BIẾT nó có tới không. */
@@ -127,8 +128,8 @@ export async function xemTruocGui(region: Region, cfg: CaiDatBotGui, now = new D
   const chung = { region, duLieu: f.level, duLieuChu: freshnessText(f) };
   if (cfg.noiDung === "lo") {
     const rows = await getLimitSummary(region);
-    const chuoi = chuoiLoGui(rows, m.tienTo);
-    return { ...chung, noiDung: "lo", khoi: chuoi ? [chuoi] : [], chuoi, soLo: rows.filter((r) => Number(r.current_limit) > 0).length, soCap: 0 };
+    const khoi = khoiLoGui(rows, m.tienTo, cfg.doDaiTin);
+    return { ...chung, noiDung: "lo", khoi, chuoi: khoi.join("\n"), soLo: rows.filter((r) => Number(r.current_limit) > 0).length, soCap: 0 };
   }
   const [h, draws] = await Promise.all([bangHieuLuc(region, 2), taiKyDaXo(region)]);
   const bac = khoKyToi(draws)?.bac;
@@ -137,11 +138,12 @@ export async function xemTruocGui(region: Region, cfg: CaiDatBotGui, now = new D
   return { ...chung, noiDung: "da2", khoi, chuoi: khoi.join("\n"), soLo: 0, soCap: cap.length };
 }
 
-export type KetQuaGui =
+export type KetQuaGui = { nhom: SoNhom } & (
   | { region: Region; viec: "gui"; soPhan: number; kyTu: number; soLo: number; soCap: number }
   | { region: Region; viec: "do-dang"; daGui: number; tong: number }
   | { region: Region; viec: "bo-qua"; lyDo: string }
-  | { region: Region; viec: "loi"; lyDo: string };
+  | { region: Region; viec: "loi"; lyDo: string }
+);
 
 /** Kết quả gửi các phần từ `batDau` trở đi; `daGui` = số phần MỚI gửi xong trong lượt này. */
 interface KetQuaGuiKhoi {
@@ -160,17 +162,17 @@ interface KetQuaGuiKhoi {
  * không thấy, rơi về đó là báo "đã gửi" mà chẳng ai nhận. Sau mỗi phần xong,
  * `ghi(n)` được gọi để ghi tiến độ ngay.
  */
-async function guiKhoiVaoNhom(chatId: number, khoi: string[], batDau: number, toiDa: number, nghiMs: number, ghi: (daGui: number) => Promise<void>): Promise<KetQuaGuiKhoi> {
+async function guiKhoiVaoNhom(chatId: number, khoi: string[], batDau: number, toiDa: number, nghiMs: number, ghi: (daGui: number) => Promise<void>, hanMs = HAN_MOT_LUOT_MS): Promise<KetQuaGuiKhoi> {
   const con = khoi.slice(batDau, batDau + Math.max(1, toiDa));
   if (coTaiKhoanGui()) {
-    const r = await guiNhieuBangTaiKhoan(chatId, con, HAN_MOT_LUOT_MS, ghi, nghiMs);
+    const r = await guiNhieuBangTaiKhoan(chatId, con, hanMs, ghi, nghiMs);
     return { ok: r.ok, daGui: r.daGui, doDang: r.doDang, khongRo: r.khongRo, loi: r.loi, bang: "tai-khoan" };
   }
   const batDauLuot = Date.now();
   let daGui = 0;
   for (let i = 0; i < con.length; i++) {
     if (i > 0) {
-      if (Date.now() - batDauLuot + nghiMs + 4_000 > HAN_MOT_LUOT_MS) return { ok: true, daGui, doDang: true, bang: "bot" };
+      if (Date.now() - batDauLuot + nghiMs + 4_000 > hanMs) return { ok: true, daGui, doDang: true, bang: "bot" };
       await new Promise((r) => setTimeout(r, nghiMs));
     }
     const r = await guiTho(chatId, con[i]);
@@ -184,56 +186,75 @@ async function guiKhoiVaoNhom(chatId: number, khoi: string[], batDau: number, to
 /** Giữ chỗ cho câu chữ: gửi gì. */
 const tenNoiDung = (nd: NoiDungGui) => (nd === "lo" ? "lệnh lô" : "số nhận đá PA2");
 
+/** Trần cả một lượt gõ cửa cho MỌI nhóm cộng lại (route cron có 30 giây). */
+const HAN_CA_LUOT_MS = 22_000;
+/** Còn ít hơn ngần này thì không mở thêm kết nối gửi trong lượt này — để lượt sau. */
+const CAN_TOI_THIEU_MS = 7_000;
+
 /**
- * Chạy một lượt (cron gọi vài phút một lần trong các khung giờ). Mỗi miền:
- * tắt / chưa chọn nhóm / ngoài khung / đã gửi đủ hôm nay → bỏ qua; dữ liệu
- * không mới → không gửi, báo quản trị một lần; còn lại thì gửi nối tiếp các
- * phần chưa gửi, ghi tiến độ sau từng phần. Hết giờ một lượt giữa chừng thì
- * lượt sau gửi tiếp từ phần kế. `thu` = chỉ nói sẽ làm gì, không gửi, không ghi.
+ * Chạy một lượt (cron gọi mỗi phút trong các khung giờ) cho TỪNG nhóm. Mỗi
+ * nhóm, mỗi miền: tắt / chưa chọn nhóm / ngoài khung / đã gửi đủ hôm nay → bỏ
+ * qua; dữ liệu không mới → không gửi, báo quản trị; còn lại thì gửi nối tiếp
+ * các phần chưa gửi, ghi tiến độ sau từng phần. Hết giờ giữa chừng thì lượt sau
+ * gửi tiếp từ phần kế. Các nhóm chia nhau một trần thời gian; phút chẵn nhóm 1
+ * đi trước, phút lẻ nhóm 2 đi trước, để không nhóm nào bị bỏ đói.
+ * `thu` = chỉ nói sẽ làm gì, không gửi, không ghi.
  */
 export async function chayBotGui(now = new Date(), thu = false): Promise<{ luc: string; ketQua: KetQuaGui[] }> {
-  const cfg = await docBotGui();
+  const hetLuc = Date.now() + HAN_CA_LUOT_MS;
+  const thuTu = gioVN(now).phut % 2 === 0 ? [...CAC_NHOM] : [...CAC_NHOM].reverse();
+  const ketQua: KetQuaGui[] = [];
+  for (const so of thuTu) ketQua.push(...(await chayMotNhom(so, now, thu, hetLuc)));
+  ketQua.sort((a, b) => a.nhom - b.nhom || MIEN.indexOf(a.region) - MIEN.indexOf(b.region));
+  return { luc: gioVN(now).gio, ketQua };
+}
+
+async function chayMotNhom(so: SoNhom, now: Date, thu: boolean, hetLuc: number): Promise<KetQuaGui[]> {
+  const cfg = await docBotGui(so);
   const ketQua: KetQuaGui[] = [];
   let doi = false;
   const ngay = gioVN(now).ngay;
+  const ten = (r: Region) => `${TEN[r]}${tenNhomSo(so)}`;
+  const lenh = (r: Region) => `/guingay ${lenhNhom(so)}${TEN[r].toLowerCase()}`;
 
   for (const region of MIEN) {
     const m = cfg.mien[region];
-    if (!m.bat) { ketQua.push({ region, viec: "bo-qua", lyDo: "đang tắt" }); continue; }
-    if (cfg.nhom == null) { ketQua.push({ region, viec: "bo-qua", lyDo: "chưa chọn nhóm nhận (/nhomgui trong nhóm)" }); continue; }
+    if (!m.bat) { ketQua.push({ nhom: so, region, viec: "bo-qua", lyDo: "đang tắt" }); continue; }
+    if (cfg.nhom == null) { ketQua.push({ nhom: so, region, viec: "bo-qua", lyDo: `chưa chọn nhóm nhận (/nhomgui ${lenhNhom(so)}trong nhóm)` }); continue; }
     if (!trongKhung(now, m)) {
       // Hết giờ mà hôm nay còn gửi dở: báo quản trị đúng một lần, để gửi tay phần còn lại nếu còn kịp.
       const td = cfg.tienDo[region];
       if (!thu && td && td.ngay === ngay && td.daGui < td.tong && !td.daBao && gioVN(now).gio > m.den) {
         td.daBao = true;
         doi = true;
-        await baoQuanTri(`⚠️ Bot gửi ${TEN[region]}: hết khung ${m.tu}–${m.den} mà mới đi ${td.daGui}/${td.tong} tin. Còn kịp thì gõ /guingay ${TEN[region].toLowerCase()} để gửi nốt (bot chỉ gửi tiếp phần chưa đi).`);
+        await baoQuanTri(`⚠️ Bot gửi ${ten(region)}: hết khung ${m.tu}–${m.den} mà mới đi ${td.daGui}/${td.tong} tin. Còn kịp thì gõ ${lenh(region)} để gửi nốt (bot chỉ gửi tiếp phần chưa đi).`);
       }
-      ketQua.push({ region, viec: "bo-qua", lyDo: `ngoài khung ${m.tu}–${m.den} (đang ${gioVN(now).gio})` });
+      ketQua.push({ nhom: so, region, viec: "bo-qua", lyDo: `ngoài khung ${m.tu}–${m.den} (đang ${gioVN(now).gio})` });
       continue;
     }
-    if (daGuiHomNay(now, cfg.daGui[region])) { ketQua.push({ region, viec: "bo-qua", lyDo: "hôm nay đã gửi đủ" }); continue; }
+    if (daGuiHomNay(now, cfg.daGui[region])) { ketQua.push({ nhom: so, region, viec: "bo-qua", lyDo: "hôm nay đã gửi đủ" }); continue; }
+    if (!thu && hetLuc - Date.now() < CAN_TOI_THIEU_MS) { ketQua.push({ nhom: so, region, viec: "bo-qua", lyDo: "lượt này hết giờ, để lượt sau" }); continue; }
 
     const batDau = batDauTu(now, cfg.tienDo[region]);
     const xt = await xemTruocGui(region, cfg, now);
     if (xt.duLieu !== "ok") {
-      ketQua.push({ region, viec: "loi", lyDo: `dữ liệu chưa mới — ${xt.duLieuChu}` });
-      if (!thu) await baoQuanTri(`⚠️ Bot gửi ${TEN[region]}: KHÔNG gửi ${tenNoiDung(cfg.noiDung)} vì ${xt.duLieuChu}. Bấm Cập nhật KQ rồi gõ /guingay ${TEN[region].toLowerCase()}.`);
+      ketQua.push({ nhom: so, region, viec: "loi", lyDo: `dữ liệu chưa mới — ${xt.duLieuChu}` });
+      if (!thu) await baoQuanTri(`⚠️ Bot gửi ${ten(region)}: KHÔNG gửi ${tenNoiDung(cfg.noiDung)} vì ${xt.duLieuChu}. Bấm Cập nhật KQ rồi gõ ${lenh(region)}.`);
       continue;
     }
-    if (xt.khoi.length === 0) { ketQua.push({ region, viec: "bo-qua", lyDo: cfg.noiDung === "lo" ? "không lô nào đang nhận" : "không cặp đá nào đang nhận" }); continue; }
+    if (xt.khoi.length === 0) { ketQua.push({ nhom: so, region, viec: "bo-qua", lyDo: cfg.noiDung === "lo" ? "không lô nào đang nhận" : "không cặp đá nào đang nhận" }); continue; }
     // Tiến độ hôm nay ghi theo số phần lúc đó; nội dung đổi (tổng khác) thì gửi lại từ đầu cho trọn.
     const tiepTu = batDau > 0 && cfg.tienDo[region]?.tong === xt.khoi.length ? batDau : 0;
-    if (thu) { ketQua.push({ region, viec: "gui", soPhan: xt.khoi.length - tiepTu, kyTu: xt.chuoi.length, soLo: xt.soLo, soCap: xt.soCap }); continue; }
+    if (thu) { ketQua.push({ nhom: so, region, viec: "gui", soPhan: xt.khoi.length - tiepTu, kyTu: xt.chuoi.length, soLo: xt.soLo, soCap: xt.soCap }); continue; }
 
     const ghi = async (n: number) => {
       cfg.tienDo[region] = { ngay, daGui: tiepTu + n, tong: xt.khoi.length };
-      await luuBotGui(cfg);
+      await luuBotGui(cfg, so);
     };
     // Gửi từ từ: mỗi lượt `tinMoiPhut` tin; lượt trước bị lỡ thì gửi bù để kịp hết khung.
     const toiDa = soTinLuotNay(xt.khoi.length - tiepTu, phutConLai(now, m), cfg.tinMoiPhut);
     const nghi = toiDa <= cfg.tinMoiPhut ? NGHI_GIAN_DEU_MS : NGHI_GIUA_TIN_MS;
-    const r = await guiKhoiVaoNhom(cfg.nhom, xt.khoi, tiepTu, toiDa, nghi, ghi);
+    const r = await guiKhoiVaoNhom(cfg.nhom, xt.khoi, tiepTu, toiDa, nghi, ghi, Math.min(HAN_MOT_LUOT_MS, Math.max(CAN_TOI_THIEU_MS, hetLuc - Date.now())));
     let daGui = tiepTu + r.daGui;
     if (r.khongRo) {
       // Không biết phần đó tới chưa. Tính là đã gửi để lượt sau KHÔNG gửi lại phần
@@ -241,54 +262,55 @@ export async function chayBotGui(now = new Date(), thu = false): Promise<{ luc: 
       daGui += 1;
       cfg.tienDo[region] = { ngay, daGui, tong: xt.khoi.length };
       doi = true;
-      ketQua.push({ region, viec: "loi", lyDo: `không rõ phần ${daGui}/${xt.khoi.length} đã tới chưa — ${r.loi}` });
-      await baoQuanTri(`⚠️ Bot gửi ${TEN[region]}: ${r.loi}. KHÔNG RÕ phần ${daGui}/${xt.khoi.length} đã vào nhóm chưa; bot sẽ bỏ qua phần đó và gửi tiếp các phần sau ở lượt kế. Anh mở nhóm xem, thiếu thì gõ /xemgui ${TEN[region].toLowerCase()} rồi chép phần đó vào tay.`);
+      ketQua.push({ nhom: so, region, viec: "loi", lyDo: `không rõ phần ${daGui}/${xt.khoi.length} đã tới chưa — ${r.loi}` });
+      await baoQuanTri(`⚠️ Bot gửi ${ten(region)}: ${r.loi}. KHÔNG RÕ phần ${daGui}/${xt.khoi.length} đã vào nhóm chưa; bot sẽ bỏ qua phần đó và gửi tiếp các phần sau ở lượt kế. Anh mở nhóm xem, thiếu thì gõ /xemgui ${lenhNhom(so)}${TEN[region].toLowerCase()} rồi chép phần đó vào tay.`);
       if (daGui >= xt.khoi.length) cfg.daGui[region] = now.toISOString();
       continue;
     }
     if (daGui >= xt.khoi.length) {
       cfg.daGui[region] = now.toISOString();
       doi = true;
-      ketQua.push({ region, viec: "gui", soPhan: xt.khoi.length, kyTu: xt.chuoi.length, soLo: xt.soLo, soCap: xt.soCap });
+      ketQua.push({ nhom: so, region, viec: "gui", soPhan: xt.khoi.length, kyTu: xt.chuoi.length, soLo: xt.soLo, soCap: xt.soCap });
     } else if (r.ok) {
       // Đúng nhịp: lượt này xong phần của nó, phần còn lại để các lượt sau.
       doi = true;
-      ketQua.push({ region, viec: "do-dang", daGui, tong: xt.khoi.length });
+      ketQua.push({ nhom: so, region, viec: "do-dang", daGui, tong: xt.khoi.length });
     } else {
       doi = doi || r.daGui > 0;
-      ketQua.push({ region, viec: "loi", lyDo: `${r.loi ?? "gửi không được"} (đã đi ${daGui}/${xt.khoi.length} phần)` });
-      await baoQuanTri(`❌ Bot gửi ${TEN[region]}: gửi ${tenNoiDung(cfg.noiDung)} vào nhóm KHÔNG được — ${r.loi} (đã đi ${daGui}/${xt.khoi.length} phần; lượt sau bot thử gửi tiếp).`);
+      ketQua.push({ nhom: so, region, viec: "loi", lyDo: `${r.loi ?? "gửi không được"} (đã đi ${daGui}/${xt.khoi.length} phần)` });
+      await baoQuanTri(`❌ Bot gửi ${ten(region)}: gửi ${tenNoiDung(cfg.noiDung)} vào nhóm KHÔNG được — ${r.loi} (đã đi ${daGui}/${xt.khoi.length} phần; lượt sau bot thử gửi tiếp).`);
     }
   }
 
-  if (doi) await luuBotGui(cfg);
-  return { luc: gioVN(now).gio, ketQua };
+  if (doi) await luuBotGui(cfg, so);
+  return ketQua;
 }
 
-/** /thutk <chuỗi> — gửi nguyên văn một chuỗi vào nhóm nhận BẰNG TÀI KHOẢN NGƯỜI, để thử trước khi bật. */
-export async function thuTaiKhoan(chuoi: string): Promise<{ ok: boolean; chu: string }> {
+/** /thutk [2] <chuỗi> — gửi nguyên văn một chuỗi vào nhóm nhận BẰNG TÀI KHOẢN NGƯỜI, để thử trước khi bật. */
+export async function thuTaiKhoan(chuoi: string, so: SoNhom = 1): Promise<{ ok: boolean; chu: string }> {
   if (!coTaiKhoanGui()) return { ok: false, chu: "Chưa cài tài khoản gửi. Chạy scripts/telegram-user-login.mjs rồi đặt 3 biến TELEGRAM_API_ID / TELEGRAM_API_HASH / TELEGRAM_USER_SESSION trên Vercel." };
-  const cfg = await docBotGui();
-  if (cfg.nhom == null) return { ok: false, chu: "Chưa chọn nhóm nhận. Vào nhóm có bot nhận rồi gõ /nhomgui." };
-  if (!chuoi.trim()) return { ok: false, chu: "Thiếu chuỗi. Ví dụ: /thutk 2d16b100, 15b50" };
+  const cfg = await docBotGui(so);
+  if (cfg.nhom == null) return { ok: false, chu: `Chưa chọn nhóm nhận${tenNhomSo(so)}. Vào nhóm đó rồi gõ /nhomgui ${lenhNhom(so)}`.trim() + "." };
+  if (!chuoi.trim()) return { ok: false, chu: `Thiếu chuỗi. Ví dụ: /thutk ${lenhNhom(so)}2d16b100, 15b50` };
   const r = await guiBangTaiKhoan(cfg.nhom, chuoi.trim());
   if (r.khongRo) return { ok: false, chu: `KHÔNG RÕ tin đã vào nhóm chưa: ${r.loi}. Mở nhóm xem trước khi thử lại.` };
   return r.ok
-    ? { ok: true, chu: `Tài khoản "${r.ten}" đã gửi vào nhóm${cfg.tenNhom ? ` "${cfg.tenNhom}"` : ""}. Xem bot nhận có ghi không.` }
+    ? { ok: true, chu: `Tài khoản "${r.ten}" đã gửi vào${tenNhomSo(so) || " nhóm"}${cfg.tenNhom ? ` "${cfg.tenNhom}"` : ""}. Xem bot nhận có ghi không.` }
     : { ok: false, chu: `Gửi không được: ${r.loi}` };
 }
 
 /**
- * Gửi ngay một miền theo lệnh tay của quản trị (bỏ qua khung giờ, vẫn giữ chốt
- * dữ liệu). Hôm nay đang gửi dở thì gửi tiếp các phần còn lại; đã gửi đủ rồi
- * thì không gửi lại trừ khi `ep` ("/guingay mn lai") — gửi trùng là bot nhận
- * ghi gấp đôi tiền.
+ * Gửi ngay một miền của một nhóm theo lệnh tay của quản trị (bỏ qua khung giờ,
+ * vẫn giữ chốt dữ liệu). Hôm nay đang gửi dở thì gửi tiếp các phần còn lại; đã
+ * gửi đủ rồi thì không gửi lại trừ khi `ep` ("/guingay mn lai") — gửi trùng là
+ * bot nhận ghi gấp đôi tiền.
  */
-export async function guiNgay(region: Region, now = new Date(), ep = false): Promise<{ ok: boolean; chu: string }> {
-  const cfg = await docBotGui();
-  if (cfg.nhom == null) return { ok: false, chu: "Chưa chọn nhóm nhận. Vào nhóm có bot nhận rồi gõ /nhomgui." };
+export async function guiNgay(region: Region, now = new Date(), ep = false, so: SoNhom = 1): Promise<{ ok: boolean; chu: string }> {
+  const cfg = await docBotGui(so);
+  const lenh = `/guingay ${lenhNhom(so)}${TEN[region].toLowerCase()}`;
+  if (cfg.nhom == null) return { ok: false, chu: `Chưa chọn nhóm nhận${tenNhomSo(so)}. Vào nhóm đó rồi gõ /nhomgui ${lenhNhom(so)}`.trim() + "." };
   if (!ep && daGuiHomNay(now, cfg.daGui[region])) {
-    return { ok: false, chu: `Hôm nay đã gửi đủ lúc ${gioVN(new Date(cfg.daGui[region]!)).gio}. Chắc chắn muốn gửi lại cả bộ thì gõ /guingay ${TEN[region].toLowerCase()} lai (bot nhận sẽ ghi thêm lần nữa).` };
+    return { ok: false, chu: `Hôm nay đã gửi đủ lúc ${gioVN(new Date(cfg.daGui[region]!)).gio}. Chắc chắn muốn gửi lại cả bộ thì gõ ${lenh} lai (bot nhận sẽ ghi thêm lần nữa).` };
   }
   const xt = await xemTruocGui(region, cfg, now);
   if (xt.duLieu !== "ok") return { ok: false, chu: `Không gửi: ${xt.duLieuChu}.` };
@@ -298,7 +320,7 @@ export async function guiNgay(region: Region, now = new Date(), ep = false): Pro
   const tiepTu = batDau > 0 && cfg.tienDo[region]?.tong === xt.khoi.length ? batDau : 0;
   const ghi = async (n: number) => {
     cfg.tienDo[region] = { ngay, daGui: tiepTu + n, tong: xt.khoi.length };
-    await luuBotGui(cfg);
+    await luuBotGui(cfg, so);
   };
   // Gửi tay: đi hết phần còn lại, nghỉ ngắn giữa các tin.
   const r = await guiKhoiVaoNhom(cfg.nhom, xt.khoi, tiepTu, xt.khoi.length, NGHI_GIUA_TIN_MS, ghi);
@@ -306,16 +328,16 @@ export async function guiNgay(region: Region, now = new Date(), ep = false): Pro
   if (r.khongRo) {
     cfg.tienDo[region] = { ngay, daGui, tong: xt.khoi.length };
     if (daGui >= xt.khoi.length) cfg.daGui[region] = now.toISOString();
-    await luuBotGui(cfg);
-    return { ok: false, chu: `KHÔNG RÕ phần ${daGui}/${xt.khoi.length} đã vào nhóm chưa: ${r.loi}. Mở nhóm xem; thiếu thì gõ /guingay ${TEN[region].toLowerCase()} để gửi tiếp các phần sau — bot sẽ không gửi lại phần đó.` };
+    await luuBotGui(cfg, so);
+    return { ok: false, chu: `KHÔNG RÕ phần ${daGui}/${xt.khoi.length} đã vào nhóm chưa: ${r.loi}. Mở nhóm xem; thiếu thì gõ ${lenh} để gửi tiếp các phần sau — bot sẽ không gửi lại phần đó.` };
   }
   const noi = `${xt.noiDung === "lo" ? `${xt.soLo} lô` : `${xt.soCap.toLocaleString("vi-VN")} cặp đá PA2`}, ${xt.khoi.length} phần, ${xt.chuoi.length.toLocaleString("vi-VN")} ký tự`;
   const bang = r.bang === "tai-khoan" ? "tài khoản người" : "bot (bot nhận sẽ KHÔNG thấy)";
   if (daGui >= xt.khoi.length) {
     cfg.daGui[region] = now.toISOString();
-    await luuBotGui(cfg);
-    return { ok: true, chu: `Đã gửi ${noi} vào nhóm${cfg.tenNhom ? ` "${cfg.tenNhom}"` : ""} bằng ${bang}${tiepTu ? ` (gửi tiếp từ phần ${tiepTu + 1})` : ""}.` };
+    await luuBotGui(cfg, so);
+    return { ok: true, chu: `Đã gửi ${noi} vào${tenNhomSo(so) || " nhóm"}${cfg.tenNhom ? ` "${cfg.tenNhom}"` : ""} bằng ${bang}${tiepTu ? ` (gửi tiếp từ phần ${tiepTu + 1})` : ""}.` };
   }
-  if (r.ok && r.doDang) return { ok: false, chu: `Mới đi được ${daGui}/${xt.khoi.length} phần (hết thời gian một lượt). Gõ lại /guingay ${TEN[region].toLowerCase()} để gửi tiếp từ phần ${daGui + 1}.` };
+  if (r.ok && r.doDang) return { ok: false, chu: `Mới đi được ${daGui}/${xt.khoi.length} phần (hết thời gian một lượt). Gõ lại ${lenh} để gửi tiếp từ phần ${daGui + 1}.` };
   return { ok: false, chu: `Gửi không được: ${r.loi} (đã đi ${daGui}/${xt.khoi.length} phần; gõ lại để gửi tiếp).` };
 }
