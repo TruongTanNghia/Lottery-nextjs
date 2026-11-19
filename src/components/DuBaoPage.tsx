@@ -48,8 +48,13 @@ export default function DuBaoPage({ region }: { region: Region }) {
   const [tienDo, setTienDo] = useState<{ da: number; tong: number } | null>(null);
   const [n, setN] = useState<number>(SO_CON_MAC_DINH);
   const [mh, setMh] = useState<MoHinh>("tongHop");
+  // Điểm / tiền tố của khung "Gộp số" — khung BOT GỬI (khách 20/11: "cho bot gửi phần này thôi").
   const [tienTo, setTienTo] = useState(TIEN_TO_NHAN_MAC_DINH[region]);
   const [diemNhap, setDiemNhap] = useState("1");
+  // Điểm / tiền tố riêng của khung "Số dự báo kỳ tới" — CHỈ THAM KHẢO ("phần dưới mình tham khảo thôi, bot đừng gửi"),
+  // tách khỏi khung Gộp số để gõ ở dưới không làm đổi tiền bot gửi.
+  const [tienToTk, setTienToTk] = useState(TIEN_TO_NHAN_MAC_DINH[region]);
+  const [diemTkNhap, setDiemTkNhap] = useState("1");
   const [xemHet, setXemHet] = useState(false);
   const [daCopy, setDaCopy] = useState(false);
 
@@ -109,7 +114,8 @@ export default function DuBaoPage({ region }: { region: Region }) {
   const gia = STAKE_PRICE[region], can = nhayCanDeLoi(n, region), kv = nhayKyVong(n, region);
   const chonToi = kyToi ? kyToi.chon[mh].slice(0, n) : [];
   const tt = docTienTo(tienTo), dd = docDiem(diemNhap), diem = dd.diem;
-  const chuoi = chuoiDanh(chonToi, tt.tienTo, diem);
+  const ttTk = docTienTo(tienToTk), ddTk = docDiem(diemTkNhap), diemTk = ddTk.diem;
+  const chuoi = chuoiDanh(chonToi, ttTk.tienTo, diemTk);
   /** Con được bao nhiêu mô hình chọn cho kỳ tới (đồng thuận). */
   const dongThuan = useMemo(() => {
     const m = new Map<string, number>();
@@ -134,8 +140,8 @@ export default function DuBaoPage({ region }: { region: Region }) {
   const choLuu = useRef<{ region: Region; body: string; hen: ReturnType<typeof setTimeout> } | null>(null);
   const regionNay = useRef(region);
   regionNay.current = region;
-  const thanLuu = (rg: Region, o: Set<string>, soCon: number, diem: number, tt: string, tu: number) =>
-    JSON.stringify({ o: [...o].sort(), soCon, diem, tienTo: tt === TIEN_TO_NHAN_MAC_DINH[rg] ? null : tt, tu });
+  const thanLuu = (rg: Region, o: Set<string>, soCon: number, diem: number, tt: string, tu: number, diemTk: number | null, ttTk: string) =>
+    JSON.stringify({ o: [...o].sort(), soCon, diem, tienTo: tt === TIEN_TO_NHAN_MAC_DINH[rg] ? null : tt, tu, diemTk, tienToTk: ttTk === TIEN_TO_NHAN_MAC_DINH[rg] ? null : ttTk });
   const guiLuu = async (rg: Region, body: string) => {
     if (rg === regionNay.current) setLuuTT({ tt: "dang" });
     try {
@@ -153,16 +159,18 @@ export default function DuBaoPage({ region }: { region: Region }) {
     let huy = false;
     setDaTai(false); setLuuTT(null);
     (async () => {
-      let cd = { o: [] as string[], soCon: SO_CON_MAC_DINH, diem: 1, tienTo: null as string | null, tu: 1, luuLuc: null as string | null };
+      let cd = { o: [] as string[], soCon: SO_CON_MAC_DINH, diem: 1, tienTo: null as string | null, tu: 1, diemTk: null as number | null, tienToTk: null as string | null, luuLuc: null as string | null };
       try {
         const r = await fetch(`/api/config/dubao?region=${region}`, { cache: "no-store" });
         if (r.ok) cd = { ...cd, ...((await r.json())?.data ?? {}) };
       } catch { /* không tải được: dùng mặc định, vẫn cho lưu */ }
       if (huy) return;
       const tt = cd.tienTo ?? TIEN_TO_NHAN_MAC_DINH[region];
+      // Bản lưu trước khi tách khung tham khảo: chưa có điểm/tiền tố riêng → lấy như khung Gộp số.
+      const ttTk = cd.tienToTk ?? tt, dTk = cd.diemTk ?? cd.diem;
       const o = new Set(cd.o);
-      setOChon(o); setN(cd.soCon); setDiemNhap(String(cd.diem)); setTienTo(tt); setTuMh(cd.tu);
-      daLuu.current = thanLuu(region, o, cd.soCon, cd.diem, tt, cd.tu);
+      setOChon(o); setN(cd.soCon); setDiemNhap(String(cd.diem)); setTienTo(tt); setTuMh(cd.tu); setDiemTkNhap(String(dTk)); setTienToTk(ttTk);
+      daLuu.current = thanLuu(region, o, cd.soCon, cd.diem, tt, cd.tu, dTk, ttTk);
       setLuuTT(cd.luuLuc ? { tt: "da", luc: cd.luuLuc } : null);
       setDaTai(true);
     })();
@@ -174,13 +182,14 @@ export default function DuBaoPage({ region }: { region: Region }) {
     if (!daTai) return;
     const d = docDiem(diemNhap);
     if (d.loi) return;
-    const body = thanLuu(region, oChon, n, d.diem, tienTo, tuMh);
+    const dTk = docDiem(diemTkNhap);
+    const body = thanLuu(region, oChon, n, d.diem, tienTo, tuMh, dTk.loi ? null : dTk.diem, tienToTk);
     if (body === daLuu.current) { if (choLuu.current) { clearTimeout(choLuu.current.hen); choLuu.current = null; } return; }
     if (choLuu.current) clearTimeout(choLuu.current.hen);
     const rg = region;
     choLuu.current = { region: rg, body, hen: setTimeout(() => { choLuu.current = null; void guiLuu(rg, body); }, 700) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [daTai, oChon, n, diemNhap, tienTo, tuMh]);
+  }, [daTai, oChon, n, diemNhap, tienTo, tuMh, diemTkNhap, tienToTk]);
   const doiO = (f: (s: Set<string>) => Set<string>) => setOChon(f(new Set(oChon)));
   const batO = (m: MoHinh, t: number) => doiO((s) => { const k = khoaO(m, t); if (s.has(k)) s.delete(k); else s.add(k); return s; });
   /** Bấm tên cột: chọn đúng các ô đang lời của cột; bấm lần nữa (đã chọn đủ) thì bỏ cả cột. */
@@ -209,9 +218,9 @@ export default function DuBaoPage({ region }: { region: Region }) {
     const d = new Date(iso);
     return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
   };
-  /** Dòng "đã lưu": khách 20/11 sợ vào lại bị reset — nói rõ đã lưu lúc nào, và bot gửi theo đúng bộ này. */
-  const dongLuu = (
-    <div className="text-[0.68rem] leading-snug" data-dubao-luu={!daTai ? "tai" : luuTT?.tt ?? "chua"} style={{ color: luuTT?.tt === "loi" ? "#ffd24a" : "#a5b4fc" }}>
+  /** Dòng "đã lưu": khách 20/11 sợ vào lại bị reset — nói rõ đã lưu lúc nào; khung Gộp số thì nói bot gửi đúng khung này. */
+  const dongLuuCua = (khungBot: boolean) => (
+    <div className="text-[0.68rem] leading-snug" {...(khungBot ? { "data-dubao-luu": !daTai ? "tai" : luuTT?.tt ?? "chua" } : { "data-dubao-luu-tk": !daTai ? "tai" : luuTT?.tt ?? "chua" })} style={{ color: luuTT?.tt === "loi" ? "#ffd24a" : "#a5b4fc" }}>
       {!daTai
         ? "Đang tải cài đặt đã lưu…"
         : luuTT?.tt === "dang"
@@ -219,10 +228,15 @@ export default function DuBaoPage({ region }: { region: Region }) {
           : luuTT?.tt === "loi"
             ? "⚠ Lưu không được (mạng?) — đổi lại một ô hay số bất kỳ để lưu lại."
             : luuTT?.tt === "da"
-              ? `☁ Đã lưu lúc ${gioLuu(luuTT.luc)} — vào lại vẫn giữ ô chọn, số con, điểm. Bot gửi nhóm 2 gửi đúng khung Gộp số này.`
-              : "☁ Ô chọn, số con, điểm, tiền tố, lọc: đổi là tự lưu theo miền."}
+              ? khungBot
+                ? `☁ Đã lưu lúc ${gioLuu(luuTT.luc)} — vào lại vẫn giữ ô chọn, số con, điểm. Bot gửi nhóm 2 gửi đúng khung Gộp số này.`
+                : `☁ Đã lưu lúc ${gioLuu(luuTT.luc)}. Khung này chỉ để tham khảo, bot KHÔNG gửi.`
+              : khungBot
+                ? "☁ Ô chọn, số con, điểm, tiền tố, lọc: đổi là tự lưu theo miền."
+                : "☁ Điểm, tiền tố khung này: đổi là tự lưu; chỉ để tham khảo, bot không gửi."}
     </div>
   );
+  const dongLuu = dongLuuCua(true), dongLuuTk = dongLuuCua(false);
 
   return (
     <div className="space-y-4 md:space-y-6" data-dubao>
@@ -321,7 +335,7 @@ export default function DuBaoPage({ region }: { region: Region }) {
                       gt={pt.theoThu.kyToi ? `${TEN_THU[pt.theoThu.kyToi.thu]} · ${pt.theoThu.kyToi.ten}` : "—"}
                       phu={
                         pt.theoThu.kyToi && kyToi
-                          ? `${ddmmyy(pt.theoThu.kyToi.date)} · ô lời nhất ở ${TEN_THU[pt.theoThu.kyToi.thu]} tính đến hôm nay · số: ${[...kyToi.chon[pt.theoThu.kyToi.moHinh].slice(0, n)].sort().join(" ")}. Bot gửi nhóm 2 tự chọn đúng ô này mỗi ngày (theo số con cài cho bot, mặc định 10).`
+                          ? `${ddmmyy(pt.theoThu.kyToi.date)} · ô lời nhất ở ${TEN_THU[pt.theoThu.kyToi.thu]} tính đến hôm nay · số: ${[...kyToi.chon[pt.theoThu.kyToi.moHinh].slice(0, n)].sort().join(" ")}. Chỉ để tham khảo — bot gửi theo các ô anh chọn ở khung Gộp số bên dưới.`
                           : ""
                       }
                       m="#c4b5fd"
@@ -371,6 +385,7 @@ export default function DuBaoPage({ region }: { region: Region }) {
                     <div className="flex flex-wrap items-baseline gap-x-2">
                       <span className="eyebrow">Gộp số từ các ô đã chọn · kỳ tới</span>
                       <b className="text-white text-[0.8rem]">{TEN_THU[thuToi]} {ddmmyy(kyToi.date)}</b>
+                      <span className="text-[0.62rem] font-bold px-1.5 py-0.5 rounded bg-[#10b981]/25 text-[#7ff0c0]" data-dubao-gop-bot>📤 Bot nhóm 2 gửi khung này</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       <button onClick={() => chonCot(thuToi, true)} data-dubao-gop-chon-het className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#7c3aed] text-white">Chọn hết ô đang lời ở {TEN_THU[thuToi]}</button>
@@ -413,7 +428,8 @@ export default function DuBaoPage({ region }: { region: Region }) {
                             <input value={tienTo} onChange={(e) => setTienTo(e.target.value)} placeholder="để trống nếu không cần" data-dubao-gop-tien-to className="w-36 px-2 py-1 rounded-lg bg-white/[0.08] text-white text-sm numeric border border-[var(--hairline)]" />
                           </label>
                         </div>
-                        {(dd.loi || tt.loi) && <div className="text-[0.72rem] text-[#ffd24a]">{dd.loi ?? ""}{dd.loi && tt.loi ? " " : ""}{tt.loi ?? ""}</div>}
+                        {(dd.loi || tt.loi) && <div className="text-[0.72rem] text-[#ffd24a]" data-dubao-gop-loi-nhap>{dd.loi ?? ""}{dd.loi && tt.loi ? " " : ""}{tt.loi ?? ""}</div>}
+                        <div className="text-[0.64rem] text-[var(--text-muted)]">Điểm ở đây là điểm bot gửi. Tiền tố ở đây chỉ cho nút Copy; bot gửi bằng chữ đầu đã thử với bot nhận (Mn 2d / Mt 2d / Mb).</div>
                         <div className="flex flex-wrap items-center gap-1.5">
                           <code className="flex-1 min-w-[12rem] px-2 py-1 rounded-lg bg-black/30 text-[#e2e8f0] text-xs break-all" data-dubao-gop-chuoi>{chuoiGop}</code>
                           <button onClick={copyGop} data-dubao-gop-copy className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#7c3aed] text-white">{daCopyGop ? "Đã copy" : "Copy"}</button>
@@ -467,6 +483,7 @@ export default function DuBaoPage({ region }: { region: Region }) {
                       <div className="flex flex-wrap items-baseline gap-x-2">
                         <span className="eyebrow">Số dự báo kỳ tới</span>
                         <span className="text-[0.78rem] text-white font-bold">{thuCua(kyToi.date)} {ddmmyy(kyToi.date)}</span>
+                        <span className="text-[0.62rem] font-bold px-1.5 py-0.5 rounded bg-white/[0.10] text-[#cbd5e1]" data-dubao-ky-toi-tham-khao>👀 Chỉ tham khảo — bot không gửi</span>
                         <span className="text-[0.66rem] text-[var(--text-muted)]">theo "{chonMh.ten}", từ {CUA_SO} kỳ đến {ddmm(pt.denNgay)}</span>
                       </div>
                       <div className="flex flex-wrap gap-1.5" data-dubao-chon-toi>
@@ -480,31 +497,31 @@ export default function DuBaoPage({ region }: { region: Region }) {
                         Số nhỏ góc phải = bao nhiêu trong {CAC_MO_HINH.length} mô hình cùng chọn con đó.{" "}
                         {dongThuanCao.length ? <>Được từ 4 mô hình trở lên: <b className="text-white numeric">{dongThuanCao.map(([lo, c]) => `${lo} (${c})`).join(", ")}</b>.</> : "Không con nào được từ 4 mô hình trở lên."}
                       </div>
-                      {dongLuu}
+                      {dongLuuTk}
                       <div className="flex flex-wrap items-end gap-2" data-dubao-o-nhap>
                         <label className="flex flex-col gap-0.5">
                           <span className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">Điểm mỗi con</span>
-                          <input value={diemNhap} onChange={(e) => setDiemNhap(e.target.value)} inputMode="numeric" data-dubao-diem className="w-20 px-2 py-1 rounded-lg bg-white/[0.08] text-white text-sm font-bold numeric border border-[var(--hairline)]" />
+                          <input value={diemTkNhap} onChange={(e) => setDiemTkNhap(e.target.value)} inputMode="numeric" data-dubao-diem className="w-20 px-2 py-1 rounded-lg bg-white/[0.08] text-white text-sm font-bold numeric border border-[var(--hairline)]" />
                         </label>
                         <label className="flex flex-col gap-0.5">
                           <span className="text-[0.62rem] uppercase tracking-wider text-[var(--text-muted)]">Tiền tố đài (2d, mn, mb)</span>
-                          <input value={tienTo} onChange={(e) => setTienTo(e.target.value)} placeholder="để trống nếu không cần" data-dubao-tien-to className="w-36 px-2 py-1 rounded-lg bg-white/[0.08] text-white text-sm numeric border border-[var(--hairline)]" />
+                          <input value={tienToTk} onChange={(e) => setTienToTk(e.target.value)} placeholder="để trống nếu không cần" data-dubao-tien-to className="w-36 px-2 py-1 rounded-lg bg-white/[0.08] text-white text-sm numeric border border-[var(--hairline)]" />
                         </label>
                       </div>
-                      {(dd.loi || tt.loi) && (
-                        <div className="text-[0.72rem] text-[#ffd24a]" data-dubao-loi-nhap>{dd.loi ?? ""}{dd.loi && tt.loi ? " " : ""}{tt.loi ?? ""}</div>
+                      {(ddTk.loi || ttTk.loi) && (
+                        <div className="text-[0.72rem] text-[#ffd24a]" data-dubao-loi-nhap>{ddTk.loi ?? ""}{ddTk.loi && ttTk.loi ? " " : ""}{ttTk.loi ?? ""}</div>
                       )}
                       <div className="flex flex-wrap items-center gap-1.5">
                         <code className="flex-1 min-w-[12rem] px-2 py-1 rounded-lg bg-black/30 text-[#e2e8f0] text-xs break-all" data-dubao-chuoi>{chuoi}</code>
                         <button onClick={copy} data-dubao-copy className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#7c3aed] text-white">{daCopy ? "Đã copy" : "Copy"}</button>
                       </div>
-                      <div className="text-[0.74rem] text-[var(--text-secondary)]" data-dubao-danh-sao data-dubao-xac={n * diem * gia}>
-                        <b className="text-white">Đánh như nào:</b> {n} con trên, mỗi con <b className="text-white numeric">{so(diem)}</b> điểm, xác <b className="text-white numeric">{so(n * diem * gia)}đ</b>.
-                        Về {can} nháy mới lời (+{so((can * WIN_PER_POINT - n * gia) * diem)}đ), về 0 nháy mất {so(n * diem * gia)}đ.
+                      <div className="text-[0.74rem] text-[var(--text-secondary)]" data-dubao-danh-sao data-dubao-xac={n * diemTk * gia}>
+                        <b className="text-white">Đánh như nào:</b> {n} con trên, mỗi con <b className="text-white numeric">{so(diemTk)}</b> điểm, xác <b className="text-white numeric">{so(n * diemTk * gia)}đ</b>.
+                        Về {can} nháy mới lời (+{so((can * WIN_PER_POINT - n * gia) * diemTk)}đ), về 0 nháy mất {so(n * diemTk * gia)}đ.
                       </div>
-                      <div className="text-[0.72rem] text-[var(--text-secondary)]" data-dubao-gap data-dubao-gap-lai={chonMh.lai * diem} data-dubao-gap-sut={chonMh.thuaSauNhat * diem}>
-                        Nếu {so(chonMh.soKy)} kỳ qua đánh "{chonMh.ten}" {so(diem)} điểm mỗi con: lãi <b className="numeric" style={{ color: mau(chonMh.lai) }}>{dau(chonMh.lai * diem)}</b>,
-                        có lúc thua sâu <b className="numeric text-[#ff9d9d]">{tien(chonMh.thuaSauNhat * diem)}</b>, thua liền {chonMh.chuoiThua} kỳ. Gấp điểm thì tiền ăn và tiền thua cùng gấp lên, may rủi không đổi.
+                      <div className="text-[0.72rem] text-[var(--text-secondary)]" data-dubao-gap data-dubao-gap-lai={chonMh.lai * diemTk} data-dubao-gap-sut={chonMh.thuaSauNhat * diemTk}>
+                        Nếu {so(chonMh.soKy)} kỳ qua đánh "{chonMh.ten}" {so(diemTk)} điểm mỗi con: lãi <b className="numeric" style={{ color: mau(chonMh.lai) }}>{dau(chonMh.lai * diemTk)}</b>,
+                        có lúc thua sâu <b className="numeric text-[#ff9d9d]">{tien(chonMh.thuaSauNhat * diemTk)}</b>, thua liền {chonMh.chuoiThua} kỳ. Gấp điểm thì tiền ăn và tiền thua cùng gấp lên, may rủi không đổi.
                       </div>
                     </div>
                   )}

@@ -245,7 +245,9 @@ console.log("\n===== 9. Cài đặt tab lưu máy chủ + bot gửi theo ô ch�
   const a = chuanHoaCaiDatDuBao({ o: ["frequency:5", "poisson:5", "frequency:5", "xyz:1", "pair:9", 3], soCon: 20, diem: 15, tienTo: "2d", tu: 2 });
   ok("dọn cài đặt: bỏ ô trùng / mô hình lạ / thứ lạ, giữ 20 con, 15 điểm, tiền tố, lọc 2", a.o.join() === "frequency:5,poisson:5" && a.soCon === 20 && a.diem === 15 && a.tienTo === "2d" && a.tu === 2);
   const b = chuanHoaCaiDatDuBao({ soCon: 7, diem: 0, tu: 9, tienTo: 5 });
-  ok("dọn cài đặt: 7 con / 0 điểm / lọc 9 / tiền tố số → 10 con, 1 điểm, lọc 1, tiền tố theo miền (null); rỗng → mặc định", b.soCon === 10 && b.diem === 1 && b.tu === 1 && b.tienTo === null && JSON.stringify(chuanHoaCaiDatDuBao(null)) === JSON.stringify({ o: [], soCon: 10, diem: 1, tienTo: null, tu: 1 }));
+  ok("dọn cài đặt: 7 con / 0 điểm / lọc 9 / tiền tố số → 10 con, 1 điểm, lọc 1, tiền tố theo miền (null); rỗng → mặc định", b.soCon === 10 && b.diem === 1 && b.tu === 1 && b.tienTo === null && JSON.stringify(chuanHoaCaiDatDuBao(null)) === JSON.stringify({ o: [], soCon: 10, diem: 1, tienTo: null, tu: 1, diemTk: null, tienToTk: null }));
+  const tk = chuanHoaCaiDatDuBao({ diem: 20, diemTk: 5, tienToTk: "mb " }), tk0 = chuanHoaCaiDatDuBao({ diem: 20, diemTk: 0, tienToTk: 7 });
+  ok("khung tham khảo (khách 20/11: 'phần dưới tham khảo thôi'): điểm / tiền tố riêng 5, 'mb ' giữ; lạ → null; khung Gộp số vẫn 20 điểm", tk.diem === 20 && tk.diemTk === 5 && tk.tienToTk === "mb " && tk0.diemTk === null && tk0.tienToTk === null);
   const cs = lichSu(CUA_SO + 30);
   const toi = duBaoKyToi(cs, "xsmn")!, t = thuCuaNgay(toi.date), t2 = (t + 1) % 7;
   const cd = chuanHoaCaiDatDuBao({ o: ["frequency:" + t, "recency:" + t, "poisson:" + t2], soCon: 20, diem: 3, tu: 1 });
@@ -258,6 +260,7 @@ console.log("\n===== 9. Cài đặt tab lưu máy chủ + bot gửi theo ô ch�
   ok("chọn 1 ô mà lọc 3: lọc tự hạ về 1 (như tab), vẫn đủ 20 con", g3.tu === 1 && g3.con.length === 20);
   const g4 = soGuiTheoO(cs, "xsmn", { ...cd, o: ["poisson:" + t2] })!;
   ok("không chọn ô nào ở cột kỳ tới: không có mô hình, không con nào", g4.moHinh.length === 0 && g4.con.length === 0);
+  ok("bot không dùng điểm khung tham khảo: đổi diemTk không làm đổi số / thứ tự bot gửi", JSON.stringify(soGuiTheoO(cs, "xsmn", { ...cd, diemTk: 99, tienToTk: "zz" })) === JSON.stringify(g));
 }
 
 console.log(`\n### ${pass} DAT - ${fail} HONG ###`);

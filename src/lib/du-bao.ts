@@ -747,8 +747,14 @@ export interface CaiDatDuBaoTab {
   tienTo: string | null;
   /** Lọc: chỉ lấy con được từ ngần này mô hình trở lên (1–5). */
   tu: number;
+  /**
+   * Điểm / tiền tố của khung "Số dự báo kỳ tới" — chỉ tham khảo, bot KHÔNG đọc (khách 20/11: "phần dưới
+   * mình tham khảo thôi, bot đừng gửi"). null = chưa đặt riêng, tab lấy như khung Gộp số.
+   */
+  diemTk: number | null;
+  tienToTk: string | null;
 }
-export const CAI_DAT_DU_BAO_MAC_DINH: CaiDatDuBaoTab = { o: [], soCon: SO_CON_MAC_DINH, diem: 1, tienTo: null, tu: 1 };
+export const CAI_DAT_DU_BAO_MAC_DINH: CaiDatDuBaoTab = { o: [], soCon: SO_CON_MAC_DINH, diem: 1, tienTo: null, tu: 1, diemTk: null, tienToTk: null };
 
 const KHOA_MO_HINH = new Set<string>(CAC_MO_HINH.map((m) => m.khoa));
 /** Dọn một bộ cài đặt đọc từ ngoài (trình duyệt hay DB): thứ gì lạ thì về mặc định, ô lạ thì bỏ. */
@@ -757,13 +763,15 @@ export function chuanHoaCaiDatDuBao(raw: unknown): CaiDatDuBaoTab {
   const oChon = Array.isArray(o.o)
     ? [...new Set(o.o.filter((x): x is string => typeof x === "string" && /^[a-zA-Z]+:[0-6]$/.test(x) && KHOA_MO_HINH.has(x.split(":")[0])))].sort()
     : [];
-  const soCon = Number(o.soCon), diem = Number(o.diem), tu = Number(o.tu);
+  const soCon = Number(o.soCon), diem = Number(o.diem), tu = Number(o.tu), diemTk = o.diemTk == null ? NaN : Number(o.diemTk);
   return {
     o: oChon,
     soCon: (CAC_SO_CON as readonly number[]).includes(soCon) ? soCon : CAI_DAT_DU_BAO_MAC_DINH.soCon,
     diem: Number.isInteger(diem) && diem >= 1 && diem <= 9999 ? diem : 1,
     tienTo: typeof o.tienTo === "string" && o.tienTo.length <= 20 ? o.tienTo : null,
     tu: Number.isInteger(tu) && tu >= 1 && tu <= 5 ? tu : 1,
+    diemTk: Number.isInteger(diemTk) && diemTk >= 1 && diemTk <= 9999 ? diemTk : null,
+    tienToTk: typeof o.tienToTk === "string" && o.tienToTk.length <= 20 ? o.tienToTk : null,
   };
 }
 
