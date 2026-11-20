@@ -84,6 +84,8 @@ export interface CaiDatBotGui {
   tinMoiPhut: number;
   /** Tiến độ của ngày đang gửi dở — xem `batDauTu`. */
   tienDo: Partial<Record<Region, TienDoGui>>;
+  /** Ngày (VN) đã báo quản trị "hôm nay không có gì để gửi" cho miền đó — báo đúng một lần mỗi ngày. */
+  daBaoRong: Partial<Record<Region, string>>;
   /** Nội dung "dubao": chọn ô, số con, điểm. */
   duBao: CaiDatDuBaoGui;
 }
@@ -103,6 +105,7 @@ export const MAC_DINH_BOT_GUI: CaiDatBotGui = {
   soTin: SO_TIN_MAC_DINH,
   tinMoiPhut: TIN_MOI_PHUT_MAC_DINH,
   tienDo: {},
+  daBaoRong: {},
   duBao: DU_BAO_GUI_MAC_DINH,
 };
 /**
@@ -121,13 +124,21 @@ export const MAC_DINH_BOT_GUI: CaiDatBotGui = {
 export const MAC_DINH_NHOM_2: CaiDatBotGui = {
   ...MAC_DINH_BOT_GUI,
   mien: {
-    xsmn: { bat: false, tu: "15:00", den: "16:08", tienTo: "Mn 2d" },
-    xsmt: { bat: false, tu: "15:00", den: "17:08", tienTo: "Mt 2d" },
-    xsmb: { bat: false, tu: "15:00", den: "18:08", tienTo: "Mb " },
+    // Khách 20/11: "cái 2 số đấy cho máy gửi 1 lần vào lúc Mn 16h, Mt 17h, Mb 18h" — 8 phút cuối để bù nếu lỡ lượt gõ cửa.
+    xsmn: { bat: false, tu: "16:00", den: "16:08", tienTo: "Mn 2d" },
+    xsmt: { bat: false, tu: "17:00", den: "17:08", tienTo: "Mt 2d" },
+    xsmb: { bat: false, tu: "18:00", den: "18:08", tienTo: "Mb " },
   },
   noiDung: "dubao",
   daGui: {},
   tienDo: {},
+  daBaoRong: {},
+};
+/** Khung mặc định cũ của nhóm 2 (19/11: "gửi từ 3h00"). Bản lưu còn y khung này là chưa ai đặt tay → đọc lên thành giờ mới. */
+const KHUNG_CU_NHOM_2: Record<Region, KhungGio> = {
+  xsmn: { tu: "15:00", den: "16:08" },
+  xsmt: { tu: "15:00", den: "17:08" },
+  xsmb: { tu: "15:00", den: "18:08" },
 };
 /** Tên nội dung để hiện trong /lichgui, /nhomgui… */
 export function tenNoiDungGui(cfg: Pick<CaiDatBotGui, "noiDung" | "duBao">): string {
@@ -242,6 +253,7 @@ export function chuanHoaBotGui(raw: unknown, so: SoNhom = 1): CaiDatBotGui {
     let tu = laGioHopLe(m.tu) ? m.tu : md.tu;
     let den = laGioHopLe(m.den) ? m.den : md.den;
     if (so === 1 && KHUNG_CU[r].some((k) => k.tu === tu && k.den === den)) { tu = md.tu; den = md.den; }
+    if (so === 2 && KHUNG_CU_NHOM_2[r].tu === tu && KHUNG_CU_NHOM_2[r].den === den) { tu = md.tu; den = md.den; }
     mien[r] = {
       bat: m.bat === true,
       // Khung ngược (đến trước từ) là vô nghĩa — về mặc định cả cặp.
@@ -275,6 +287,12 @@ export function chuanHoaBotGui(raw: unknown, so: SoNhom = 1): CaiDatBotGui {
     tinMoiPhut: Number.isInteger(tp) && tp >= 1 && tp <= TIN_MOI_PHUT_MAX ? tp : TIN_MOI_PHUT_MAC_DINH,
     tienDo,
     duBao: chuanHoaDuBao(o.duBao),
+    daBaoRong: (() => {
+      const raw = o.daBaoRong && typeof o.daBaoRong === "object" ? (o.daBaoRong as Record<string, unknown>) : {};
+      const out: Partial<Record<Region, string>> = {};
+      for (const r of ["xsmn", "xsmt", "xsmb"] as Region[]) if (typeof raw[r] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw[r] as string)) out[r] = raw[r] as string;
+      return out;
+    })(),
   };
 }
 

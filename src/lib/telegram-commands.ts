@@ -116,7 +116,7 @@ export function helpText(isAdmin = false): string {
         "<code>/dodaigui 2000</code> — trần ký tự một tin (500–3400)",
         "<code>/khunggio mn 15:50 16:05</code> · <code>/tiento mn 2d</code>",
         "<code>/noidunggui dubao</code> — gửi số dự báo (tab Dự Báo): <code>/dubaogui chon</code> đúng ô anh chọn trên tab, số con và điểm theo tab (mặc định) · <code>/dubaogui tot</code> ô lời nhất của thứ hôm đó · <code>/dubaogui loi</code> gộp hết ô đang lời · <code>/socongui 10</code> · <code>/diemgui 1</code> (hai lệnh này cho tot/loi)",
-        "<i>Nhóm 2 (gửi thêm một nhóm nữa, mặc định số dự báo theo thứ từ 15:00): thêm số 2 sau lệnh — <code>/nhomgui 2</code> (gõ trong nhóm đó), <code>/xemgui 2 mn</code>, <code>/thutk 2 Mn 2d16b1</code>, <code>/batgui 2 all</code>, <code>/guingay 2 mn</code>, <code>/dubaogui 2 tot</code>, <code>/diemgui 2 5</code>, <code>/khunggio 2 mn 15:00 16:08</code>, <code>/tiento 2 mn 2d</code></i>",
+        "<i>Nhóm 2 (gửi thêm một nhóm nữa, mặc định số dự báo theo ô chọn, mỗi miền một lần: Mn 16:00, Mt 17:00, Mb 18:00): thêm số 2 sau lệnh — <code>/nhomgui 2</code> (gõ trong nhóm đó), <code>/xemgui 2 mn</code>, <code>/thutk 2 Mn 2d16b1</code>, <code>/batgui 2 all</code>, <code>/guingay 2 mn</code>, <code>/dubaogui 2 tot</code>, <code>/diemgui 2 5</code>, <code>/khunggio 2 mn 16:00 16:08</code>, <code>/tiento 2 mn 2d</code></i>",
         "<code>/roinhom</code> — gõ TRONG nhóm bị thêm nhầm: bot và tài khoản gửi rời nhóm đó (nếu đang là nhóm gửi 2 thì bỏ chọn)",
       ]
     : [];

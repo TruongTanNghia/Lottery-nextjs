@@ -92,8 +92,12 @@ export async function guiVaoNhom(chatId: number, text: string): Promise<{ ok: bo
   return { ...r, bang: "bot" };
 }
 
+/**
+ * Báo riêng cho quản trị. Chỉ gửi tới NGƯỜI (id dương): danh sách quản trị có thể chứa id nhóm (để bot trả lời
+ * lệnh trong nhóm), mà tin báo "đã gửi / không gửi" mỗi ngày (từ 20/11) không được lọt vào nhóm cược của khách.
+ */
 async function baoQuanTri(text: string): Promise<void> {
-  for (const id of adminIds()) await guiTho(id, text);
+  for (const id of adminIds()) if (Number(id) > 0) await guiTho(id, text);
 }
 
 async function kyMoiNhat(region: Region): Promise<string | null> {
@@ -297,7 +301,18 @@ async function chayMotNhom(so: SoNhom, now: Date, thu: boolean, hetLuc: number):
       if (!thu) await baoQuanTri(`⚠️ Bot gửi ${ten(region)}: KHÔNG gửi ${tenNoiDung(cfg.noiDung)} vì ${xt.duLieuChu}. Bấm Cập nhật KQ rồi gõ ${lenh(region)}.`);
       continue;
     }
-    if (xt.khoi.length === 0) { ketQua.push({ nhom: so, region, viec: "bo-qua", lyDo: xt.lyDoRong ?? trongRong(cfg.noiDung) }); continue; }
+    if (xt.khoi.length === 0) {
+      const lyDo = xt.lyDoRong ?? trongRong(cfg.noiDung);
+      ketQua.push({ nhom: so, region, viec: "bo-qua", lyDo });
+      // Khách 20/11 "con bot 2 bên nhóm mới không có gửi": số dự báo mà hôm nay không có gì để gửi (thường là
+      // chưa chọn ô ở cột hôm đó) thì báo quản trị MỘT lần trong ngày — còn kịp chọn trước giờ cuối thì bot vẫn gửi.
+      if (!thu && cfg.noiDung === "dubao" && cfg.daBaoRong[region] !== ngay) {
+        cfg.daBaoRong[region] = ngay;
+        doi = true;
+        await baoQuanTri(`ℹ️ Bot gửi ${ten(region)}: hôm nay KHÔNG gửi — ${lyDo}. Chọn ô trên tab Dự Báo trước ${m.den} thì bot vẫn gửi trong khung ${m.tu}–${m.den}.`);
+      }
+      continue;
+    }
     // Tiến độ hôm nay ghi theo số phần lúc đó; nội dung đổi (tổng khác) thì gửi lại từ đầu cho trọn.
     const tiepTu = batDau > 0 && cfg.tienDo[region]?.tong === xt.khoi.length ? batDau : 0;
     if (thu) { ketQua.push({ nhom: so, region, viec: "gui", soPhan: xt.khoi.length - tiepTu, kyTu: xt.chuoi.length, soLo: xt.soLo, soCap: xt.soCap }); continue; }
@@ -326,6 +341,11 @@ async function chayMotNhom(so: SoNhom, now: Date, thu: boolean, hetLuc: number):
       cfg.daGui[region] = now.toISOString();
       doi = true;
       ketQua.push({ nhom: so, region, viec: "gui", soPhan: xt.khoi.length, kyTu: xt.chuoi.length, soLo: xt.soLo, soCap: xt.soCap });
+      // Số dự báo: mỗi miền một tin mỗi ngày — báo quản trị đã gửi, để không còn cảnh "bot im hơi lặng tiếng" mà không ai biết.
+      if (cfg.noiDung === "dubao") {
+        const db = xt.duBao;
+        await baoQuanTri(`✅ Bot gửi ${ten(region)}: đã gửi ${xt.soLo} con dự báo lúc ${gioVN(now).gio}${db ? ` (${db.thu}: ${db.moHinh.join(", ") || "—"}${db.tab ? `, ${db.tab.soCon} con × ${db.tab.diem} điểm` : ""})` : ""}${cfg.tenNhom ? ` vào "${cfg.tenNhom}"` : ""}.`);
+      }
     } else if (r.ok) {
       // Đúng nhịp: lượt này xong phần của nó, phần còn lại để các lượt sau.
       doi = true;
