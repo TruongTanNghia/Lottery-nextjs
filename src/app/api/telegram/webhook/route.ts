@@ -153,7 +153,13 @@ async function handleMessage(msg: TelegramMessage, text: string) {
       return;
     }
     // Quản trị gõ lệnh quản trị ngay trong nhóm (/batgui 2 all, /xemgui 2 mn…) cũng chạy — xét người gõ, không chỉ xét chat.
-    await sendMessage(chatId, await answer(text, isAdmin(chatId) || tuQuanTri), { replyTo: msg.message_id });
+    // Một tin nhiều dòng mà dòng nào cũng là lệnh (21/11 anh gửi 4 lệnh trong một tin) → làm từng dòng, theo thứ tự.
+    // Dòng không mở bằng "/" (chuỗi /thutk nhiều dòng) thì giữ nguyên như một lệnh.
+    const dong = text.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+    const cacLenh = dong.length > 1 && dong.every((x) => x.startsWith("/")) ? dong.slice(0, 8) : [text];
+    for (const lenh of cacLenh) {
+      await sendMessage(chatId, await answer(lenh, isAdmin(chatId) || tuQuanTri), { replyTo: msg.message_id });
+    }
     return;
   }
 

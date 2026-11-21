@@ -1280,7 +1280,15 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
       break;
   }
 
+  // Lệnh bot gửi do tài khoản KHÔNG phải quản trị gõ: nói thẳng (21/11 anh gõ từ nick phụ, bot trả "Không hiểu lệnh"
+  // nên tưởng lệnh hỏng). Chỉ đến đây được khi chat đã được duyệt; các lệnh quản trị khác vẫn trả như gõ sai.
+  if (!isAdmin && LENH_BOT_GUI.has(cmd)) {
+    return `⚠️ <code>${esc(cmd)}</code> là lệnh quản trị — tài khoản Telegram đang gõ KHÔNG phải tài khoản quản trị nên bot không làm.\nGõ lại bằng tài khoản quản trị (mỗi lệnh một dòng), hoặc bật ngay trên web: tab 🔮 Dự Báo → khung "🤖 Bot gửi nhóm 2".`;
+  }
   // Admin commands fall through to here for everyone else, so a normal user
   // gets the same answer as for a typo and learns nothing extra.
   return `Không hiểu lệnh <code>${esc(cmd)}</code>.\n\n${helpText(isAdmin)}`;
 }
+
+/** Lệnh của bot gửi tự động — gõ từ tài khoản không phải quản trị thì nhắc rõ (xem cuối answer). */
+const LENH_BOT_GUI = new Set(["/nhomgui", "/chonnhom", "/batgui", "/tatgui", "/lichgui", "/xemgui", "/guingay", "/thutk", "/khunggio", "/tiento", "/noidunggui", "/dubaogui", "/socongui", "/diemgui", "/sotin", "/tinphut", "/dodaigui", "/roinhom"]);
