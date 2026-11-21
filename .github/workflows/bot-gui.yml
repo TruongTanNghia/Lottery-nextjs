@@ -18,7 +18,12 @@ on:
     # Lịch GitHub thường trễ hàng giờ với repo này; bộ hẹn giờ chính là cron-job.org
     # (cùng lịch "* 8-11 * * *"), workflow này chỉ là dự phòng.
     - cron: "* 8-11 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      thu:
+        description: "1 = chỉ xem tình trạng (gọi ?thu=1: không gửi, không ghi); để trống = chạy thật một lượt"
+        required: false
+        default: "1"
 
 permissions: {}
 
@@ -34,10 +39,11 @@ jobs:
       - name: Gọi /api/cron/bot-gui
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          THU: ${{ github.event_name == 'workflow_dispatch' && inputs.thu || '' }}
         run: |
           # Chưa cài khoá thì bỏ qua êm (không báo đỏ 20 lần mỗi ngày). Việc "chưa cài" vẫn
           # lộ ra ở lệnh /lichgui của bot: "Bộ hẹn giờ CHƯA từng gõ cửa".
           if [ -z "$CRON_SECRET" ]; then echo "::warning::Chưa cài secret CRON_SECRET cho repo — bỏ qua"; exit 0; fi
           curl --fail-with-body -sS --max-time 60 \
             -H "Authorization: Bearer $CRON_SECRET" \
-            "https://gacon.vercel.app/api/cron/bot-gui"
+            "https://gacon.vercel.app/api/cron/bot-gui$( [ "$THU" = "1" ] && echo '?thu=1' )"

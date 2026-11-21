@@ -25,8 +25,8 @@ import { capNhan, chuoiNhanMien, nhomNhanDa } from "@/lib/da-nhan";
 import { chuoiChanLo, luatChanLo } from "@/lib/chan-lo";
 import { docBuoc, trangThaiChanNgay } from "@/lib/chan-ngay-server";
 import { docBotGui, docGoCua, guiNgay, luuBotGui, thuTaiKhoan, xemTruocGui } from "@/lib/bot-gui";
-import { coTaiKhoanGui } from "@/lib/tele-user";
-import { CAC_NHOM, daGuiHomNay, gioVN, laGioHopLe, lenhNhom, tachNhom, tenNhomSo, tenNoiDungGui, type CaiDatBotGui, type SoNhom } from "@/lib/bot-gui-thuan";
+import { coTaiKhoanGui, dsNhomCuaTaiKhoan } from "@/lib/tele-user";
+import { CAC_NHOM, daGuiHomNay, gioVN, khopTenNhom, laGioHopLe, lenhNhom, tachNhom, tenNhomSo, tenNoiDungGui, type CaiDatBotGui, type SoNhom } from "@/lib/bot-gui-thuan";
 import { SO_O_DA, chiaKhoiChanDa, dongChanLq, khoKyToi, khoiChanLq, nhomChanDa } from "@/lib/da";
 
 // Nam → Trung → Bắc, the order the bookie writes them in. Cosmetic, but the
@@ -117,6 +117,7 @@ export function helpText(isAdmin = false): string {
         "<code>/khunggio mn 15:50 16:05</code> · <code>/tiento mn 2d</code>",
         "<code>/noidunggui dubao</code> — gửi số dự báo (tab Dự Báo): <code>/dubaogui chon</code> đúng ô anh chọn trên tab, số con và điểm theo tab (mặc định) · <code>/dubaogui tot</code> ô lời nhất của thứ hôm đó · <code>/dubaogui loi</code> gộp hết ô đang lời · <code>/socongui 10</code> · <code>/diemgui 1</code> (hai lệnh này cho tot/loi)",
         "<i>Nhóm 2 (gửi thêm một nhóm nữa, mặc định số dự báo theo ô chọn, mỗi miền một lần: Mn 16:00, Mt 17:00, Mb 18:00): thêm số 2 sau lệnh — <code>/nhomgui 2</code> (gõ trong nhóm đó), <code>/xemgui 2 mn</code>, <code>/thutk 2 Mn 2d16b1</code>, <code>/batgui 2 all</code>, <code>/guingay 2 mn</code>, <code>/dubaogui 2 tot</code>, <code>/diemgui 2 5</code>, <code>/khunggio 2 mn 16:00 16:08</code>, <code>/tiento 2 mn 2d</code></i>",
+        "<code>/chonnhom 2 Tam Quốc</code> — chọn nhóm gửi theo TÊN (nhóm mà tài khoản gửi đang ở), không cần gõ trong nhóm",
         "<code>/roinhom</code> — gõ TRONG nhóm bị thêm nhầm: bot và tài khoản gửi rời nhóm đó (nếu đang là nhóm gửi 2 thì bỏ chọn)",
       ]
     : [];
@@ -1208,6 +1209,32 @@ export async function answer(text: string, isAdmin = false): Promise<string> {
       if (!region) return `Thiếu miền. Ví dụ: <code>/guingay ${lenhNhom(so)}mn</code>`;
       const r = await guiNgay(region, new Date(), con.some((a) => /^(lai|again|ep)$/.test(fold(a))), so);
       return `${r.ok ? "✅" : "⚠️"}${tenNhomSo(so) ? ` Nhóm ${so} ·` : ""} ${label(region)}: ${esc(r.chu)}`;
+    }
+
+    case "/chonnhom": {
+      // "/chonnhom 2 Tam Quốc" — chọn nhóm gửi THEO TÊN (hoặc id "-100…") trong các nhóm tài khoản gửi đang ở,
+      // không phải vào nhóm gõ /nhomgui (khách 21/11: "muốn nó tự động luôn").
+      if (!isAdmin) break;
+      const m = text.trim().match(/^\S+\s+(?:(?:n|nhom)?([12])\s+)?([\s\S]+)$/i);
+      const so = (m?.[1] === "2" ? 2 : 1) as SoNhom;
+      const ten = (m?.[2] ?? "").trim();
+      if (!ten) return "Cú pháp: <code>/chonnhom 2 Tam Quốc</code> (tên nhóm, đúng như trong Telegram) hoặc <code>/chonnhom 2 -100123…</code> (id)";
+      const ds = await dsNhomCuaTaiKhoan();
+      if (!ds.ok) return `⚠️ Không đọc được danh sách nhóm của tài khoản gửi: ${esc(ds.loi ?? "")}`;
+      const theoId = /^-\d+$/.test(ten) ? ds.nhom.filter((d) => d.id === Number(ten)) : null;
+      const { khop, gan } = theoId ? { khop: theoId, gan: [] } : khopTenNhom(ds.nhom, ten);
+      const liet = (xs: { id: number; ten: string }[]) => xs.slice(0, 10).map((d) => `• ${esc(d.ten)} — <code>${d.id}</code>`).join("\n");
+      if (khop.length !== 1) {
+        return khop.length > 1
+          ? `⚠️ Có ${khop.length} nhóm cùng tên "${esc(ten)}". Chọn bằng id:\n${liet(khop)}\nVí dụ: <code>/chonnhom ${lenhNhom(so)}${khop[0].id}</code>`
+          : `⚠️ Tài khoản gửi KHÔNG ở trong nhóm nào tên "${esc(ten)}" (đã xem ${ds.nhom.length} nhóm).${gan.length ? `\nTên gần giống:\n${liet(gan)}` : ""}\nNhờ khách thêm nick phụ vào nhóm đó rồi thử lại.`;
+      }
+      const cfg = await docBotGui(so);
+      cfg.nhom = khop[0].id;
+      cfg.tenNhom = khop[0].ten;
+      await luuBotGui(cfg, so);
+      const khac = await docBotGui(so === 1 ? 2 : 1);
+      return `✅ Đã chọn nhóm "<b>${esc(khop[0].ten)}</b>" (<code>${khop[0].id}</code>) làm nhóm gửi ${so} — tìm qua tài khoản gửi, không cần gõ trong nhóm.${khac.nhom === khop[0].id ? `\n⚠️ Nhóm này cũng đang là nhóm ${so === 1 ? 2 : 1}.` : ""}\n\n${await lichGui()}`;
     }
 
     case "/thutk": {

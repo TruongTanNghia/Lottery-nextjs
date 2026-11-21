@@ -6,7 +6,7 @@
  *   npm run test:botgui
  */
 import {
-  DO_DAI_TIN_MAC_DINH, MAC_DINH_BOT_GUI, MAC_DINH_NHOM_2, batDauTu, chuanHoaBotGui, chuoiLoGui, daGuiHomNay, gioVN, khoiLoGui, chiaTin, lenhNhom, tenNoiDungGui, phutConLai, soTinLuotNay, tachNhom, tenNhomSo, trongKhung,
+  DO_DAI_TIN_MAC_DINH, MAC_DINH_BOT_GUI, MAC_DINH_NHOM_2, batDauTu, chuanHoaBotGui, chuoiLoGui, daGuiHomNay, gioVN, khoiLoGui, chiaTin, khopTenNhom, lenhNhom, tenNoiDungGui, phutConLai, soTinLuotNay, tachNhom, tenNhomSo, trongKhung,
 } from "../src/lib/bot-gui-thuan";
 import { chuoiNhanDeu, chuoiNhanMien, nhomNhanDa } from "../src/lib/da-nhan";
 
@@ -129,6 +129,16 @@ console.log("\n===== Nhóm 2 (khách 19/11: gửi thêm 1 nhóm, lô 2 số từ
   const muc = ["85b1", "00b1", "04b1", "07b1", "12b1"];
   ok("chiaTin giữ NGUYÊN thứ tự (như chuỗi Gộp số trên tab), không sắp lại", chiaTin(muc, "Mn 2d", 2000)[0] === "Mn 2d85b1, 00b1, 04b1, 07b1, 12b1" && chiaTin(muc, "Mn 2d", 20).every((k) => k.length <= 20 && k.startsWith("Mn 2d")) && chiaTin(muc, "Mn 2d", 20).flatMap((k) => k.slice(5).split(", ")).join() === muc.join() && chiaTin([], "x", 100).length === 0);
   ok("không lô nào nhận → không tin nào", khoiLoGui(rows.map((r) => ({ ...r, current_limit: 0 })), "Mn 2d", 2000).length === 0);
+}
+
+console.log("\n===== Chọn nhóm theo tên (khách 21/11: muốn tự động, không gõ trong nhóm) =====");
+{
+  const ds = [{ id: -1001, ten: "Tam Quốc" }, { id: -1002, ten: "Tam Quốc Diễn Nghĩa" }, { id: -5428007503, ten: "User-Tam Hoa" }, { id: -3, ten: "Auto- Tin Nhắn ( test )" }];
+  const a = khopTenNhom(ds, "  tam   quốc ");
+  ok("'tam   quốc' (hoa thường, khoảng trắng thừa) khớp đúng một nhóm 'Tam Quốc' -1001, không lấy 'Tam Quốc Diễn Nghĩa'", a.khop.length === 1 && a.khop[0].id === -1001);
+  const b = khopTenNhom(ds, "Tam");
+  ok("'Tam' không trùng hẳn tên nào → không chọn, gợi ý 3 tên gần giống", b.khop.length === 0 && b.gan.length === 3);
+  ok("tên rỗng → không khớp gì; hai nhóm trùng tên → khop có 2 (lệnh sẽ bắt chọn bằng id)", khopTenNhom(ds, "  ").khop.length === 0 && khopTenNhom([...ds, { id: -9, ten: "TAM QUỐC" }], "Tam Quốc").khop.length === 2);
 }
 
 console.log(`\n### ${pass} DAT - ${fail} HONG ###`);

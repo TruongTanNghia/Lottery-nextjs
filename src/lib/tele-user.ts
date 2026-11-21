@@ -180,6 +180,43 @@ export async function roiNhomBangTaiKhoan(chatId: number): Promise<{ ok: boolean
   }
 }
 
+/**
+ * Danh sách NHÓM mà tài khoản gửi đang ở, kèm id dạng Bot API (nhóm thường "-123…", siêu nhóm "-100…") —
+ * để chọn nhóm gửi theo tên (/chonnhom) mà không phải gõ lệnh trong nhóm. Chỉ đọc. Không bao giờ ném lỗi ra ngoài.
+ */
+export async function dsNhomCuaTaiKhoan(): Promise<{ ok: boolean; loi?: string; nhom: { id: number; ten: string }[] }> {
+  if (!coTaiKhoanGui()) return { ok: false, loi: "chưa cài tài khoản gửi", nhom: [] };
+  const apiId = Number(process.env.TELEGRAM_API_ID);
+  if (!Number.isInteger(apiId) || apiId <= 0) return { ok: false, loi: "TELEGRAM_API_ID không phải số", nhom: [] };
+  const { TelegramClient } = await import("telegram");
+  const { StringSession } = await import("telegram/sessions/index.js");
+  let client: InstanceType<typeof TelegramClient> | null = null;
+  let hen: ReturnType<typeof setTimeout> | undefined;
+  const lam = async (): Promise<{ ok: boolean; loi?: string; nhom: { id: number; ten: string }[] }> => {
+    client = new TelegramClient(new StringSession(String(process.env.TELEGRAM_USER_SESSION)), apiId, String(process.env.TELEGRAM_API_HASH), { connectionRetries: 2, deviceModel: "gacon-bot-gui", systemVersion: "1.0", appVersion: "1.0" });
+    client.setLogLevel("error" as never);
+    await client.connect();
+    if (!(await client.checkAuthorization())) return { ok: false, loi: "phiên đăng nhập hết hạn hoặc đã bị thu hồi", nhom: [] };
+    const dialogs = await client.getDialogs({ limit: 300 });
+    const nhom = dialogs
+      .filter((d) => d.isGroup && d.id != null)
+      .map((d) => ({ id: Number(String(d.id)), ten: String(d.title ?? d.name ?? "") }))
+      .filter((d) => Number.isFinite(d.id) && d.id < 0);
+    return { ok: true, nhom };
+  };
+  try {
+    return await Promise.race([
+      lam(),
+      new Promise<{ ok: boolean; loi?: string; nhom: { id: number; ten: string }[] }>((r) => { hen = setTimeout(() => r({ ok: false, loi: `quá ${Math.round(HAN_GUI_MS / 1000)} giây Telegram không trả lời`, nhom: [] }), HAN_GUI_MS); }),
+    ]);
+  } catch (e) {
+    return { ok: false, loi: (e instanceof Error ? e.message : String(e)).slice(0, 200), nhom: [] };
+  } finally {
+    clearTimeout(hen);
+    try { await (client as InstanceType<typeof TelegramClient> | null)?.destroy(); } catch { /* đóng không được thì thôi */ }
+  }
+}
+
 /** Gửi một tin văn bản trơn vào chat bằng tài khoản người. Không bao giờ ném lỗi ra ngoài. */
 export async function guiBangTaiKhoan(chatId: number, text: string): Promise<KetQuaGuiTK> {
   const r = await guiNhieuBangTaiKhoan(chatId, [text], HAN_GUI_MS);

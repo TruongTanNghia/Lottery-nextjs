@@ -334,3 +334,17 @@ export function batDauTu(now: Date, td: TienDoGui | undefined): number {
   if (!td || td.ngay !== gioVN(now).ngay) return 0;
   return td.daGui < td.tong ? td.daGui : 0;
 }
+
+/**
+ * Tìm nhóm theo TÊN trong danh sách nhóm của tài khoản gửi (khách 21/11: "muốn nó tự động luôn, anh đã setup hết rồi"
+ * — chọn nhóm không cần gõ /nhomgui trong nhóm). So tên bỏ hoa thường, khoảng trắng thừa; "khop" = trùng hẳn tên,
+ * "gan" = tên chứa nhau (để gợi ý khi không có cái trùng hẳn).
+ */
+export function khopTenNhom(ds: { id: number; ten: string }[], ten: string): { khop: { id: number; ten: string }[]; gan: { id: number; ten: string }[] } {
+  const chuan = (s: string) => s.normalize("NFC").trim().toLowerCase().replace(/\s+/g, " ");
+  const t = chuan(ten);
+  if (!t) return { khop: [], gan: [] };
+  const khop = ds.filter((d) => chuan(d.ten) === t);
+  const gan = khop.length ? [] : ds.filter((d) => chuan(d.ten).includes(t) || (chuan(d.ten).length >= 3 && t.includes(chuan(d.ten))));
+  return { khop, gan };
+}
