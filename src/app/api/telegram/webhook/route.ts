@@ -71,8 +71,12 @@ export async function POST(req: Request) {
 
 async function handleMessage(msg: TelegramMessage, text: string) {
   const chatId = msg.chat.id;
+  // Khách 20–21/11 "bot nhóm 2 vẫn im": trong một NHÓM MỚI (chưa duyệt), tin do QUẢN TRỊ gõ — kể cả /nhomgui 2,
+  // /roinhom — trước đây rơi vào đường "xin dùng bot" (bot chỉ trả "chờ duyệt") nên không bao giờ chọn được nhóm.
+  // Người gõ là quản trị thì xử lý như chat đã duyệt; người lạ trong nhóm chưa duyệt vẫn phải xin như cũ.
+  const tuQuanTri = !!msg.from && isAdmin(msg.from.id);
 
-  if (await canUse(chatId)) {
+  if (tuQuanTri || (await canUse(chatId))) {
     // /guithu <chuỗi>: bot nói lại NGUYÊN VĂN chuỗi đó thành một tin riêng (không
     // phải tin trả lời, không thêm chữ nào). Khách muốn làm bot gửi lệnh tự động
     // vào nhóm có "bot nhận" của phần mềm ghi cược, và dặn thử trước: "xem con
@@ -148,11 +152,13 @@ async function handleMessage(msg: TelegramMessage, text: string) {
       await sendMessage(chatId, esc(thu[1].trim()));
       return;
     }
-    await sendMessage(chatId, await answer(text, isAdmin(chatId)), { replyTo: msg.message_id });
+    // Quản trị gõ lệnh quản trị ngay trong nhóm (/batgui 2 all, /xemgui 2 mn…) cũng chạy — xét người gõ, không chỉ xét chat.
+    await sendMessage(chatId, await answer(text, isAdmin(chatId) || tuQuanTri), { replyTo: msg.message_id });
     return;
   }
 
-  const name = msg.from?.first_name || "Không rõ tên";
+  // Nhóm xin dùng thì ghi tên NHÓM (kèm người gõ) để quản trị nhận ra nhóm nào.
+  const name = msg.chat.type !== "private" && msg.chat.title ? `nhóm "${msg.chat.title}" (${msg.from?.first_name || "?"} gõ)` : msg.from?.first_name || "Không rõ tên";
   const username = msg.from?.username ?? null;
   const { user, isNew } = await requestAccess(chatId, name, username);
 
