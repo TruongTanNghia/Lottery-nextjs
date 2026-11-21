@@ -18,6 +18,7 @@ import {
 } from "@/lib/du-bao";
 import { STAKE_PRICE, WIN_PER_POINT, POSITIONS } from "@/lib/exposure";
 import { TIEN_TO_NHAN_MAC_DINH } from "@/lib/da-nhan";
+import BotNhom2Panel from "./BotNhom2Panel";
 import { docKhoDai, gopKho, type KhoDai } from "@/lib/tuan";
 import { REGION_LABELS, type Region } from "@/lib/types";
 
@@ -460,6 +461,7 @@ export default function DuBaoPage({ region }: { region: Region }) {
                     )}
                   </div>
                 )}
+                <BotNhom2Panel />
               </div>
 
               {chonMh && (
